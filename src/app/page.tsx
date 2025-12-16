@@ -327,7 +327,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <Fingerprint className="w-8 h-8 text-accent" />
             <h1 className="text-2xl font-bold tracking-tight">
-              Digital Forensics <span className="text-sm font-light text-muted">// AI Art Integrity V4.2</span>
+              AI checkers <span className="text-sm font-light text-muted">// AI-art-integrity v4.2</span>
             </h1>
           </div>
           <div className="text-sm font-light text-muted hidden sm:block">
@@ -448,26 +448,26 @@ export default function Home() {
               </div>
 
               {/* Metrics Grid */}
-              <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm font-light text-muted border-t border-gray-700 pt-4">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">使用モデル:</span>
-                  <span className="font-bold text-accent">ViT-Detect (Multimodal)</span>
+              <div className="flex flex-col gap-3 text-sm border-t border-gray-700 pt-4">
+                {/* Row 1: Model & Logic */}
+                <div className="flex justify-between items-center text-muted">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">使用モデル:</span>
+                    <span className="font-bold text-accent">legekka/ViT-Detect</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">ロジック:</span>
+                    <span className="font-bold text-dim">Anime-Specialized V1.0</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">信頼レベル:</span>
-                  <span className="font-bold">{result?.confidence ? `${result.confidence}%` : "--"}</span>
+                {/* Row 2: Artifacts */}
+                <div className="flex items-start gap-2 text-muted">
+                  <span className="font-medium whitespace-nowrap">検出アーティファクト:</span>
+                  <span className="font-bold text-text-primary">{result?.artifacts || "待機中..."}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">処理時間 (単一):</span>
-                  <span className="font-bold">{result?.processingTime ? `${result.processingTime.toFixed(2)}s` : "--"}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">ロジック:</span>
-                  <span className="font-bold text-dim">ハイブリッド検出 V2.0</span>
-                </div>
-                <div className="col-span-2 flex justify-between items-center">
-                  <span className="font-medium">検出されたアーティファクト（痕跡）:</span>
-                  <span className="font-bold text-right">{result?.artifacts || "Stand by..."}</span>
+                {/* Row 3: Reserved for artifact reasoning */}
+                <div className="min-h-[1.5rem] text-muted text-xs">
+                  {/* 将来的にアーティファクトの詳細理由を表示 */}
                 </div>
               </div>
             </div>
