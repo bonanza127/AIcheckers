@@ -15,8 +15,28 @@ const notoSansJP = Noto_Sans_JP({
 });
 
 export const metadata: Metadata = {
-  title: "AI Digital Forensics Console",
-  description: "AI生成画像識別コンソール - 最先端のマルチモーダルAIで画像の組成を解析",
+  title: "AI Checkers - AI生成画像判定ツール",
+  description: "アニメ・イラスト特化のAI画像判定ツール。画像をアップロードするだけで、AIが生成した画像か人間が描いた画像かを高精度で判定します。",
+  keywords: ["AI判定", "AI画像検出", "イラスト判定", "アニメ", "生成AI", "画像解析"],
+  authors: [{ name: "AI Checkers" }],
+  openGraph: {
+    title: "AI Checkers - AI生成画像判定ツール",
+    description: "アニメ・イラスト特化のAI画像判定。画像をアップロードするだけで高精度判定。",
+    url: "https://aicheckers.net",
+    siteName: "AI Checkers",
+    locale: "ja_JP",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AI Checkers - AI生成画像判定ツール",
+    description: "アニメ・イラスト特化のAI画像判定。画像をアップロードするだけで高精度判定。",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  metadataBase: new URL("https://aicheckers.net"),
 };
 
 export default function RootLayout({
