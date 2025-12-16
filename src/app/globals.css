@@ -3,425 +3,510 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================
+   SUNSET PIXEL ART THEME - 夕焼けレトロゲーム風
+   ============================================ */
+
 @theme inline {
-  --color-background: #0a0a0a;
-  --color-foreground: #e8e8e8;
-  --font-sans: var(--font-share-tech-mono), var(--font-noto-sans-jp), monospace;
-  --font-mono: var(--font-share-tech-mono), monospace;
+  /* Sunset Color Palette */
+  --color-sky-top: #1a0a2e;
+  --color-sky-mid: #4a1a4a;
+  --color-horizon: #e8956c;
 
-  /* Core Palette */
-  --color-matrix: #00ff9f;
-  --color-matrix-dim: #00805f;
-  --color-matrix-glow: rgba(0, 255, 159, 0.4);
-  --color-ai: #ff3366;
-  --color-ai-glow: rgba(255, 51, 102, 0.4);
-  --color-human: #00d4ff;
-  --color-human-glow: rgba(0, 212, 255, 0.4);
-  --color-surface: #0d0d0d;
-  --color-surface-elevated: #141414;
-  --color-border: rgba(255, 255, 255, 0.06);
-  --color-border-bright: rgba(255, 255, 255, 0.12);
+  /* Panel & Surface Colors */
+  --color-panel: #2d1a3d;
+  --color-panel-light: #3d2850;
+  --color-panel-dark: #1a0f24;
+
+  /* Accent Colors */
+  --color-primary: #ffd93d;
+  --color-secondary: #ff8c5a;
+  --color-success: #5dd39e;
+  --color-danger: #ff6b8a;
+
+  /* Text Colors */
+  --color-text: #fff5e6;
+  --color-text-muted: #b89aaa;
+
+  /* Semantic mapping */
+  --color-foreground: #fff5e6;
+  --color-background: #1a0a2e;
+  --color-card: #2d1a3d;
+  --color-card-foreground: #fff5e6;
+  --color-border: rgba(255, 217, 61, 0.3);
+  --color-muted: #3d1a4a;
+  --color-muted-foreground: #b89aaa;
 }
 
-/* CSS Custom Properties */
 :root {
-  --matrix: #00ff9f;
-  --matrix-dim: #00805f;
-  --ai: #ff3366;
-  --human: #00d4ff;
-  --noise-opacity: 0.02;
+  --primary: #ffd93d;
+  --secondary: #ff8c5a;
+  --success: #5dd39e;
+  --danger: #ff6b8a;
+  --panel: #2d1a3d;
+  --panel-dark: #1a0f24;
+  --font-pixel: var(--font-press-start-2p), monospace;
 }
 
-/* Base Styles */
+/* ============================================
+   BASE STYLES - PIXEL ART BACKGROUND
+   ============================================ */
+
 html {
-  background: #050505;
+  background: linear-gradient(180deg,
+    #0d0618 0%,
+    #1a0a2e 30%,
+    #2d1540 60%,
+    #1a0a2e 100%
+  );
+  background-attachment: fixed;
+  min-height: 100vh;
 }
 
 body {
-  background: #0a0a0a;
-  color: #c8c8c8;
-  font-family: var(--font-share-tech-mono), var(--font-noto-sans-jp), ui-monospace, monospace;
-  font-feature-settings: "tnum" 1, "ss01" 1;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Noise Texture Overlay */
-.noise-bg::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  opacity: var(--noise-opacity);
-  pointer-events: none;
-  z-index: 9998;
-}
-
-/* Subtle Grid Background */
-.grid-bg {
-  background-image:
-    linear-gradient(rgba(0, 255, 159, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 255, 159, 0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
-  background-position: -1px -1px;
-}
-
-/* CRT Scanlines */
-.scanlines::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.15) 2px,
-    rgba(0, 0, 0, 0.15) 4px
-  );
-  pointer-events: none;
-  z-index: 9999;
-}
-
-/* Premium Panel */
-.panel {
-  background: linear-gradient(
-    160deg,
-    rgba(18, 18, 18, 0.97) 0%,
-    rgba(10, 10, 10, 0.99) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  border-radius: 3px;
+  color: #fff5e6;
+  font-family: var(--font-press-start-2p), var(--font-noto-sans-jp), monospace;
+  min-height: 100vh;
+  text-shadow: 1px 1px 0 #000;
   position: relative;
 }
 
-.panel::before {
+/* ============================================
+   PIXEL SCENERY - 夕焼け風景
+   ============================================ */
+
+.pixel-scenery {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* 夕日 - 右上に配置 */
+.pixel-sun {
+  position: absolute;
+  top: 8%;
+  right: 6%;
+  width: 90px;
+  height: 90px;
+  background: radial-gradient(circle,
+    #ffd93d 0%,
+    #ffd93d 30%,
+    #ff8c5a 50%,
+    #ff6b8a 70%,
+    transparent 75%
+  );
+  border-radius: 50%;
+  box-shadow: 
+    0 0 60px rgba(255, 217, 61, 0.5),
+    0 0 120px rgba(255, 140, 90, 0.3),
+    0 0 180px rgba(255, 107, 138, 0.2);
+  animation: sun-pulse 4s ease-in-out infinite;
+}
+
+/* 夕日の周りの淡いグラデーション */
+.pixel-sun::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle,
+    rgba(255, 140, 90, 0.08) 0%,
+    rgba(255, 107, 138, 0.04) 40%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+@keyframes sun-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.03); }
+}
+
+/* 星たち - 画面全体に散らばる */
+.pixel-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    /* 大きめの星（金色） */
+    radial-gradient(3px 3px at 80px 60px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 320px 40px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 580px 90px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 920px 50px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 1180px 70px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 200px 200px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 700px 180px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 1050px 220px, #ffd93d 100%, transparent),
+    /* 中くらいの星（白） */
+    radial-gradient(2px 2px at 150px 80px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 250px 30px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 420px 110px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 550px 25px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 680px 140px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 820px 85px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 980px 130px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 1100px 45px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 100px 250px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 380px 280px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 620px 240px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 850px 300px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 1150px 260px, #fff5e6 100%, transparent),
+    /* 小さな星（淡い） */
+    radial-gradient(1px 1px at 50px 120px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 180px 160px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 300px 100px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 480px 180px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 600px 60px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 750px 200px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 880px 160px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 1020px 100px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 1200px 180px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 130px 320px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 450px 350px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 780px 380px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 950px 340px, #c9b8a0 100%, transparent);
+  animation: twinkle 3s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* 地平線の淡い光 */
+.pixel-horizon {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background: linear-gradient(to top,
+    rgba(255, 140, 90, 0.12) 0%,
+    rgba(255, 107, 138, 0.06) 50%,
+    transparent 100%
+  );
+}
+
+/* ============================================
+   PIXEL PANEL STYLING
+   ============================================ */
+
+.pixel-panel {
+  background-color: var(--panel);
+  border: 4px solid var(--primary);
+  box-shadow: 
+    4px 4px 0 rgba(0,0,0,0.8),
+    inset 0 0 0 2px rgba(255,217,61,0.1);
+  position: relative;
+  image-rendering: pixelated;
+}
+
+.pixel-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+}
+
+.panel-header {
+  border-bottom: 2px solid var(--secondary);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ============================================
+   TEXT STYLES
+   ============================================ */
+
+.text-pixel {
+  font-family: var(--font-press-start-2p), monospace;
+  letter-spacing: 0.05em;
+}
+
+.pixel-title {
+  color: var(--secondary);
+  text-shadow: 2px 2px 0 #000;
+}
+
+.text-primary { color: var(--primary); }
+.text-secondary { color: var(--secondary); }
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+.text-muted { color: #b89aaa; }
+
+/* ============================================
+   UPLOAD ZONE
+   ============================================ */
+
+.upload-zone {
+  border: 4px dashed var(--secondary);
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.upload-zone:hover {
+  border-color: var(--primary);
+  background-color: rgba(255, 140, 90, 0.1);
+}
+
+.upload-zone.dragging {
+  border-color: var(--primary);
+  border-style: solid;
+  background-color: rgba(255, 217, 61, 0.15);
+}
+
+/* ============================================
+   PIXEL BUTTONS
+   ============================================ */
+
+.pixel-btn {
+  background-color: var(--primary);
+  color: #1a0a2e;
+  border: 4px solid #000;
+  border-bottom-width: 6px;
+  transition: all 0.1s ease;
+  padding: 10px 16px;
+  font-family: var(--font-press-start-2p), monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.pixel-btn:hover:not(:disabled) {
+  background-color: #ffe566;
+  transform: translateY(-2px);
+}
+
+.pixel-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  border-bottom-width: 4px;
+}
+
+.pixel-btn:disabled {
+  background-color: #555;
+  color: #333;
+  cursor: not-allowed;
+}
+
+.pixel-btn-danger {
+  background-color: var(--danger);
+}
+
+.pixel-btn-danger:hover:not(:disabled) {
+  background-color: #ff8aa5;
+}
+
+/* ============================================
+   CONSOLE LOG
+   ============================================ */
+
+.console-log {
+  background-color: #0a0612;
+  border: 2px solid var(--primary);
+  padding: 8px;
+  font-size: 8px;
+  line-height: 1.8;
+  overflow-y: auto;
+}
+
+.log-system { color: #888; }
+.log-info { color: #b89aaa; }
+.log-process { color: var(--success); }
+.log-heading { color: var(--secondary); font-weight: bold; }
+.log-detail { color: #7a6a7a; padding-left: 12px; }
+.log-result { color: #fff5e6; font-weight: bold; }
+.log-error { color: var(--danger); }
+
+/* ============================================
+   HP BAR / PROGRESS BAR
+   ============================================ */
+
+.hp-bar-bg {
+  height: 16px;
+  background-color: #1a0f24;
+  border: 3px solid #000;
+  box-shadow: inset 0 0 0 1px #3d2850;
+  position: relative;
+}
+
+.hp-bar-fill {
+  height: 100%;
+  transition: width 0.5s ease;
+  position: relative;
+}
+
+.hp-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  height: 4px;
+  background: rgba(255,255,255,0.3);
+}
+
+/* ============================================
+   QUEUE ITEMS
+   ============================================ */
+
+.queue-item {
+  border: 2px solid #555;
+  box-shadow: 2px 2px 0 #000;
+  background: rgba(0,0,0,0.4);
+  transition: all 0.15s ease;
+}
+
+.queue-item.active {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 8px var(--primary), 2px 2px 0 #000 !important;
+  animation: item-pulse 0.5s ease infinite;
+}
+
+@keyframes item-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.queue-item.result-ai {
+  background-color: rgba(255, 107, 138, 0.25);
+  border-color: var(--danger) !important;
+}
+
+.queue-item.result-human {
+  background-color: rgba(93, 211, 158, 0.25);
+  border-color: var(--success) !important;
+}
+
+/* ============================================
+   VERDICT DISPLAY
+   ============================================ */
+
+.verdict-display {
+  font-family: var(--font-press-start-2p), monospace;
+  font-size: 1.25rem;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.verdict-ai {
+  color: var(--danger);
+  animation: verdict-flash 0.8s ease infinite;
+}
+
+.verdict-human {
+  color: var(--success);
+}
+
+.verdict-loading {
+  color: var(--primary);
+  animation: loading-dots 1.5s step-end infinite;
+}
+
+@keyframes verdict-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ============================================
+   SCANNING ANIMATION
+   ============================================ */
+
+.scanning {
+  position: relative;
+  overflow: hidden;
+}
+
+.scanning::after {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(0, 255, 159, 0.08) 50%,
-    transparent 100%
-  );
+  height: 4px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  animation: scan-line 1.5s ease-in-out infinite;
 }
 
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  color: #666;
+@keyframes scan-line {
+  0% { top: 0; opacity: 1; }
+  100% { top: 100%; opacity: 0.5; }
 }
 
-.panel-content {
-  padding: 20px;
+/* ============================================
+   ACTIVE IMAGE CONTAINER
+   ============================================ */
+
+.active-image-container {
+  background: #0a0612;
+  border: 4px solid var(--secondary);
+  overflow: hidden;
 }
 
-/* Semantic Colors */
-.text-matrix { color: var(--matrix); }
-.text-matrix-dim { color: var(--matrix-dim); }
-.text-ai { color: var(--ai); }
-.text-human { color: var(--human); }
-
-.bg-matrix { background-color: var(--matrix); }
-.bg-ai { background-color: var(--ai); }
-.bg-human { background-color: var(--human); }
-
-.border-matrix { border-color: var(--matrix); }
-.border-ai { border-color: var(--ai); }
-.border-human { border-color: var(--human); }
-
-/* Glow Effects */
-.glow-matrix {
-  box-shadow: 0 0 20px var(--color-matrix-glow),
-              inset 0 0 20px rgba(0, 255, 159, 0.05);
+.scan-placeholder {
+  background: #1a0f24;
+  border: 4px dashed #3d2850;
 }
 
-.glow-ai {
-  box-shadow: 0 0 20px var(--color-ai-glow),
-              inset 0 0 20px rgba(255, 51, 102, 0.05);
+/* ============================================
+   FIXED FOOTER
+   ============================================ */
+
+.pixel-footer-bar {
+  background-color: var(--panel);
+  border: 4px solid var(--primary);
+  border-bottom: none !important;
+  box-shadow: 
+    4px 0 0 rgba(0,0,0,0.8),
+    -4px 0 0 rgba(0,0,0,0.8),
+    0 -4px 0 rgba(0,0,0,0.8),
+    inset 0 0 0 2px rgba(255,217,61,0.1);
 }
 
-.glow-human {
-  box-shadow: 0 0 20px var(--color-human-glow),
-              inset 0 0 20px rgba(0, 212, 255, 0.05);
-}
+/* ============================================
+   CUSTOM SCROLLBAR
+   ============================================ */
 
-.text-glow-matrix {
-  text-shadow: 0 0 10px var(--color-matrix-glow),
-               0 0 20px rgba(0, 255, 159, 0.2);
-}
-
-/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
+  background: #1a0f24;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
+  background: #4a2860;
+  border: 1px solid #3d2850;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: #5c3870;
 }
 
-/* Animations */
-@keyframes scan {
-  from { transform: translateY(-100%); }
-  to { transform: translateY(100vh); }
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.border-primary { border-color: var(--primary); }
+.border-secondary { border-color: var(--secondary); }
+.bg-panel { background-color: var(--panel); }
+.bg-panel-dark { background-color: var(--panel-dark); }
+
+::selection {
+  background: rgba(255, 217, 61, 0.4);
+  color: #fff5e6;
 }
 
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-@keyframes flicker {
-  0%, 100% { opacity: 1; }
-  92% { opacity: 1; }
-  93% { opacity: 0.8; }
-  94% { opacity: 1; }
-  96% { opacity: 0.9; }
-  97% { opacity: 1; }
-}
-
-@keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes data-stream {
-  0% { background-position: 0% 0%; }
-  100% { background-position: 0% 100%; }
-}
-
-.animate-scan {
-  animation: scan 2s linear infinite;
-}
-
-.animate-flicker {
-  animation: flicker 4s infinite;
-}
-
-.animate-slide-up {
-  animation: slide-up 0.4s ease-out forwards;
-}
-
-/* Stagger Animation Delays */
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.1s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.2s; }
-.stagger-5 { animation-delay: 0.25s; }
-
-/* Data Indicator */
-.data-indicator {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  position: relative;
-}
-
-.data-indicator::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 50%;
-  background: inherit;
-  opacity: 0.4;
-  filter: blur(3px);
-}
-
-/* Progress Bar */
-.progress-track {
-  height: 5px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 3px;
-  overflow: hidden;
-  position: relative;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
-}
-
-.progress-fill::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.2) 50%,
-    transparent 100%
-  );
-  animation: data-stream 2s linear infinite;
-}
-
-/* Button Styles */
-.btn-primary {
-  background: rgba(0, 255, 159, 0.06);
-  border: 1px solid rgba(0, 255, 159, 0.25);
-  color: var(--matrix);
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  padding: 12px 24px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: rgba(0, 255, 159, 0.12);
-  border-color: rgba(0, 255, 159, 0.4);
-  box-shadow: 0 0 25px rgba(0, 255, 159, 0.15);
-}
-
-.btn-primary:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.btn-primary.active {
-  background: var(--matrix);
-  color: #000;
-  font-weight: 500;
-  box-shadow: 0 0 30px rgba(0, 255, 159, 0.25);
-}
-
-/* Upload Zone */
-.upload-zone {
-  border: 1px dashed rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.008);
-  transition: all 0.15s ease;
-}
-
-.upload-zone:hover {
-  border-color: rgba(0, 255, 159, 0.2);
-  background: rgba(0, 255, 159, 0.015);
-}
-
-.upload-zone.dragging {
-  border-color: var(--matrix);
-  border-style: solid;
-  background: rgba(0, 255, 159, 0.04);
-}
-
-/* Log Entry Styles */
-.log-system { color: #505050; }
-.log-info { color: #707070; }
-.log-process { color: var(--matrix-dim); }
-.log-heading { 
-  color: var(--matrix); 
-  font-weight: 500;
-  margin-top: 10px;
-}
-.log-detail { 
-  color: #606060;
-  padding-left: 14px;
-  border-left: 1px solid rgba(255, 255, 255, 0.04);
-  margin-left: 4px;
-}
-.log-result { 
-  color: #e0e0e0;
-  font-weight: 500;
-}
-.log-error { color: var(--ai); }
-
-/* Verdict Display */
-.verdict-display {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  line-height: 1;
-}
-
-.verdict-ai {
-  color: var(--ai);
-  text-shadow: 0 0 25px rgba(255, 51, 102, 0.3);
-}
-
-.verdict-human {
-  color: var(--human);
-  text-shadow: 0 0 25px rgba(0, 212, 255, 0.3);
-}
-
-/* Queue Item */
-.queue-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 3px;
-  transition: all 0.15s ease;
-  border-left: 2px solid transparent;
-}
-
-.queue-item.wait {
-  background: rgba(255, 255, 255, 0.015);
-  border-left-color: #2a2a2a;
-}
-
-.queue-item.processing {
-  background: rgba(0, 255, 159, 0.04);
-  border-left-color: var(--matrix);
-}
-
-.queue-item.ai {
-  background: rgba(255, 51, 102, 0.04);
-  border-left-color: var(--ai);
-}
-
-.queue-item.human {
-  background: rgba(0, 212, 255, 0.04);
-  border-left-color: var(--human);
-}
-
-/* Metric Label */
-.metric-label {
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: #505050;
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-
-.metric-value {
-  font-size: 13px;
-  color: #909090;
-  font-feature-settings: "tnum" 1;
-}
-
-/* Base Layer */
 @layer base {
   * {
-    border-color: rgba(255, 255, 255, 0.06);
-  }
-  
-  ::selection {
-    background: rgba(0, 255, 159, 0.3);
-    color: #fff;
+    border-color: rgba(255, 217, 61, 0.15);
   }
 }

@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
-import { Noto_Sans_JP } from "next/font/google";
-import { Share_Tech_Mono } from "next/font/google";
+import { Press_Start_2P, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
+
+const pressStart2P = Press_Start_2P({
+  variable: "--font-press-start-2p",
+  subsets: ["latin"],
+  weight: ["400"],
+});
 
 const notoSansJP = Noto_Sans_JP({
   variable: "--font-noto-sans-jp",
@@ -9,14 +14,8 @@ const notoSansJP = Noto_Sans_JP({
   weight: ["300", "400", "500", "700"],
 });
 
-const shareTechMono = Share_Tech_Mono({
-  variable: "--font-share-tech-mono",
-  subsets: ["latin"],
-  weight: ["400"],
-});
-
 export const metadata: Metadata = {
-  title: "SYSTEM // ARCHIVE:AI.RDT - AI Image Detector",
+  title: "AI イラストチェッカー | Pixel Art Edition",
   description: "アニメ・イラストがAI生成か人間の作品かを判別するサービス",
 };
 
@@ -27,9 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body
-        className={`${notoSansJP.variable} ${shareTechMono.variable}`}
-      >
+      <body className={`${pressStart2P.variable} ${notoSansJP.variable}`}>
         {children}
       </body>
     </html>

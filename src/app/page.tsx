@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, RotateCcw, Cpu, Scan, Activity } from "lucide-react";
+import { Upload, Play, RotateCcw, Ghost, Gamepad2, Terminal, Bomb, Sparkles } from "lucide-react";
 
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
@@ -13,6 +13,7 @@ type LogEntry = {
 type QueueItem = {
   id: string;
   name: string;
+  preview: string;
   status: "wait" | "processing" | "ai" | "human";
 };
 
@@ -23,8 +24,16 @@ type DetectionResult = {
   verdict: string;
   confidence: number;
   processingTime: number;
-  artifacts: string[];
+  artifacts: string;
 };
+
+// ピクセルアート風ローディングテキスト
+const loadingTexts = [
+  "SCANNING...",
+  "ANALYZING PIXELS...",
+  "DETECTING ARTIFACTS...",
+  "PROCESSING DATA...",
+];
 
 export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
@@ -33,14 +42,14 @@ export default function Home() {
   const [currentFileName, setCurrentFileName] = useState<string>("");
   const [phase, setPhase] = useState<AnalysisPhase>("idle");
   const [logs, setLogs] = useState<LogEntry[]>([
-    { message: "SYSTEM INITIALIZED", type: "system" },
-    { message: "Neural detection engine ready", type: "info" },
+    { message: "SYSTEM BOOT OK.", type: "system" },
   ]);
   const [result, setResult] = useState<DetectionResult | null>(null);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [isScanning, setIsScanning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -65,32 +74,50 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [startTime]);
 
+  // ローディングテキストアニメーション
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (phase === "scanning") {
+      interval = setInterval(() => {
+        setLoadingTextIndex(prev => (prev + 1) % loadingTexts.length);
+      }, 800);
+    }
+    return () => clearInterval(interval);
+  }, [phase]);
+
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files) return;
 
     const validFiles = Array.from(files).filter(f => f.type.startsWith("image/"));
     if (validFiles.length === 0) {
-      addLog("ERROR: Invalid file type", "error");
+      addLog("ERROR: NO IMAGE FILE DETECTED.", "error");
       return;
     }
 
-    const newItems: QueueItem[] = [];
     validFiles.forEach(file => {
-      if (queue.length + newItems.length < 10) {
-        newItems.push({
-          id: `${Date.now()}-${file.name}`,
-          name: file.name,
-          status: "wait"
-        });
+      if (queue.length < 10) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const newItem: QueueItem = {
+            id: `${Date.now()}-${file.name}`,
+            name: file.name,
+            preview: e.target?.result as string,
+            status: "wait"
+          };
+          setQueue(prev => {
+            if (prev.length < 10) {
+              return [...prev, newItem];
+            }
+            return prev;
+          });
+        };
+        reader.readAsDataURL(file);
       } else {
-        addLog("WARNING: Queue limit reached", "error");
+        addLog("WARNING: QUEUE MAX (10) REACHED.", "error");
       }
     });
 
-    if (newItems.length > 0) {
-      setQueue(prev => [...prev, ...newItems]);
-      addLog(`${newItems.length} file(s) queued`, "info");
-    }
+    addLog(`QUEUE ADDED: ${validFiles.length} ARTIFACT(S) READY.`, "process");
 
     (window as unknown as { _pendingFiles: File[] })._pendingFiles = [
       ...((window as unknown as { _pendingFiles?: File[] })._pendingFiles || []),
@@ -111,7 +138,7 @@ export default function Home() {
 
   const processFile = async (file: File, index: number) => {
     const fileStartTime = Date.now();
-    
+
     setQueue(prev => prev.map((item, i) =>
       i === index ? { ...item, status: "processing" as const } : item
     ));
@@ -125,56 +152,45 @@ export default function Home() {
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
     setPhase("scanning");
+    setResult(null); // 前の結果をクリア
 
-    addLog(`### Processing: ${file.name}`, "heading");
-    addLog("Initializing neural network...", "process");
-    
+    addLog(`SCANNING: [${index + 1}/${queue.length}] FILE: ${file.name}...`, "heading");
+    addLog("INITIALIZING NEURAL NETWORK...", "process");
+
     await new Promise(r => setTimeout(r, 500));
-    addLog("> Stage 1: Feature Extraction", "detail");
-    addLog("> Analyzing texture patterns...", "detail");
+    addLog("> STAGE 1: FEATURE EXTRACTION", "detail");
 
     await new Promise(r => setTimeout(r, 700));
-    addLog("> Stage 2: Artifact Detection", "detail");
-    
+    addLog("> STAGE 2: ARTIFACT DETECTION", "detail");
+
     const hasAnomaly = Math.random() < 0.3;
     if (hasAnomaly) {
-      addLog("> * High-frequency noise detected", "detail");
+      addLog("> * HIGH-FREQ NOISE DETECTED", "detail");
     }
-    
+
     await new Promise(r => setTimeout(r, 500));
-    addLog("> Stage 3: Classification", "detail");
+    addLog("> STAGE 3: CLASSIFICATION", "detail");
 
     await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
 
     let aiProbability: number;
-    let artifacts: string[] = [];
+    let artifacts: string;
     const randomOutcome = Math.random();
 
     if (randomOutcome < 0.4) {
       aiProbability = 85 + Math.random() * 14;
-      artifacts = [
-        "手や指の構造的な不整合が検出されました",
-        "背景テクスチャに反復パターンを確認",
-        "顔のディテールに不自然な対称性"
-      ];
+      artifacts = "HAND ANOMALY, TEXTURE REPEAT";
     } else if (randomOutcome < 0.6) {
       aiProbability = 50 + Math.random() * 20;
-      artifacts = [
-        "エッジにノイズアーティファクトを検出",
-        "境界値付近のため追加検証を推奨"
-      ];
+      artifacts = "EDGE NOISE, BOUNDARY ISSUE";
     } else {
       aiProbability = 5 + Math.random() * 25;
-      artifacts = [
-        "有機的なブラシストロークを確認",
-        "人間特有の不規則パターンを検出",
-        "AIアーティファクトは未検出"
-      ];
+      artifacts = "ORGANIC STROKES, NO AI TRACE";
     }
 
     if (hasAnomaly) {
       aiProbability = Math.min(99, aiProbability + 15);
-      artifacts.push("高周波ノイズ異常を検出");
+      artifacts += " [FILTER +15]";
     }
 
     const aiScore = Math.round(Math.min(99, Math.max(1, aiProbability)));
@@ -190,15 +206,16 @@ export default function Home() {
       isAI,
       aiScore,
       humanScore,
-      verdict: isAI ? "AI DETECTED" : "HUMAN CONFIRMED",
+      verdict: isAI ? "AI WINS" : "HUMAN WINS",
       confidence: isAI ? aiScore : humanScore,
       processingTime,
       artifacts
     });
 
-    addLog(`> Result: ${isAI ? "AI Generated" : "Human Creation"} (${isAI ? aiScore : humanScore}%)`, "result");
-    
-    await new Promise(r => setTimeout(r, 300));
+    setPhase("complete");
+    addLog(`FINAL JUDGEMENT: ${isAI ? "AI WINS" : "HUMAN WINS"} (${isAI ? aiScore : humanScore}%)`, "result");
+
+    await new Promise(r => setTimeout(r, 500));
   };
 
   const startBatchScan = async () => {
@@ -209,8 +226,7 @@ export default function Home() {
     setStartTime(Date.now());
     setElapsedTime(0);
     setBatchProgress({ current: 0, total: files.length });
-    addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "system");
-    addLog("BATCH ANALYSIS INITIATED", "system");
+    addLog("--- BATCH SCAN STARTED ---", "heading");
 
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
@@ -219,9 +235,8 @@ export default function Home() {
 
     setIsScanning(false);
     setStartTime(null);
-    setPhase("complete");
-    addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "system");
-    addLog("ANALYSIS COMPLETE", "system");
+    addLog("--- BATCH SCAN COMPLETE ---", "heading");
+    addLog(`STATUS: ${files.length} ARTIFACTS PROCESSED.`, "process");
   };
 
   const resetUI = () => {
@@ -235,7 +250,7 @@ export default function Home() {
     setBatchProgress({ current: 0, total: 0 });
     setElapsedTime(0);
     setStartTime(null);
-    setLogs([{ message: "System reset", type: "system" }]);
+    setLogs([{ message: "SYSTEM: QUEUE CLEAR.", type: "system" }]);
     (window as unknown as { _pendingFiles?: File[] })._pendingFiles = [];
   };
 
@@ -254,253 +269,288 @@ export default function Home() {
     return classes[type];
   };
 
+  // Verdictの表示内容を決定
+  const getVerdictDisplay = () => {
+    if (phase === "scanning") {
+      return {
+        text: loadingTexts[loadingTextIndex],
+        className: "verdict-loading"
+      };
+    }
+    if (result) {
+      return {
+        text: result.verdict,
+        className: result.isAI ? "verdict-ai" : "verdict-human"
+      };
+    }
+    return {
+      text: "WAITING...",
+      className: "text-muted"
+    };
+  };
+
+  const verdictDisplay = getVerdictDisplay();
+
   return (
-    <div className="noise-bg grid-bg scanlines flex flex-col h-screen overflow-hidden">
-      {/* Header */}
-      <header className="flex-shrink-0 border-b border-white/5 bg-black/60 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-8 py-5 flex justify-between items-center">
-          <div className="flex items-center gap-5">
-            <div className="relative">
-              <div className="w-2.5 h-2.5 rounded-full bg-matrix" />
-              <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-matrix blur-md opacity-60" />
-            </div>
-            <h1 className="text-xl tracking-[0.3em] font-normal">
-              <span className="text-matrix">AI</span>
-              <span className="text-white/50 ml-2">イラストチェッカー</span>
-            </h1>
-          </div>
-          <div className="hidden sm:flex items-center gap-6 text-xs tracking-wider text-white/40">
-            <div className="flex items-center gap-2">
-              <Activity className="w-3.5 h-3.5 text-matrix/80" />
-              <span>ONLINE</span>
-            </div>
-            <span className="text-white/10">|</span>
-            <span>v2.1</span>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen flex flex-col">
+      {/* Pixel Art Background Scenery */}
+      <div className="pixel-scenery">
+        <div className="pixel-stars" />
+        <div className="pixel-sun" />
+        <div className="pixel-horizon" />
+      </div>
 
-      {/* Main Content */}
-      <main className="flex-grow max-w-6xl w-full mx-auto px-8 py-6 flex flex-col lg:flex-row gap-6 overflow-hidden">
-
-        {/* Left Column */}
-        <div className="w-full lg:w-[63%] flex flex-col gap-6 h-full">
-
-          {/* Active Process */}
-          <div className="panel flex-[3] flex flex-col overflow-hidden">
-            <div className="panel-header">
+      {/* Main Content - Above scenery */}
+      <div className="relative z-10 flex flex-col flex-grow p-4 pb-16">
+        {/* Header */}
+        <header className="container mx-auto mb-4">
+          <div className="pixel-panel border-b-8">
+            <div className="px-4 py-3 flex flex-col sm:flex-row justify-between items-center">
               <div className="flex items-center gap-3">
-                <Cpu className="w-4 h-4 text-matrix/50" />
-                <span className="text-xs">Active Process</span>
+                <Terminal className="w-6 h-6 text-secondary" />
+                <h1 className="text-lg sm:text-xl pixel-title text-pixel">
+                  &gt;_ A.I. DETECTOR <span className="text-xs text-muted">v.1.0</span>
+                </h1>
               </div>
-              <span className="text-white/25 text-xs">Neural Engine</span>
+              <div className="text-[10px] mt-2 sm:mt-0 text-pixel">
+                <span className="text-success">● SYSTEM STATUS: OK</span>
+              </div>
             </div>
-            
-            <div className="panel-content flex-grow flex flex-col md:flex-row gap-6 overflow-hidden">
-              {/* Preview */}
-              <div className="w-full md:w-1/2 flex flex-col">
-                <div className="flex-grow relative bg-black/50 border border-white/[0.04] rounded flex items-center justify-center min-h-[200px] overflow-hidden">
-                  {currentImage ? (
-                    <>
-                      <img 
-                        src={currentImage} 
-                        alt="Target" 
-                        className="max-w-full max-h-full object-contain"
-                      />
-                      {phase === "scanning" && (
-                        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                          <div className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-matrix to-transparent animate-scan opacity-70" />
-                        </div>
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
-                        <p className="text-xs text-white/60 truncate">{currentFileName}</p>
+          </div>
+        </header>
+
+        {/* Intro */}
+        <div className="text-center max-w-4xl mx-auto mb-4 px-4">
+          <h2 className="text-sm pixel-title text-pixel mb-1">LOAD IMAGE FILE TO START!</h2>
+          <p className="text-muted text-[10px] text-pixel">
+            アーティファクトをスキャンし、AI生成の疑惑を判定するぞ！
+          </p>
+        </div>
+
+        {/* Main Content */}
+        <main className="flex-grow container mx-auto px-4 flex flex-col">
+          <div className="flex flex-col lg:flex-row gap-4 flex-grow">
+
+            {/* LEFT PANEL (2/3) */}
+            <div className="w-full lg:w-2/3 flex flex-col gap-4">
+              {/* Active Screen / Logs */}
+              <div className="pixel-panel p-4 flex-grow flex flex-col">
+                <h3 className="text-[10px] panel-header text-pixel text-primary">
+                  ACTIVE SCREEN // LOGS
+                </h3>
+
+                <div className="flex flex-col md:flex-row gap-4 flex-grow">
+                  {/* Active Image Preview */}
+                  <div className="w-full md:w-1/2 flex flex-col">
+                    {currentImage ? (
+                      <div className={`active-image-container w-full h-48 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
+                        <img
+                          src={currentImage}
+                          alt="Active Scan"
+                          className="max-w-full max-h-full object-contain"
+                        />
                       </div>
-                    </>
-                  ) : (
-                    <div className="text-center text-white/25">
-                      <Scan className="w-12 h-12 mx-auto mb-4 opacity-40" />
-                      <p className="text-xs tracking-wider">AWAITING INPUT</p>
+                    ) : (
+                      <div className="scan-placeholder w-full h-48 flex flex-col items-center justify-center">
+                        <Ghost className="w-10 h-10 text-muted mb-2 opacity-50" />
+                        <p className="text-muted text-pixel text-[10px]">AWAITING INPUT</p>
+                      </div>
+                    )}
+                    {currentFileName && (
+                      <p className="text-[8px] text-muted mt-2 truncate text-center text-pixel">{currentFileName}</p>
+                    )}
+                  </div>
+
+                  {/* Console Log */}
+                  <div className="w-full md:w-1/2 flex-grow">
+                    <div
+                      ref={logContainerRef}
+                      className="console-log h-48 text-pixel"
+                    >
+                      {logs.map((log, i) => (
+                        <div key={i} className={getLogClass(log.type)}>
+                          &gt; {log.message}
+                        </div>
+                      ))}
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Final Judgement */}
+              <div className="pixel-panel p-4">
+                <h3 className="text-[10px] panel-header text-pixel text-primary">
+                  FINAL JUDGEMENT
+                </h3>
+
+                {/* Processing Status */}
+                {batchProgress.total > 0 && (
+                  <div className="flex justify-between items-center mb-3 text-[10px] text-pixel">
+                    <span className="text-muted">
+                      BATCH: {batchProgress.current} / {batchProgress.total}
+                    </span>
+                    <span className="text-muted">TIME: {elapsedTime.toFixed(2)}s</span>
+                  </div>
+                )}
+
+                {/* Verdict */}
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-sm text-muted text-pixel">VERDICT:</span>
+                  <span className={`verdict-display ${verdictDisplay.className}`}>
+                    {verdictDisplay.text}
+                  </span>
+                </div>
+
+                {/* AI HP Bar */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[10px] mb-1 text-pixel">
+                    <span className="text-danger">AI THREAT LEVEL</span>
+                    <span className="text-danger">{result?.aiScore ?? 0}%</span>
+                  </div>
+                  <div className="hp-bar-bg">
+                    <div
+                      className="hp-bar-fill"
+                      style={{
+                        width: `${result?.aiScore ?? 0}%`,
+                        backgroundColor: "var(--danger)"
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Human HP Bar */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-[10px] mb-1 text-pixel">
+                    <span className="text-success">HUMAN ARTISTRY</span>
+                    <span className="text-success">{result?.humanScore ?? 0}%</span>
+                  </div>
+                  <div className="hp-bar-bg">
+                    <div
+                      className="hp-bar-fill"
+                      style={{
+                        width: `${result?.humanScore ?? 0}%`,
+                        backgroundColor: "var(--success)"
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-[10px] border-t-2 border-primary pt-3 text-pixel">
+                  <div className="col-span-2 text-center text-primary border-b border-muted/30 pb-1 mb-1">
+                    <span className="font-bold">ANALYSIS METRICS</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-primary">MODEL:</span>
+                    <span className="text-secondary">ViT-DETECT</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-primary">CONFIDENCE:</span>
+                    <span className="text-muted">{result?.confidence ? `${result.confidence}%` : "--"}</span>
+                  </div>
+                  <div className="col-span-2 flex justify-between">
+                    <span className="text-primary">ARTIFACTS:</span>
+                    <span className="text-muted text-right text-[8px]">{result?.artifacts || "PENDING..."}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT PANEL (1/3) */}
+            <div className="w-full lg:w-1/3 flex flex-col gap-4">
+
+              {/* Queue */}
+              <div className="pixel-panel p-4 flex-grow">
+                <h3 className="text-[10px] panel-header text-pixel text-primary flex justify-between">
+                  ARTIFACT QUEUE <span>({queue.length}/10)</span>
+                </h3>
+                <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
+                  {queue.length === 0 ? (
+                    <p className="text-muted text-[10px] italic text-pixel">QUEUE IS EMPTY. INSERT COIN.</p>
+                  ) : (
+                    queue.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`queue-item relative group ${
+                          item.status === "processing" ? "active" :
+                          item.status === "ai" ? "result-ai" :
+                          item.status === "human" ? "result-human" : ""
+                        }`}
+                      >
+                        <img
+                          src={item.preview}
+                          alt={item.name}
+                          className="w-10 h-10 object-cover opacity-80"
+                        />
+                        <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[6px] text-white p-1 text-pixel transition-opacity">
+                          {item.name.substring(0, 8)}...
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
 
-              {/* Log */}
-              <div className="w-full md:w-1/2 flex flex-col min-h-[200px]">
-                <div className="text-[10px] tracking-[0.2em] text-white/35 mb-3 uppercase">Analysis Log</div>
+              {/* Upload Zone + Buttons */}
+              <div className="flex flex-col gap-3">
+                {/* Upload Zone */}
                 <div
-                  ref={logContainerRef}
-                  className="flex-grow overflow-y-auto bg-black/40 border border-white/[0.04] rounded p-4 font-mono text-xs leading-relaxed space-y-1.5"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  className={`pixel-panel p-5 flex flex-col items-center justify-center upload-zone cursor-pointer min-h-[120px] ${
+                    isDragging ? "dragging" : ""
+                  }`}
                 >
-                  {logs.map((log, i) => (
-                    <div key={i} className={getLogClass(log.type)}>
-                      {log.message}
-                    </div>
-                  ))}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileSelect}
+                  />
+                  <Gamepad2 className="w-10 h-10 mb-2 text-secondary" />
+                  <p className="text-sm text-pixel">PULL FILES</p>
+                  <p className="text-[8px] text-muted mt-1 text-pixel">DRAG & DROP OR PUSH BUTTON</p>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={startBatchScan}
+                    disabled={!canExecute}
+                    className="flex-grow pixel-btn flex items-center justify-center gap-2"
+                  >
+                    <Play className="w-4 h-4" />
+                    START SCAN!
+                  </button>
+                  <button
+                    onClick={resetUI}
+                    disabled={isScanning}
+                    className="pixel-btn pixel-btn-danger w-12 flex items-center justify-center"
+                    title="キューをリセット"
+                  >
+                    <Bomb className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>
           </div>
+        </main>
+      </div>
 
-          {/* Verdict Panel */}
-          <div className="panel flex-[2] flex flex-col">
-            <div className="panel-header">
-              <span className="text-xs">最終評価 & メトリクス</span>
-              <div className="flex gap-6 text-xs">
-                <span>BATCH: <span className="text-matrix">{batchProgress.current}/{batchProgress.total || "—"}</span></span>
-                <span>TIME: <span className="text-matrix">{elapsedTime.toFixed(2)}s</span></span>
-              </div>
-            </div>
-            
-            <div className="panel-content flex-grow flex flex-col justify-between">
-              {/* Classification */}
-              <div className="flex items-end gap-8 mb-5">
-                <div className="text-[10px] tracking-wider text-white/40 leading-relaxed uppercase">FINAL<br/>CLASSIFICATION</div>
-                <div className={`verdict-display ${result?.isAI ? 'verdict-ai' : result ? 'verdict-human' : 'text-white/15'}`}>
-                  {result?.verdict || "—"}
-                </div>
-              </div>
-
-              {/* Progress Bars */}
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs mb-2">
-                    <span className="text-white/45">ARTIFICIAL INTELLIGENCE</span>
-                    <span className={result?.aiScore ? "text-ai" : "text-white/25"}>{result?.aiScore ?? 0}%</span>
-                  </div>
-                  <div className="progress-track">
-                    <div 
-                      className="progress-fill bg-gradient-to-r from-ai/60 to-ai"
-                      style={{ width: `${result?.aiScore ?? 0}%` }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-xs mb-2">
-                    <span className="text-white/45">HUMAN CREATION</span>
-                    <span className={result?.humanScore ? "text-human" : "text-white/25"}>{result?.humanScore ?? 0}%</span>
-                  </div>
-                  <div className="progress-track">
-                    <div 
-                      className="progress-fill bg-gradient-to-r from-human/60 to-human"
-                      style={{ width: `${result?.humanScore ?? 0}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-3 gap-6 pt-5 mt-5 border-t border-white/[0.04]">
-                <div>
-                  <div className="metric-label">使用モデル</div>
-                  <div className="metric-value">ViT-Detector</div>
-                </div>
-                <div>
-                  <div className="metric-label">信頼レベル</div>
-                  <div className="metric-value text-matrix">{result?.confidence ? `${result.confidence}%` : "—"}</div>
-                </div>
-                <div>
-                  <div className="metric-label">処理時間</div>
-                  <div className="metric-value">{result?.processingTime ? `${result.processingTime.toFixed(2)}s` : "—"}</div>
-                </div>
-                <div className="col-span-3 mt-1">
-                  <div className="metric-label mb-1.5">検出された特徴</div>
-                  <div className="text-xs text-white/45 leading-relaxed">
-                    {result?.artifacts?.[0] || "待機中..."}
-                  </div>
-                </div>
-              </div>
-            </div>
+      {/* Fixed Footer - Bottom edge extends beyond screen */}
+      <footer className="fixed bottom-0 left-0 right-0 z-50 translate-y-[4px]">
+        <div className="container mx-auto px-4">
+          <div className="pixel-footer-bar px-4 py-3 text-center">
+            <p className="text-[8px] text-muted text-pixel">
+              &copy; 2024 PIXEL FORENSICS // POWERED BY ViT-DETECT // HIGH SCORE: 99999
+            </p>
           </div>
         </div>
-
-        {/* Right Column */}
-        <div className="w-full lg:w-[37%] flex flex-col gap-6 h-full">
-
-          {/* Queue */}
-          <div className="panel flex-[3] flex flex-col overflow-hidden">
-            <div className="panel-header">
-              <span className="text-xs">解析キュー</span>
-              <span className="text-white/35 text-xs">{queue.length}/10</span>
-            </div>
-            
-            <div className="panel-content flex-grow overflow-y-auto space-y-2">
-              {queue.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-white/25 text-xs">
-                  <div className="text-center">
-                    <div className="w-10 h-10 rounded-full border border-white/10 mx-auto mb-4 flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
-                    </div>
-                    キュー内にファイルがありません
-                  </div>
-                </div>
-              ) : (
-                queue.map((item) => (
-                  <div key={item.id} className={`queue-item ${item.status}`}>
-                    <div className={`data-indicator flex-shrink-0 ${
-                      item.status === "processing" ? "bg-matrix" :
-                      item.status === "ai" ? "bg-ai" :
-                      item.status === "human" ? "bg-human" : "bg-white/20"
-                    }`} />
-                    <span className="truncate flex-grow text-white/55 text-xs">{item.name}</span>
-                    <span className={`flex-shrink-0 text-[10px] tracking-wider ${
-                      item.status === "processing" ? "text-matrix" :
-                      item.status === "ai" ? "text-ai" :
-                      item.status === "human" ? "text-human" : "text-white/35"
-                    }`}>
-                      {item.status.toUpperCase()}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Upload - matches Verdict panel height */}
-          <div className="panel flex-[2] flex flex-col">
-            <div className="panel-content flex-grow flex flex-col justify-between">
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                className={`upload-zone flex-grow flex flex-col items-center justify-center cursor-pointer ${
-                  isDragging ? "dragging" : ""
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  accept="image/*"
-                  multiple
-                  onChange={handleFileSelect}
-                />
-                <Upload className={`w-8 h-8 mb-3 ${isDragging ? "text-matrix" : "text-white/25"}`} />
-                <p className="text-xs text-white/45">画像をドロップまたはクリック</p>
-              </div>
-
-              <div className="flex gap-4 mt-5">
-                <button
-                  onClick={startBatchScan}
-                  disabled={!canExecute}
-                  className={`btn-primary flex-grow flex items-center justify-center gap-3 py-3 ${canExecute ? "active" : ""}`}
-                >
-                  <Play className="w-3.5 h-3.5" />
-                  <span>EXECUTE</span>
-                </button>
-                <button
-                  onClick={resetUI}
-                  disabled={isScanning}
-                  className="w-12 h-12 rounded border border-white/10 text-white/35 hover:border-ai/40 hover:text-ai transition-all disabled:opacity-30 flex items-center justify-center"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
+      </footer>
     </div>
   );
 }
