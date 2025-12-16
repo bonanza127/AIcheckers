@@ -3,6 +3,10 @@
 ## 概要
 アニメ絵特化のAI生成画像判別ツール。日本市場向け。
 
+## 本番URL
+- **フロントエンド**: https://aicheckers.net (Vercel)
+- **API**: https://api.aicheckers.net (Cloudflare Tunnel → localhost:8000)
+
 ## 構成
 
 ```
@@ -10,7 +14,9 @@ aicheckers/
 ├── src/app/           # Next.js フロントエンド
 │   ├── page.tsx       # メインUI
 │   ├── globals.css    # スタイル
-│   └── layout.tsx
+│   ├── layout.tsx     # メタタグ/OGP
+│   ├── sitemap.ts     # サイトマップ自動生成
+│   └── robots.ts      # robots.txt自動生成
 ├── backend/           # FastAPI バックエンド
 │   ├── main.py        # APIサーバー
 │   ├── venv/          # Python仮想環境
@@ -28,14 +34,23 @@ systemctl --user status aicheckers-backend
 # 再起動
 systemctl --user restart aicheckers-backend
 
-# 停止
-systemctl --user stop aicheckers-backend
-
 # ログ確認
 journalctl --user -u aicheckers-backend -f
 ```
 
-### フロントエンド（ポート3000）
+### Cloudflare Tunnel（systemdサービス / 自動起動）
+```bash
+# 状態確認
+systemctl --user status cloudflared
+
+# 再起動
+systemctl --user restart cloudflared
+
+# ログ確認
+journalctl --user -u cloudflared -f
+```
+
+### フロントエンド（ローカル開発）
 ```bash
 cd ~/aicheckers
 npm run dev
