@@ -146,48 +146,49 @@ export default function Home() {
     setResult(null);
 
     addLog(`解析開始: [${index + 1}/${queue.length}] ファイル: ${file.name}...`, "heading");
-    addLog("NEURALNET に画像データを送信中...", "process");
+    addLog("BACKEND API に画像データを送信中...", "process");
 
-    await new Promise(r => setTimeout(r, 500));
-    addLog("> STAGE 1: 特徴抽出", "detail");
+    // API呼び出し
+    const formData = new FormData();
+    formData.append("file", file);
 
-    await new Promise(r => setTimeout(r, 700));
-    addLog("> STAGE 2: アーティファクト検出", "detail");
-
-    const hasAnomaly = Math.random() < 0.3;
-    if (hasAnomaly) {
-      addLog("> * 高周波ノイズを検出", "detail");
-    }
-
-    await new Promise(r => setTimeout(r, 500));
-    addLog("> STAGE 3: 分類処理", "detail");
-
-    await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
-
-    let aiProbability: number;
+    let aiScore: number;
+    let humanScore: number;
+    let isAI: boolean;
+    let processingTime: number;
     let artifacts: string;
-    const randomOutcome = Math.random();
 
-    if (randomOutcome < 0.4) {
-      aiProbability = 85 + Math.random() * 14;
-      artifacts = "手の異常、テクスチャの繰り返しを検出";
-    } else if (randomOutcome < 0.6) {
-      aiProbability = 50 + Math.random() * 20;
-      artifacts = "エッジノイズ、境界の不整合を確認";
-    } else {
-      aiProbability = 5 + Math.random() * 25;
-      artifacts = "有機的な筆致、AI痕跡なし";
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/analyze`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      addLog("> 推論完了", "detail");
+
+      aiScore = Math.round(data.ai_score);
+      humanScore = Math.round(data.human_score);
+      isAI = data.is_ai;
+      processingTime = data.processing_time;
+      artifacts = isAI
+        ? "AI生成パターンを検出"
+        : "有機的な筆致、AI痕跡なし";
+
+    } catch (error) {
+      addLog(`ERROR: API接続失敗 - ${error}`, "error");
+      // フォールバック: ダミー値
+      aiScore = 50;
+      humanScore = 50;
+      isAI = false;
+      processingTime = (Date.now() - fileStartTime) / 1000;
+      artifacts = "API接続エラー";
     }
-
-    if (hasAnomaly) {
-      aiProbability = Math.min(99, aiProbability + 15);
-      artifacts += " [フィルタ +15%]";
-    }
-
-    const aiScore = Math.round(Math.min(99, Math.max(1, aiProbability)));
-    const humanScore = 100 - aiScore;
-    const isAI = aiScore > 50;
-    const processingTime = (Date.now() - fileStartTime) / 1000;
 
     setQueue(prev => prev.map((item, i) =>
       i === index ? { ...item, status: isAI ? "ai" as const : "human" as const } : item
