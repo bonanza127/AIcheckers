@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Noto_Sans_JP } from "next/font/google";
+import { Noto_Serif_JP } from "next/font/google";
 import { Share_Tech_Mono } from "next/font/google";
 import "./globals.css";
 
-const notoSansJP = Noto_Sans_JP({
-  variable: "--font-noto-sans-jp",
+const notoSerifJP = Noto_Serif_JP({
+  variable: "--font-noto-serif-jp",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const shareTechMono = Share_Tech_Mono({
@@ -16,7 +16,7 @@ const shareTechMono = Share_Tech_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SYSTEM // ARCHIVE:AI.RDT - AI Image Detector",
+  title: "AI Illustration Checker - アニメイラスト判別",
   description: "アニメ・イラストがAI生成か人間の作品かを判別するサービス",
 };
 
@@ -27,9 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body
-        className={`${notoSansJP.variable} ${shareTechMono.variable}`}
-      >
+      <body className={`${notoSerifJP.variable} ${shareTechMono.variable}`}>
         {children}
       </body>
     </html>
