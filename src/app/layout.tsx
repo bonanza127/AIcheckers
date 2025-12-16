@@ -1,22 +1,22 @@
 import type { Metadata } from "next";
-import { Press_Start_2P, Noto_Sans_JP } from "next/font/google";
+import { Inter, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 
-const pressStart2P = Press_Start_2P({
-  variable: "--font-press-start-2p",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["400"],
+  weight: ["300", "400", "500", "600", "700", "800"],
 });
 
 const notoSansJP = Noto_Sans_JP({
   variable: "--font-noto-sans-jp",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "AI イラストチェッカー | Pixel Art Edition",
-  description: "アニメ・イラストがAI生成か人間の作品かを判別するサービス",
+  title: "AI Digital Forensics Console",
+  description: "AI生成画像識別コンソール - 最先端のマルチモーダルAIで画像の組成を解析",
 };
 
 export default function RootLayout({
@@ -26,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className={`${pressStart2P.variable} ${notoSansJP.variable}`}>
+      <body className={`${inter.variable} ${notoSansJP.variable} antialiased`}>
         {children}
       </body>
     </html>
