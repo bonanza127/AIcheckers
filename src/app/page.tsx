@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, EyeOff, Share2 } from "lucide-react";
+import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, EyeOff } from "lucide-react";
 
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
@@ -470,9 +470,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Fingerprint className="w-8 h-8 text-accent" />
-            <h1 className="text-2xl font-bold tracking-tight">
-              AI checkers <span className="text-sm font-light text-muted">// AI-art-integrity v4.2</span>
-            </h1>
+            <h2 className="text-2xl font-bold tracking-tight">
+              AIチェッカー<span className="text-sm font-light text-muted">//AI or not AI</span>
+            </h2>
           </div>
           <div className="text-sm font-light text-muted hidden sm:block">
             SYSTEM STATUS: {backendOnline === null ? (
@@ -575,11 +575,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <button
                   onClick={shareToX}
                   disabled={!result}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors"
+                  className="p-2 bg-black hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md transition-colors"
                   title="Xで結果を共有"
                 >
-                  <Share2 className="w-4 h-4" />
-                  <span>共有</span>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
                 </button>
               </div>
 
