@@ -567,22 +567,20 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             </div>
 
             {/* Final Judgement */}
-            <div className="card-panel p-6">
-              <div className="flex justify-between items-center border-b-2 border-accent pb-2 mb-4">
-                <h3 className="text-xl font-bold uppercase tracking-widest">
-                  最終判定
-                </h3>
-                <button
-                  onClick={shareToX}
-                  disabled={!result}
-                  className="p-2 bg-black hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md transition-colors"
-                  title="Xで結果を共有"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                </button>
-              </div>
+            <div className="card-panel p-6 relative">
+              <button
+                onClick={shareToX}
+                disabled={!result}
+                className="absolute top-3 right-3 p-1 text-muted hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Xで結果を共有"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+              </button>
+              <h3 className="text-xl font-bold border-b-2 border-accent pb-2 mb-4 uppercase tracking-widest">
+                最終判定
+              </h3>
 
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
