@@ -471,7 +471,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
           <div className="flex items-center gap-3">
             <Fingerprint className="w-8 h-8 text-accent" />
             <h2 className="text-2xl font-bold tracking-tight">
-              AIチェッカー<span className="text-sm font-light text-muted">//AI or not AI</span>
+              AIチェッカー<span className="text-sm font-light text-muted">　//　AI-art-integrity V4.2</span>
             </h2>
           </div>
           <div className="text-sm font-light text-muted hidden sm:block">
@@ -585,7 +585,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">Mirror_of_Ra-Vit V1.02</span></span>
+                <span>使用モデル: <span className="text-accent font-bold">Mirror_of_Ra-Vit V1.1</span></span>
                 <span>ロジック: <span className="text-dim font-bold">Anime-Specialized V1.0</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
