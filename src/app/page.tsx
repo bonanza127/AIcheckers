@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, EyeOff } from "lucide-react";
+import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, EyeOff, Share2 } from "lucide-react";
 
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
@@ -376,6 +376,28 @@ export default function Home() {
     }
   };
 
+  // X（Twitter）に結果を共有
+  const shareToX = () => {
+    if (!result) return;
+
+    const verdict = result.aiScore >= 80
+      ? "🤖 AI DETECTED"
+      : result.aiScore >= 50
+        ? "❓ UNKNOWN"
+        : "✅ HUMAN CONFIRMED";
+
+    const text = `【AI判定結果】
+${verdict}
+AI Possibility: ${result.aiScore.toFixed(1)}%
+
+#AIイラスト判定 #aicheckers`;
+
+    const url = "https://aicheckers.net";
+    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+
+    window.open(twitterUrl, "_blank", "width=550,height=420");
+  };
+
   const canExecute = queue.length > 0 && !isScanning;
 
   const getLogClass = (type: LogEntry["type"]) => {
@@ -468,7 +490,7 @@ export default function Home() {
       <main className="flex-grow container mx-auto px-4 py-8">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
-          <h2 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した日本発のAIイラストチェッカー</h2>
+          <h1 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した日本発のAIイラストチェッカー</h1>
           <p className="text-muted text-lg">
             AIが生成したアニメ画像を学習し、ファインチューニングしたViTが生成画像の痕跡を解析。<br />
             人間的な筆致の有無を検出し、生成画像を高精度で判別します。
@@ -546,9 +568,20 @@ export default function Home() {
 
             {/* Final Judgement */}
             <div className="card-panel p-6">
-              <h3 className="text-xl font-bold border-b-2 border-accent pb-2 mb-4 uppercase tracking-widest">
-                最終判定
-              </h3>
+              <div className="flex justify-between items-center border-b-2 border-accent pb-2 mb-4">
+                <h3 className="text-xl font-bold uppercase tracking-widest">
+                  最終判定
+                </h3>
+                <button
+                  onClick={shareToX}
+                  disabled={!result}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors"
+                  title="Xで結果を共有"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>共有</span>
+                </button>
+              </div>
 
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">

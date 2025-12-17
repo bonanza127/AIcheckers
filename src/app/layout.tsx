@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   keywords: ["AI判定", "AI画像検出", "イラスト判定", "アニメ", "生成AI", "画像解析"],
   authors: [{ name: "AI Checkers" }],
   openGraph: {
-    title: "AI Checkers - AI生成画像判定ツール",
+    title: "AIイラスト判定 | 無料でAI絵を見分けるチェッカー",
     description: "アニメ・イラスト特化のAI画像判定。画像をアップロードするだけで高精度判定。",
     url: "https://aicheckers.net",
     siteName: "AI Checkers",
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "AI Checkers - AI生成画像判定ツール",
+    title: "AIイラスト判定 | 無料でAI絵を見分けるチェッカー",
     description: "アニメ・イラスト特化のAI画像判定。画像をアップロードするだけで高精度判定。",
   },
   robots: {
@@ -39,6 +39,30 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://aicheckers.net"),
 };
 
+// 構造化データ（JSON-LD）
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "AI Checkers",
+  "alternateName": "AIイラストチェッカー",
+  "description": "アニメ・イラスト特化のAI画像判定ツール。画像をアップロードするだけで、AIが生成した画像か人間が描いた画像かを高精度で判定します。",
+  "url": "https://aicheckers.net",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Web",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "JPY"
+  },
+  "featureList": [
+    "AI生成画像の判定",
+    "アニメ・イラスト特化",
+    "Attention Map可視化",
+    "バッチ処理対応"
+  ],
+  "inLanguage": "ja"
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -46,6 +70,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className={`${inter.variable} ${notoSansJP.variable} antialiased`}>
         {children}
       </body>
