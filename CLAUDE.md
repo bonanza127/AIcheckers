@@ -104,3 +104,52 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ## ブランチ管理
 - **main**: 本番ブランチ。Vercelに自動デプロイ
 - **backup/plan-c-pixel-art-sunset**: デザイン案C（ピクセルアート夕焼けテーマ）
+
+---
+
+## 今後の自分への申し送り（2024-12-17更新）
+
+### 現在の状態
+- **ヘッダー**: `AIチェッカー // AI-art-integrity V4.2`
+- **モデル表示名**: `Mirror_of_Ra-Vit V1.1`（実体はlegekka）
+- **判定ロジック**: 80%以上=AI、50-80%=UNKNOWN、50%未満=HUMAN
+
+### 本日実装した機能
+1. **Attention Map可視化**: ViTの注意マップをヒートマップとしてオーバーレイ表示
+2. **バックエンド接続状態表示**: ONLINE/OFFLINE をヘッダーに表示
+3. **X共有ボタン**: 最終判定ボックス右上、ホバーでぼんやり光る
+4. **SEO改善**:
+   - JSON-LD構造化データ（WebApplication）
+   - 動的OGP画像生成（`opengraph-image.tsx`）
+   - H1タグ最適化
+5. **リアルな分析ログ**: スキャン中にステージ別ログを表示
+
+### 既知の課題
+- **legekkaモデル（2023年）は最新AIに弱い可能性あり**
+  - SD系（Animagine, Waifu Diffusion）は99%以上で検出可能（テスト済み）
+  - NovelAI V4、FLUX等の2024年モデルは未検証
+- **AniXplore移行を検討中**
+  - F1スコア0.9999の最新モデル
+  - VRAM 8-16GB必要（現GTX 1660では厳しい）
+  - Google Colabで動かす案あり
+
+### SEO状況
+- sitemap.xml、robots.txt設置済み
+- Google Search Console未登録（要対応）
+- 検索上位を狙うならコンテンツ（ブログ記事）追加が有効
+
+### バックエンド注意点
+- `attn_implementation="eager"` でモデルロードしないとAttention Map取れない
+- matplotlib必須（ヒートマップ生成用）
+
+### ファイル構成追加
+```
+src/app/
+├── opengraph-image.tsx  # 動的OGP画像生成
+```
+
+### 今後やるかもしれないこと
+- [ ] AniXploreへのモデル移行（Colab or クラウドGPU）
+- [ ] ブログ/解説ページ追加（SEO用）
+- [ ] 判定結果の画像付きシェア機能
+- [ ] ユーザー報告機能（誤判定フィードバック収集）
