@@ -5,13 +5,19 @@ legekka/AI-Anime-Image-Detector-ViT を使用したAI画像判定API
 
 import io
 import time
+import base64
 from contextlib import asynccontextmanager
 
 import torch
+import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from transformers import AutoModelForImageClassification, AutoImageProcessor
+import matplotlib
+matplotlib.use('Agg')  # GUIなしで使用
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 
 # グローバル変数
@@ -32,7 +38,10 @@ async def lifespan(app: FastAPI):
     print(f"Using device: {device}")
 
     processor = AutoImageProcessor.from_pretrained(MODEL_NAME)
-    model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
+    model = AutoModelForImageClassification.from_pretrained(
+        MODEL_NAME,
+        attn_implementation="eager"  # Attention出力を有効にするため
+    )
     model.to(device)
     model.eval()
 
@@ -55,11 +64,60 @@ app = FastAPI(
 # CORS設定（フロントエンドからのアクセス許可）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "https://aicheckers.net"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def generate_attention_heatmap(attentions, original_image):
+    """
+    Attention weightsからヒートマップを生成
+    
+    Args:
+        attentions: モデルのattention outputs
+        original_image: 元のPIL Image
+    
+    Returns:
+        Base64エンコードされたヒートマップ画像
+    """
+    # 最後の層のattentionを取得 (shape: [batch, heads, seq_len, seq_len])
+    last_attention = attentions[-1]
+    
+    # 全ヘッドの平均を取る
+    attention_avg = last_attention.mean(dim=1)[0]  # [seq_len, seq_len]
+    
+    # CLSトークン（index 0）から各パッチへのattentionを取得
+    cls_attention = attention_avg[0, 1:]  # CLSトークン自身を除く
+    
+    # 14x14のグリッドにリシェイプ（ViT-base: 224/16 = 14）
+    num_patches = int(np.sqrt(cls_attention.shape[0]))
+    attention_map = cls_attention.reshape(num_patches, num_patches).cpu().numpy()
+    
+    # 正規化
+    attention_map = (attention_map - attention_map.min()) / (attention_map.max() - attention_map.min() + 1e-8)
+    
+    # 元の画像サイズにリサイズ
+    original_size = original_image.size  # (width, height)
+    attention_resized = np.array(Image.fromarray((attention_map * 255).astype(np.uint8)).resize(
+        original_size, Image.BILINEAR
+    )) / 255.0
+    
+    # ヒートマップを作成（元画像にオーバーレイ）
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    ax.imshow(original_image)
+    ax.imshow(attention_resized, cmap='jet', alpha=0.5)
+    ax.axis('off')
+    plt.tight_layout(pad=0)
+    
+    # Base64エンコード
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=100)
+    plt.close(fig)
+    buf.seek(0)
+    
+    return base64.b64encode(buf.getvalue()).decode('utf-8')
 
 
 @app.get("/")
@@ -87,6 +145,7 @@ async def analyze_image(file: UploadFile = File(...)):
         - ai_score: AI生成の確信度 (0-100)
         - human_score: 人間作の確信度 (0-100)
         - processing_time: 処理時間(秒)
+        - attention_map: Attention Mapのヒートマップ (Base64)
     """
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -106,16 +165,19 @@ async def analyze_image(file: UploadFile = File(...)):
         inputs = processor(images=image, return_tensors="pt")
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
-        # 推論
+        # 推論（attention出力も取得）
         with torch.no_grad():
-            outputs = model(**inputs)
+            outputs = model(**inputs, output_attentions=True)
             logits = outputs.logits
             probabilities = torch.nn.functional.softmax(logits, dim=1)[0]
+            attentions = outputs.attentions
+
+        # Attention Mapヒートマップを生成
+        attention_heatmap = generate_attention_heatmap(attentions, image)
 
         processing_time = time.time() - start_time
 
         # ラベルマッピング（legekkaモデルの場合）
-        # id2label: {0: "ai", 1: "human"} or similar
         id2label = model.config.id2label
 
         # スコア取得
@@ -136,7 +198,8 @@ async def analyze_image(file: UploadFile = File(...)):
             "confidence": round(max(ai_score, human_score), 2),
             "verdict": "AI DETECTED" if is_ai else "HUMAN CONFIRMED",
             "processing_time": round(processing_time, 3),
-            "filename": file.filename
+            "filename": file.filename,
+            "attention_map": attention_heatmap
         }
 
     except Exception as e:

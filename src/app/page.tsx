@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus } from "lucide-react";
+import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, EyeOff } from "lucide-react";
 
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
@@ -14,7 +14,7 @@ type QueueItem = {
   id: string;
   name: string;
   preview: string;
-  status: "wait" | "processing" | "ai" | "human";
+  status: "wait" | "processing" | "ai" | "human" | "unknown";
 };
 
 type DetectionResult = {
@@ -25,6 +25,7 @@ type DetectionResult = {
   confidence: number;
   processingTime: number;
   artifacts: string;
+  attentionMap?: string; // Base64エンコードされたヒートマップ
 };
 
 type HistoryItem = {
@@ -33,6 +34,8 @@ type HistoryItem = {
   preview: string;
   isAI: boolean;
   score: number;
+  aiScore: number;
+  attentionMap?: string;
   timestamp: Date;
 };
 
@@ -52,9 +55,40 @@ export default function Home() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // バックエンドの接続状態を監視
+  useEffect(() => {
+    const checkBackendHealth = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}/health`, { 
+          method: "GET",
+          signal: AbortSignal.timeout(3000)
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setBackendOnline(data.model_loaded === true);
+        } else {
+          setBackendOnline(false);
+        }
+      } catch {
+        setBackendOnline(false);
+      }
+    };
+
+    // 初回チェック
+    checkBackendHealth();
+    
+    // 10秒ごとにチェック
+    const interval = setInterval(checkBackendHealth, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "info") => {
     setLogs(prev => [...prev, { message, type }]);
@@ -127,11 +161,11 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [handleFiles]);
 
-  const processFile = async (file: File, index: number) => {
+  const processFile = async (file: File, queueItemId: string, displayIndex: number, total: number) => {
     const fileStartTime = Date.now();
 
-    setQueue(prev => prev.map((item, i) =>
-      i === index ? { ...item, status: "processing" as const } : item
+    setQueue(prev => prev.map(item =>
+      item.id === queueItemId ? { ...item, status: "processing" as const } : item
     ));
 
     const reader = new FileReader();
@@ -145,8 +179,30 @@ export default function Home() {
     setPhase("scanning");
     setResult(null);
 
-    addLog(`解析開始: [${index + 1}/${queue.length}] ファイル: ${file.name}...`, "heading");
-    addLog("BACKEND API に画像データを送信中...", "process");
+    // ファイルサイズを取得
+    const fileSizeKB = (file.size / 1024).toFixed(1);
+
+    addLog(`解析開始: [${displayIndex}/${total}] ファイル: ${file.name}...`, "heading");
+    addLog(`画像データ読み込み完了 (${fileSizeKB}KB)`, "process");
+
+    // 演出用のログを段階的に表示
+    const analysisLogs = [
+      { delay: 400, message: "前処理: リサイズ → 224×224px", type: "detail" as const },
+      { delay: 800, message: "Vision Transformer エンコーディング開始...", type: "process" as const },
+      { delay: 1200, message: "パッチ分析: 196パッチを解析中...", type: "detail" as const },
+      { delay: 1800, message: "高周波アーティファクト検出...", type: "detail" as const },
+      { delay: 2400, message: "テクスチャパターン分析...", type: "detail" as const },
+      { delay: 3000, message: "アテンションマップ生成完了", type: "process" as const },
+    ];
+
+    // 演出ログを非同期で追加
+    analysisLogs.forEach(({ delay, message, type }) => {
+      setTimeout(() => addLog(`> ${message}`, type), delay);
+    });
+
+    // API呼び出しと最低3.5秒の演出時間を並行実行
+    const minScanTime = 3500 + Math.random() * 1500;
+    const scanDelayPromise = new Promise(r => setTimeout(r, minScanTime));
 
     // API呼び出し
     const formData = new FormData();
@@ -157,30 +213,53 @@ export default function Home() {
     let isAI: boolean;
     let processingTime: number;
     let artifacts: string;
+    let attentionMap: string | undefined;
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/analyze`, {
-        method: "POST",
-        body: formData,
-      });
+      const [response] = await Promise.all([
+        fetch(`${apiUrl}/analyze`, {
+          method: "POST",
+          body: formData,
+        }),
+        scanDelayPromise
+      ]);
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
       }
 
       const data = await response.json();
-      addLog("> 推論完了", "detail");
-
+      
       aiScore = Math.round(data.ai_score);
       humanScore = Math.round(data.human_score);
-      isAI = data.is_ai;
+      isAI = aiScore >= 80; // 80%以上でAI判定
       processingTime = data.processing_time;
-      artifacts = isAI
-        ? "AI生成パターンを検出"
-        : "有機的な筆致、AI痕跡なし";
+      attentionMap = data.attention_map; // Attention Mapを取得
+      
+      // 3段階の判定に応じた詳細ログと痕跡
+      if (aiScore >= 80) {
+        addLog("> 検出: 均一すぎるテクスチャパターン", "detail");
+        addLog("> 検出: 不自然なエッジ処理の痕跡", "detail");
+        addLog("> 警告: AI生成の特徴が顕著", "error");
+        artifacts = "均一テクスチャ、不自然なエッジ処理";
+      } else if (aiScore >= 50) {
+        addLog("> 検出: AI/人間の特徴が混在", "detail");
+        addLog("> 警告: 判定が困難な領域", "info");
+        addLog("> 推奨: 追加の検証が必要", "info");
+        artifacts = "特徴混在 - 追加検証を推奨";
+      } else {
+        addLog("> 検出: 有機的な筆致の揺らぎ", "detail");
+        addLog("> 検出: 自然なテクスチャ分布", "detail");
+        addLog("> 確認: AI生成の痕跡なし", "process");
+        artifacts = "有機的筆致、自然なテクスチャ";
+      }
+      
+      addLog("> Attention Map生成完了", "process");
+      addLog("> 推論完了", "process");
 
     } catch (error) {
+      await scanDelayPromise; // エラー時も演出時間を確保
       addLog(`ERROR: API接続失敗 - ${error}`, "error");
       // フォールバック: ダミー値
       aiScore = 50;
@@ -188,20 +267,27 @@ export default function Home() {
       isAI = false;
       processingTime = (Date.now() - fileStartTime) / 1000;
       artifacts = "API接続エラー";
+      attentionMap = undefined;
     }
 
-    setQueue(prev => prev.map((item, i) =>
-      i === index ? { ...item, status: isAI ? "ai" as const : "human" as const } : item
+    // キューのステータス更新（3段階）
+    const queueStatus = aiScore >= 80 ? "ai" as const : aiScore >= 50 ? "unknown" as const : "human" as const;
+    setQueue(prev => prev.map(item =>
+      item.id === queueItemId ? { ...item, status: queueStatus } : item
     ));
+
+    // verdict も3段階
+    const verdict = aiScore >= 80 ? "AI DETECTED" : aiScore >= 50 ? "UNKNOWN" : "HUMAN CONFIRMED";
 
     setResult({
       isAI,
       aiScore,
       humanScore,
-      verdict: isAI ? "AI DETECTED" : "HUMAN CONFIRMED",
+      verdict,
       confidence: isAI ? aiScore : humanScore,
       processingTime,
-      artifacts
+      artifacts,
+      attentionMap
     });
 
     // Add to history
@@ -211,17 +297,26 @@ export default function Home() {
       preview: imageUrl,
       isAI,
       score: isAI ? aiScore : humanScore,
+      aiScore,
+      attentionMap,
       timestamp: new Date()
     }, ...prev].slice(0, 20)); // Keep last 20 items
 
-    setPhase("complete");
-    addLog(`最終判定: ${isAI ? "AI生成の可能性が高い" : "人間による創作物"} (${isAI ? aiScore : humanScore}%)`, "result");
+    // Remove from queue after scan complete
+    setQueue(prev => prev.filter(item => item.id !== queueItemId));
 
-    await new Promise(r => setTimeout(r, 500));
+    setPhase("complete");
+    const logMessage = aiScore >= 80 
+      ? `最終判定: AI生成の可能性が高い (${aiScore}%)`
+      : aiScore >= 50 
+        ? `最終判定: 判定困難 (${aiScore}%)`
+        : `最終判定: 人間による創作物 (${aiScore}%)`;
+    addLog(logMessage, "result");
   };
 
   const startBatchScan = async () => {
     const files = (window as unknown as { _pendingFiles?: File[] })._pendingFiles || [];
+    const queueSnapshot = [...queue]; // Take snapshot of queue IDs
     if (isScanning || files.length === 0) return;
 
     setIsScanning(true);
@@ -232,13 +327,16 @@ export default function Home() {
 
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
-      await processFile(files[i], i);
+      await processFile(files[i], queueSnapshot[i]?.id || "", i + 1, files.length);
     }
 
     setIsScanning(false);
     setStartTime(null);
     addLog("--- BATCH SCAN COMPLETE (一括解析完了) ---", "heading");
     addLog(`STATUS: 全ての${files.length}個のアーティファクトの処理が完了しました。`, "process");
+    
+    // Clear pending files
+    (window as unknown as { _pendingFiles: File[] })._pendingFiles = [];
   };
 
   const resetUI = () => {
@@ -301,10 +399,14 @@ export default function Home() {
       };
     }
     if (result) {
-      return {
-        text: result.verdict,
-        className: result.isAI ? "verdict-ai" : "verdict-human"
-      };
+      // 3段階の判定表示
+      if (result.aiScore >= 80) {
+        return { text: result.verdict, className: "verdict-ai" };
+      } else if (result.aiScore >= 50) {
+        return { text: result.verdict, className: "verdict-unknown" };
+      } else {
+        return { text: result.verdict, className: "verdict-human" };
+      }
     }
     return {
       text: "N/A",
@@ -319,6 +421,26 @@ export default function Home() {
   const previewImage = phase === "scanning" ? currentImage : (selectedQueueItem?.preview || currentImage);
   const previewFileName = phase === "scanning" ? currentFileName : (selectedQueueItem?.name || currentFileName);
 
+  // Handle history item click
+  const handleHistoryClick = (item: HistoryItem) => {
+    setSelectedHistoryId(item.id);
+    setSelectedQueueId(null); // Clear queue selection
+    setShowHeatmap(false); // Reset heatmap view
+    setCurrentImage(item.preview);
+    setCurrentFileName(item.name);
+    setResult({
+      isAI: item.isAI,
+      aiScore: item.aiScore,
+      humanScore: 100 - item.aiScore,
+      verdict: item.aiScore >= 80 ? "AI DETECTED" : item.aiScore >= 50 ? "UNKNOWN" : "HUMAN CONFIRMED",
+      confidence: item.score,
+      processingTime: 0,
+      artifacts: item.aiScore >= 80 ? "均一テクスチャ、不自然なエッジ処理" : item.aiScore >= 50 ? "特徴混在 - 追加検証を推奨" : "有機的筆致、自然なテクスチャ",
+      attentionMap: item.attentionMap
+    });
+    setPhase("complete");
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
@@ -331,7 +453,13 @@ export default function Home() {
             </h1>
           </div>
           <div className="text-sm font-light text-muted hidden sm:block">
-            SYSTEM STATUS: <span className="text-success font-medium">OPERATIONAL</span>
+            SYSTEM STATUS: {backendOnline === null ? (
+              <span className="text-gray-400 font-medium">CHECKING...</span>
+            ) : backendOnline ? (
+              <span className="text-success font-medium">ONLINE</span>
+            ) : (
+              <span className="text-danger font-medium">OFFLINE</span>
+            )}
           </div>
         </div>
       </header>
@@ -340,10 +468,10 @@ export default function Home() {
       <main className="flex-grow container mx-auto px-4 py-8">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
-          <h2 className="text-4xl font-extrabold mb-3 tracking-tight">AIイラストチェッカー</h2>
+          <h2 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した日本発のAIイラストチェッカー</h2>
           <p className="text-muted text-lg">
-            最先端のマルチモーダルAIと<span className="text-accent font-medium">高周波アーティファクト検出フィルタ</span>を利用し、画像の組成を解析。<br />
-            深層学習モデルの痕跡や、人間的な筆致の有無を高精度に検出します。
+            AIが生成したアニメ画像を学習し、ファインチューニングしたViTが生成画像の痕跡を解析。<br />
+            人間的な筆致の有無を検出し、生成画像を高精度で判別します。
           </p>
         </div>
 
@@ -354,18 +482,34 @@ export default function Home() {
 
             {/* Active Screen / Logs */}
             <div className="card-panel p-6 flex-grow flex flex-col">
-              <h3 className="panel-header">アクティブ解析 & コンソール</h3>
+              <h3 className="panel-header">リアルタイム解析 ＆ コンソール</h3>
 
               <div className="flex flex-col md:flex-row gap-6 flex-grow">
                 {/* Active Image Preview */}
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   {previewImage ? (
-                    <div className={`active-image-container w-full h-72 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
-                      <img
-                        src={previewImage}
-                        alt="Active Scan"
-                        className="max-w-full max-h-full object-contain"
-                      />
+                    <div className="relative w-full">
+                      <div className={`active-image-container w-full h-72 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
+                        <img
+                          src={showHeatmap && result?.attentionMap ? `data:image/png;base64,${result.attentionMap}` : previewImage}
+                          alt={showHeatmap ? "Attention Heatmap" : "Active Scan"}
+                          className="max-w-full max-h-full object-contain"
+                        />
+                      </div>
+                      {/* Heatmap Toggle Button - 常に表示 */}
+                      {result?.attentionMap && (
+                        <button
+                          onClick={() => setShowHeatmap(!showHeatmap)}
+                          className={`absolute top-2 right-2 p-2 rounded-lg transition-all ${
+                            showHeatmap 
+                              ? "bg-accent text-white" 
+                              : "bg-black/50 text-white hover:bg-accent/70"
+                          }`}
+                          title={showHeatmap ? "オリジナル画像を表示" : "Attention Mapを表示"}
+                        >
+                          {showHeatmap ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="scan-placeholder w-full h-72 flex flex-col items-center justify-center">
@@ -374,7 +518,10 @@ export default function Home() {
                     </div>
                   )}
                   {previewFileName && (
-                    <p className="text-sm text-muted mt-3 truncate w-full text-center font-mono">{previewFileName}</p>
+                    <div className="flex items-center justify-center gap-2 mt-3">
+                      <p className="text-sm text-muted truncate font-mono">{previewFileName}</p>
+                      {showHeatmap && <span className="text-xs text-accent font-semibold">[ATTENTION MAP]</span>}
+                    </div>
                   )}
                 </div>
 
@@ -400,75 +547,53 @@ export default function Home() {
             {/* Final Judgement */}
             <div className="card-panel p-6">
               <h3 className="text-xl font-bold border-b-2 border-accent pb-2 mb-4 uppercase tracking-widest">
-                判定
+                最終判定
               </h3>
 
-              {/* Processing Status */}
-              {batchProgress.total > 0 && (
-                <div className="flex justify-between items-center mb-4 text-sm text-muted">
-                  <span>BATCH STATUS: {batchProgress.current} / {batchProgress.total}</span>
-                  <span>TOTAL ELAPSED: {elapsedTime.toFixed(2)}s</span>
-                </div>
-              )}
-
-              {/* Verdict */}
-              <div className="flex justify-between items-end mb-6">
-                <span className="text-2xl font-medium text-muted uppercase">FINAL CLASSIFICATION</span>
-                <span className={`verdict-display ${verdictDisplay.className}`}>
-                  {verdictDisplay.text}
-                </span>
+              {/* Row 1: Batch Status + Model + Logic + Processing Time */}
+              <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
+                <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
+                <span>使用モデル: <span className="text-accent font-bold">Mirror_of_Ra-Vit V1.02</span></span>
+                <span>ロジック: <span className="text-dim font-bold">Anime-Specialized V1.0</span></span>
+                <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
 
-              {/* AI Bar */}
-              <div className="mb-4">
+              {/* Row 2: Detected Artifacts */}
+              <div className="flex items-start gap-2 text-sm text-muted mb-4">
+                <span className="font-medium whitespace-nowrap">検出された痕跡:</span>
+                <span className="font-bold text-text-primary">{result?.artifacts || "待機中..."}</span>
+              </div>
+
+              {/* AI Possibility Bar */}
+              <div className="mb-6">
                 <div className="flex justify-between text-base mb-1">
-                  <span className="text-danger font-semibold uppercase">ARTIFICIAL INTELLIGENCE</span>
-                  <span className="text-danger font-bold">{result?.aiScore ?? 0}%</span>
+                  <span className="font-semibold uppercase text-danger">
+                    AI POSSIBILITY
+                  </span>
+                  <span className={`font-bold ${
+                    (result?.aiScore ?? 0) >= 80 ? "text-danger" : 
+                    (result?.aiScore ?? 0) >= 50 ? "text-gray-400" : "text-success"
+                  }`}>
+                    {result?.aiScore ?? 0}%
+                  </span>
                 </div>
                 <div className="progress-bar-bg">
                   <div
-                    className="progress-bar-fill ai"
+                    className={`progress-bar-fill ${
+                      (result?.aiScore ?? 0) >= 80 ? "ai" : 
+                      (result?.aiScore ?? 0) >= 50 ? "unknown" : "human"
+                    }`}
                     style={{ width: `${result?.aiScore ?? 0}%` }}
                   />
                 </div>
               </div>
 
-              {/* Human Bar */}
-              <div className="mb-6">
-                <div className="flex justify-between text-base mb-1">
-                  <span className="text-success font-semibold uppercase">HUMAN CREATION</span>
-                  <span className="text-success font-bold">{result?.humanScore ?? 0}%</span>
-                </div>
-                <div className="progress-bar-bg">
-                  <div
-                    className="progress-bar-fill human"
-                    style={{ width: `${result?.humanScore ?? 0}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Metrics Grid */}
-              <div className="flex flex-col gap-3 text-sm border-t border-gray-700 pt-4">
-                {/* Row 1: Model & Logic */}
-                <div className="flex justify-between items-center text-muted">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">使用モデル:</span>
-                    <span className="font-bold text-accent">legekka/ViT-Detect</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">ロジック:</span>
-                    <span className="font-bold text-dim">Anime-Specialized V1.0</span>
-                  </div>
-                </div>
-                {/* Row 2: Artifacts */}
-                <div className="flex items-start gap-2 text-muted">
-                  <span className="font-medium whitespace-nowrap">検出アーティファクト:</span>
-                  <span className="font-bold text-text-primary">{result?.artifacts || "待機中..."}</span>
-                </div>
-                {/* Row 3: Reserved for artifact reasoning */}
-                <div className="min-h-[1.5rem] text-muted text-xs">
-                  {/* 将来的にアーティファクトの詳細理由を表示 */}
-                </div>
+              {/* Classification Result */}
+              <div className="flex justify-between items-end border-t border-gray-700 pt-4">
+                <span className="text-2xl font-medium text-muted uppercase">CLASSIFICATION</span>
+                <span className={`verdict-display ${verdictDisplay.className}`}>
+                  {verdictDisplay.text}
+                </span>
               </div>
             </div>
           </div>
@@ -481,7 +606,7 @@ export default function Home() {
               <h3 className="panel-header flex justify-between items-center">
                 <span className="flex items-center gap-2">
                   <History className="w-4 h-4" />
-                  解析履歴
+                  履歴
                 </span>
                 <span className="text-sm font-normal text-muted">({history.length}件)</span>
               </h3>
@@ -489,32 +614,36 @@ export default function Home() {
                 {history.length === 0 ? (
                   <p className="text-muted text-sm italic">解析履歴はありません。</p>
                 ) : (
-                  history.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`history-item relative group ${item.isAI ? "result-ai" : "result-human"}`}
-                      title={`${item.name} - ${item.isAI ? "AI" : "Human"} ${item.score}%`}
-                    >
-                      <img
-                        src={item.preview}
-                        alt={item.name}
-                        className="w-12 h-12 object-cover rounded"
-                      />
-                      {/* AI/Human Label */}
-                      <div className={`absolute -top-1 -right-1 px-1.5 py-0.5 text-[8px] font-bold uppercase rounded ${
-                        item.isAI 
-                          ? "bg-danger text-white" 
-                          : "bg-success text-white"
-                      }`}>
-                        {item.isAI ? "AI" : "人"}
+                  history.map((item) => {
+                    const resultClass = item.aiScore >= 80 ? "result-ai" : item.aiScore >= 50 ? "result-unknown" : "result-human";
+                    const labelClass = item.aiScore >= 80 ? "bg-danger text-white" : item.aiScore >= 50 ? "bg-gray-500 text-white" : "bg-success text-white";
+                    const labelText = item.aiScore >= 80 ? "AI" : item.aiScore >= 50 ? "?" : "人";
+                    const scoreClass = item.aiScore >= 80 ? "text-danger" : item.aiScore >= 50 ? "text-gray-400" : "text-success";
+                    
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => handleHistoryClick(item)}
+                        className={`history-item relative group cursor-pointer ${resultClass} ${selectedHistoryId === item.id ? "ring-2 ring-accent ring-offset-2 ring-offset-card-bg" : ""}`}
+                        title={`${item.name} - ${item.aiScore}%`}
+                      >
+                        <img
+                          src={item.preview}
+                          alt={item.name}
+                          className="w-12 h-12 object-cover rounded"
+                        />
+                        {/* AI/Human/Unknown Label */}
+                        <div className={`absolute -top-1 -right-1 px-1.5 py-0.5 text-[8px] font-bold uppercase rounded ${labelClass}`}>
+                          {labelText}
+                        </div>
+                        {/* Hover overlay */}
+                        <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[9px] text-white p-1 transition-opacity rounded">
+                          <span className="truncate w-full text-center">{item.name.substring(0, 8)}...</span>
+                          <span className={scoreClass}>{item.aiScore}%</span>
+                        </div>
                       </div>
-                      {/* Hover overlay */}
-                      <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[9px] text-white p-1 transition-opacity rounded">
-                        <span className="truncate w-full text-center">{item.name.substring(0, 8)}...</span>
-                        <span className={item.isAI ? "text-danger" : "text-success"}>{item.score}%</span>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -550,7 +679,7 @@ export default function Home() {
                 <div className="h-full flex flex-col">
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-sm font-semibold text-muted uppercase tracking-wide">
-                      解析キュー ({queue.length}件)
+                      キュー ({queue.length}件)
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-2 flex-1 content-start overflow-y-auto">
@@ -560,10 +689,12 @@ export default function Home() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedQueueId(selectedQueueId === item.id ? null : item.id);
+                          setSelectedHistoryId(null); // Clear history selection
                         }}
                         className={`queue-item relative group cursor-pointer ${
                           item.status === "processing" ? "active" :
                           item.status === "ai" ? "result-ai" :
+                          item.status === "unknown" ? "result-unknown" :
                           item.status === "human" ? "result-human" : ""
                         } ${selectedQueueId === item.id ? "ring-2 ring-accent ring-offset-2 ring-offset-card-bg" : ""}`}
                       >

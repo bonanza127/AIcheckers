@@ -100,3 +100,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - legekka: https://huggingface.co/legekka/AI-Anime-Image-Detector-ViT
 - AniXplore論文: https://arxiv.org/html/2504.11015
 - AnimeDL-2M: https://github.com/FlyTweety/AnimeDL2M
+
+## ブランチ管理
+- **main**: 本番ブランチ。Vercelに自動デプロイ
+- **backup/plan-c-pixel-art-sunset**: デザイン案C（ピクセルアート夕焼けテーマ）
