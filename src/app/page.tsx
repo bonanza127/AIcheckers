@@ -5,8 +5,11 @@ import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, Eye
 
 // API URL: 本番環境では api.aicheckers.net を使用
 const getApiUrl = () => {
-  if (typeof window !== "undefined" && window.location.hostname === "aicheckers.net") {
-    return "https://api.aicheckers.net";
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname === "aicheckers.net" || hostname === "www.aicheckers.net" || hostname.endsWith(".vercel.app")) {
+      return "https://api.aicheckers.net";
+    }
   }
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 };
