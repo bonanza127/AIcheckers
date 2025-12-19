@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 backend/venv/
+
+# Large model files
+models/
+
+# Temporary/cache files
+tag_translation_cache.json

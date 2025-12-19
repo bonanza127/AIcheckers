@@ -1,6 +1,6 @@
 """
 AIcheckers Backend API
-legekka/AI-Anime-Image-Detector-ViT を使用したAI画像判定API
+AniXplore (Modal) をメイン、legekka をフォールバックとして使用
 """
 
 import io
@@ -19,21 +19,41 @@ matplotlib.use('Agg')  # GUIなしで使用
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
+# Modal (AniXplore用)
+try:
+    import modal
+    MODAL_AVAILABLE = True
+except ImportError:
+    MODAL_AVAILABLE = False
+    print("Warning: modal not installed, AniXplore will not be available")
+
 
 # グローバル変数
-model = None
+model = None  # legekka (フォールバック用)
 processor = None
 device = None
 
 MODEL_NAME = "legekka/AI-Anime-Image-Detector-ViT"
 
 
+def get_anixplore_detector():
+    """AniXplore detector インスタンスを取得"""
+    if not MODAL_AVAILABLE:
+        return None
+    try:
+        Detector = modal.Cls.from_name("anixplore-detector", "AniXploreDetector")
+        return Detector()
+    except Exception as e:
+        print(f"Failed to get AniXplore detector: {e}")
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """起動時にモデルをロード"""
+    """起動時にlegekkaモデルをロード（フォールバック用）"""
     global model, processor, device
 
-    print(f"Loading model: {MODEL_NAME}")
+    print(f"Loading fallback model: {MODEL_NAME}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -45,7 +65,14 @@ async def lifespan(app: FastAPI):
     model.to(device)
     model.eval()
 
-    print("Model loaded successfully!")
+    print("Fallback model loaded successfully!")
+    
+    # AniXplore (Modal) の状態確認
+    if MODAL_AVAILABLE:
+        print("Modal available, AniXplore will be used as primary detector")
+    else:
+        print("Modal not available, using legekka as primary detector")
+    
     yield
 
     # クリーンアップ
@@ -122,16 +149,96 @@ def generate_attention_heatmap(attentions, original_image):
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "model": MODEL_NAME}
+    return {
+        "status": "ok", 
+        "primary_model": "AniXplore (Modal)" if MODAL_AVAILABLE else MODEL_NAME,
+        "fallback_model": MODEL_NAME
+    }
 
 
 @app.get("/health")
 async def health_check():
+    # AniXplore (Modal) の接続確認
+    anixplore_status = "unavailable"
+    if MODAL_AVAILABLE:
+        try:
+            detector = get_anixplore_detector()
+            if detector:
+                anixplore_status = "available"
+        except:
+            anixplore_status = "error"
+    
     return {
         "status": "healthy",
-        "model_loaded": model is not None,
+        "primary_model": "AniXplore (Modal)",
+        "primary_status": anixplore_status,
+        "fallback_model": MODEL_NAME,
+        "fallback_loaded": model is not None,
         "device": str(device) if device else None,
         "cuda_available": torch.cuda.is_available()
+    }
+
+
+async def analyze_with_anixplore(image_bytes: bytes) -> dict:
+    """AniXplore (Modal) で解析"""
+    detector = get_anixplore_detector()
+    if not detector:
+        raise Exception("AniXplore detector not available")
+    
+    result = detector.detect.remote(image_bytes)
+    
+    # AniXploreの結果をAPIレスポンス形式に変換
+    ai_score = result["probability"] * 100
+    human_score = 100 - ai_score
+    
+    return {
+        "ai_score": round(ai_score, 2),
+        "human_score": round(human_score, 2),
+        "confidence": round(result["confidence"] * 100, 2),
+        "is_ai": result["is_ai"],
+        "model_used": "AniXplore",
+        "attention_map": None  # AniXploreは周波数分析ベースなのでattention mapなし
+    }
+
+
+async def analyze_with_legekka(image: Image.Image, image_bytes: bytes) -> dict:
+    """legekka (ローカル) で解析"""
+    if model is None:
+        raise Exception("Legekka model not loaded")
+    
+    # 前処理
+    inputs = processor(images=image, return_tensors="pt")
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    # 推論（attention出力も取得）
+    with torch.no_grad():
+        outputs = model(**inputs, output_attentions=True)
+        logits = outputs.logits
+        probabilities = torch.nn.functional.softmax(logits, dim=1)[0]
+        attentions = outputs.attentions
+
+    # Attention Mapヒートマップを生成
+    attention_heatmap = generate_attention_heatmap(attentions, image)
+
+    # ラベルマッピング
+    id2label = model.config.id2label
+
+    # スコア取得
+    scores = {}
+    for idx, label in id2label.items():
+        scores[label.lower()] = float(probabilities[idx].cpu()) * 100
+
+    # AI/Humanのスコアを正規化
+    ai_score = scores.get("ai", scores.get("artificial", 0))
+    human_score = scores.get("human", scores.get("real", 100 - ai_score))
+    
+    return {
+        "ai_score": round(ai_score, 2),
+        "human_score": round(human_score, 2),
+        "confidence": round(max(ai_score, human_score), 2),
+        "is_ai": ai_score > human_score,
+        "model_used": "legekka",
+        "attention_map": attention_heatmap
     }
 
 
@@ -139,17 +246,18 @@ async def health_check():
 async def analyze_image(file: UploadFile = File(...)):
     """
     画像を解析してAI生成かどうかを判定
+    
+    メイン: AniXplore (Modal) - F1: 0.9999
+    フォールバック: legekka - Modal失敗時に使用
 
     Returns:
         - is_ai: AI生成かどうか
         - ai_score: AI生成の確信度 (0-100)
         - human_score: 人間作の確信度 (0-100)
         - processing_time: 処理時間(秒)
-        - attention_map: Attention Mapのヒートマップ (Base64)
+        - model_used: 使用したモデル
+        - attention_map: Attention Mapのヒートマップ (legekka使用時のみ)
     """
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
     # ファイル形式チェック
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image.")
@@ -160,48 +268,44 @@ async def analyze_image(file: UploadFile = File(...)):
         # 画像読み込み
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
-
-        # 前処理
-        inputs = processor(images=image, return_tensors="pt")
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-
-        # 推論（attention出力も取得）
-        with torch.no_grad():
-            outputs = model(**inputs, output_attentions=True)
-            logits = outputs.logits
-            probabilities = torch.nn.functional.softmax(logits, dim=1)[0]
-            attentions = outputs.attentions
-
-        # Attention Mapヒートマップを生成
-        attention_heatmap = generate_attention_heatmap(attentions, image)
+        
+        result = None
+        error_info = None
+        
+        # 1. AniXplore (Modal) で試行
+        if MODAL_AVAILABLE:
+            try:
+                result = await analyze_with_anixplore(contents)
+            except Exception as e:
+                error_info = f"AniXplore failed: {str(e)}"
+                print(error_info)
+        
+        # 2. フォールバック: legekka (ローカル)
+        if result is None:
+            try:
+                result = await analyze_with_legekka(image, contents)
+                if error_info:
+                    result["fallback_reason"] = error_info
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Both models failed. Last error: {str(e)}")
 
         processing_time = time.time() - start_time
 
-        # ラベルマッピング（legekkaモデルの場合）
-        id2label = model.config.id2label
-
-        # スコア取得
-        scores = {}
-        for idx, label in id2label.items():
-            scores[label.lower()] = float(probabilities[idx].cpu()) * 100
-
-        # AI/Humanのスコアを正規化
-        ai_score = scores.get("ai", scores.get("artificial", 0))
-        human_score = scores.get("human", scores.get("real", 100 - ai_score))
-
-        is_ai = ai_score > human_score
-
         return {
-            "is_ai": is_ai,
-            "ai_score": round(ai_score, 2),
-            "human_score": round(human_score, 2),
-            "confidence": round(max(ai_score, human_score), 2),
-            "verdict": "AI DETECTED" if is_ai else "HUMAN CONFIRMED",
+            "is_ai": result["is_ai"],
+            "ai_score": result["ai_score"],
+            "human_score": result["human_score"],
+            "confidence": result["confidence"],
+            "verdict": "AI DETECTED" if result["is_ai"] else "HUMAN CONFIRMED",
             "processing_time": round(processing_time, 3),
             "filename": file.filename,
-            "attention_map": attention_heatmap
+            "model_used": result["model_used"],
+            "attention_map": result.get("attention_map"),
+            "fallback_reason": result.get("fallback_reason")
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 

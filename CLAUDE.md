@@ -153,3 +153,138 @@ src/app/
 - [ ] ブログ/解説ページ追加（SEO用）
 - [ ] 判定結果の画像付きシェア機能
 - [ ] ユーザー報告機能（誤判定フィードバック収集）
+
+---
+
+## AniXplore + Modal 導入メモ（2024-12-19）
+
+### 背景・調査結果
+
+#### モデル比較
+| モデル | 精度 | VRAM | 学習データ | 状態 |
+|--------|------|------|-----------|------|
+| legekka (現在) | 94.68% | ~2GB | 120万枚 (2023) | GTX 1660で稼働中 |
+| AniXplore | F1: 0.9999 | 重い | AnimeDL-2M (2025) | Modal導入中 |
+| saltacc/anime-ai-detect | 96% (自称) | ~2GB | 22,000枚のみ | 信頼性低い、放置 |
+
+#### データセット比較
+| データセット | 規模 | 内容 | 年代 |
+|-------------|------|------|------|
+| AnimeDL-2M | 200万枚+ | リアル/部分改変/完全AI生成 | 2025 |
+| legekka学習データ | 120万枚 | リアル100万 + AI 21.7万 | 2023 |
+
+**結論**: AniXploreが最新かつ最高精度。ただしVRAMが重いのでサーバーレスGPUで動かす。
+
+### Modal導入
+
+#### なぜModalか
+- **$30/月の無料枠**（毎月リセット）
+- サーバーレス = 使った分だけ課金、アイドル時は$0
+- T4 GPUで約$0.0006/秒、1回の推論で$0.003程度
+- 常時稼働VPS（$150-400/月）より大幅に安い
+
+#### 2段構成アーキテクチャ
+```
+┌─────────────────────────────────────────────┐
+│  aicheckers.net                             │
+│  ┌─────────────────────────────────────┐    │
+│  │ 1次判定: legekka (GTX 1660)        │    │
+│  │ → 明確な判定（80%以上 or 50%未満）  │    │
+│  └────────────┬────────────────────────┘    │
+│               ↓ 微妙なケースのみ             │
+│  ┌─────────────────────────────────────┐    │
+│  │ 2次判定: AniXplore (Modal)         │    │
+│  │ → サーバーレスGPUで呼び出し         │    │
+│  └─────────────────────────────────────┘    │
+└─────────────────────────────────────────────┘
+```
+
+### ファイル構成
+
+```
+aicheckers/
+├── modal_anixplore/           # Modal用AniXploreデプロイ
+│   ├── app.py                 # Modalアプリ定義
+│   ├── anixplore_model.py     # AniXploreモデル（推論用簡略版）
+│   └── test_image.py          # テストスクリプト
+├── models/
+│   └── AniXplore/
+│       └── checkpoint-29/     # AniXploreチェックポイント (608MB)
+```
+
+### Modal操作コマンド
+
+```bash
+# Modalにログイン（初回のみ）
+modal token new
+
+# アプリをデプロイ
+cd ~/aicheckers/modal_anixplore
+modal deploy app.py
+
+# テスト実行（ダミー入力）
+modal run app.py
+
+# チェックポイントをvolumeにアップロード
+modal volume put anixplore-checkpoints ~/aicheckers/models/AniXplore/checkpoint-29 AniXplore/checkpoint-29
+
+# 画像でテスト
+python3 test_image.py /path/to/image.png
+
+# デプロイ状況確認
+# https://modal.com/apps/hokhok7676/main/deployed/anixplore-detector
+```
+
+### AniXploreモデル詳細
+
+#### アーキテクチャ
+- **ConvNeXt**: 高周波特徴抽出（DCT+DWT）
+- **MixVisionTransformer (SegFormer系)**: 低周波特徴抽出
+- **Feature Pyramid Network**: マルチスケール特徴統合
+- **分類ヘッド**: AI生成確率を出力
+
+#### 入力
+- 512x512 RGB画像（AniXploreHRは1024x1024）
+- 自動リサイズ対応
+
+#### 出力
+- `probability`: 0-1のAI生成確率
+- `is_ai`: probability > 0.5
+- `confidence`: 確信度
+
+### チェックポイント
+
+- **ダウンロード元**: https://drive.google.com/drive/folders/1HQWMh0SSOL1rWTNgbTdS8Jokm-Imq0CQ
+- **AniXplore**: 608MB（512x512版）
+- **AniXploreHR**: 608MB x 2（1024x1024版、より高精度だがVRAM重い）
+
+**重要**: Google Driveからダウンロードすると `checkpoint-29` ディレクトリ形式になる。
+PyTorchで読み込むには **zipに圧縮** する必要がある：
+```bash
+cd ~/aicheckers/models/AniXplore
+zip -r checkpoint-29.pt checkpoint-29/
+# これでtorch.load('checkpoint-29.pt')で読める
+```
+
+チェックポイント構造:
+```python
+{
+    'model': {...},      # モデル重み
+    'optimizer': {...},  # オプティマイザ状態
+    'epoch': 29,         # エポック数
+    'scaler': {...},     # AMP scaler
+    'args': {...}        # 学習引数
+}
+```
+
+### 参考リンク
+- Modal: https://modal.com/
+- Modal Pricing: https://modal.com/pricing
+- AniXplore GitHub: https://github.com/FlyTweety/AnimeDL2M
+- AnimeDL-2M論文: https://arxiv.org/abs/2504.11015
+
+### 次のステップ
+1. [ ] Modal上でのAniXplore動作確認（チェックポイントロード）
+2. [ ] aicheckersバックエンドとModal統合
+3. [ ] 2段構成の実装（legekka → AniXplore fallback）
+4. [ ] コスト監視とアラート設定
