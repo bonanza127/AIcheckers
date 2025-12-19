@@ -18,9 +18,6 @@ import matplotlib
 matplotlib.use('Agg')  # GUIなしで使用
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 # Modal (AniXplore用)
 try:
@@ -156,75 +153,6 @@ def generate_attention_heatmap(attentions, original_image):
     return base64.b64encode(buf.getvalue()).decode('utf-8')
 
 
-def reshape_transform_vit(tensor, height=16, width=16):
-    """ViT用のreshape transform（CLSトークンを除去してグリッドに変換）
-    legekka: 512x512入力、32pxパッチ → 16x16グリッド（256パッチ）
-    """
-    result = tensor[:, 1:, :].reshape(tensor.size(0), height, width, tensor.size(2))
-    result = result.transpose(2, 3).transpose(1, 2)
-    return result
-
-
-class ModelWrapper(torch.nn.Module):
-    """GradCAM用にtransformersモデルをラップ（logitsのみ返す）"""
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, x):
-        return self.model(x).logits
-
-
-def generate_gradcam(image: Image.Image, input_tensor: torch.Tensor) -> str:
-    """
-    GradCAMを生成してBase64エンコードした画像を返す
-
-    Args:
-        image: 元のPIL Image
-        input_tensor: 前処理済みのテンソル
-
-    Returns:
-        Base64エンコードされたGradCAM画像
-    """
-    try:
-        # モデルをラップ
-        wrapped_model = ModelWrapper(model)
-
-        # ViTの最後のレイヤーをターゲットに
-        target_layers = [model.vit.encoder.layer[-1].layernorm_before]
-
-        cam = GradCAM(
-            model=wrapped_model,
-            target_layers=target_layers,
-            reshape_transform=reshape_transform_vit
-        )
-
-        # AI判定（class 0がAIと仮定）
-        targets = [ClassifierOutputTarget(0)]
-
-        grayscale_cam = cam(input_tensor=input_tensor, targets=targets)
-        grayscale_cam = grayscale_cam[0, :]
-
-        # 元画像をnumpy配列に（0-1の範囲）- legekkaは512x512
-        rgb_img = np.array(image.resize((512, 512))) / 255.0
-
-        # GradCAMオーバーレイ
-        visualization = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
-
-        # 元のサイズにリサイズ
-        visualization = Image.fromarray(visualization).resize(image.size, Image.BILINEAR)
-
-        # Base64エンコード
-        buf = io.BytesIO()
-        visualization.save(buf, format='PNG')
-        buf.seek(0)
-
-        return base64.b64encode(buf.getvalue()).decode('utf-8')
-    except Exception as e:
-        print(f"GradCAM generation failed: {e}")
-        return None
-
-
 @app.get("/")
 async def root():
     return {
@@ -289,9 +217,6 @@ async def analyze_with_legekka(image: Image.Image, image_bytes: bytes) -> dict:
     # Attention Mapヒートマップを生成
     attention_heatmap = generate_attention_heatmap(attentions, image)
 
-    # GradCAMを生成（勾配が必要なので別途実行）
-    gradcam_heatmap = generate_gradcam(image, inputs["pixel_values"])
-
     # ラベルマッピング
     id2label = model.config.id2label
 
@@ -310,8 +235,7 @@ async def analyze_with_legekka(image: Image.Image, image_bytes: bytes) -> dict:
         "confidence": round(max(ai_score, human_score), 2),
         "is_ai": ai_score > human_score,
         "model_used": "legekka",
-        "attention_map": attention_heatmap,
-        "gradcam": gradcam_heatmap
+        "attention_map": attention_heatmap
     }
 
 
@@ -379,7 +303,6 @@ async def analyze_image(
             "filename": file.filename,
             "model_used": result["model_used"],
             "attention_map": result.get("attention_map"),
-            "gradcam": result.get("gradcam"),
             "fallback_reason": result.get("fallback_reason")
         }
 

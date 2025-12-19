@@ -7,4 +7,3 @@ transformers>=4.35.0
 Pillow>=10.0.0
 google-generativeai
 modal>=0.64.0
-grad-cam>=1.5.0
