@@ -69,7 +69,7 @@ export default function Home() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
-  const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka">("anixplore");
+  const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("anixplore");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -600,11 +600,15 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
                 <span>使用モデル: <button
-                  onClick={() => setSelectedModel(prev => prev === "anixplore" ? "legekka" : "anixplore")}
+                  onClick={() => setSelectedModel(prev =>
+                    prev === "anixplore" ? "legekka" :
+                    prev === "legekka" ? "dinov3" : "anixplore"
+                  )}
                   className="text-accent font-bold hover:text-cyan-300 transition-colors cursor-pointer underline decoration-dotted"
-                  title="クリックでモデル切り替え"
+                  title="クリックでモデル切り替え (AniXplore → Legekka → DINOv3)"
                 >
-                  {selectedModel === "anixplore" ? "AniXplore V1.0" : "Legekka-ViT V1.1"}
+                  {selectedModel === "anixplore" ? "AniXplore V1.0" :
+                   selectedModel === "legekka" ? "Legekka-ViT V1.1" : "DINOv3-ViT"}
                 </button></span>
                 <span>ロジック: <span className="text-dim font-bold">Anime-Specialized V1.0</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>

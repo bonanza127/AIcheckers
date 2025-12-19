@@ -1,6 +1,6 @@
 """
 AIcheckers Backend API
-AniXplore (Modal) をメイン、legekka をフォールバックとして使用
+AniXplore (Modal) をメイン、legekka をフォールバック、DINOv3をオプションとして使用
 """
 
 import io
@@ -19,13 +19,13 @@ matplotlib.use('Agg')  # GUIなしで使用
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-# Modal (AniXplore用)
+# Modal (AniXplore/DINOv3用)
 try:
     import modal
     MODAL_AVAILABLE = True
 except ImportError:
     MODAL_AVAILABLE = False
-    print("Warning: modal not installed, AniXplore will not be available")
+    print("Warning: modal not installed, AniXplore/DINOv3 will not be available")
 
 
 # グローバル変数
@@ -45,6 +45,18 @@ def get_anixplore_detector():
         return Detector()
     except Exception as e:
         print(f"Failed to get AniXplore detector: {e}")
+        return None
+
+
+def get_dinov3_detector():
+    """DINOv3 detector インスタンスを取得"""
+    if not MODAL_AVAILABLE:
+        return None
+    try:
+        Detector = modal.Cls.from_name("dinov3-detector", "DINOv3Detector")
+        return Detector()
+    except Exception as e:
+        print(f"Failed to get DINOv3 detector: {e}")
         return None
 
 
@@ -158,7 +170,8 @@ async def root():
     return {
         "status": "ok", 
         "primary_model": "AniXplore (Modal)" if MODAL_AVAILABLE else MODEL_NAME,
-        "fallback_model": MODEL_NAME
+        "fallback_model": MODEL_NAME,
+        "optional_models": ["dinov3"] if MODAL_AVAILABLE else []
     }
 
 
@@ -171,6 +184,7 @@ async def health_check():
         "primary_status": "available" if MODAL_AVAILABLE else "unavailable",
         "fallback_model": MODEL_NAME,
         "fallback_loaded": model is not None,
+        "dinov3_status": "available" if MODAL_AVAILABLE else "unavailable",
         "device": str(device) if device else None,
         "cuda_available": torch.cuda.is_available()
     }
@@ -239,16 +253,44 @@ async def analyze_with_legekka(image: Image.Image, image_bytes: bytes) -> dict:
     }
 
 
+async def analyze_with_dinov3(image_bytes: bytes) -> dict:
+    """DINOv3 (Modal) で解析"""
+    detector = get_dinov3_detector()
+    if not detector:
+        raise Exception("DINOv3 detector not available")
+    
+    result = detector.detect.remote(image_bytes)
+    
+    # エラーチェック
+    if "error" in result:
+        raise Exception(result["error"])
+    
+    # DINOv3の結果をAPIレスポンス形式に変換
+    ai_score = result["probability"] * 100
+    human_score = 100 - ai_score
+    
+    return {
+        "ai_score": round(ai_score, 2),
+        "human_score": round(human_score, 2),
+        "confidence": round(result["confidence"] * 100, 2),
+        "is_ai": result["is_ai"],
+        "model_used": "DINOv3",
+        "attention_map": None,  # k-NN方式なのでattention mapなし
+        "ai_similarity": result.get("ai_similarity"),
+        "real_similarity": result.get("real_similarity"),
+    }
+
+
 @app.post("/analyze")
 async def analyze_image(
     file: UploadFile = File(...),
-    model: str = Form(default="anixplore")  # "anixplore" or "legekka"
+    model: str = Form(default="anixplore")  # "anixplore", "legekka", or "dinov3"
 ):
     """
     画像を解析してAI生成かどうかを判定
 
     Args:
-        model: 使用するモデル ("anixplore" or "legekka")
+        model: 使用するモデル ("anixplore", "legekka", or "dinov3")
 
     Returns:
         - is_ai: AI生成かどうか
@@ -273,23 +315,33 @@ async def analyze_image(
         error_info = None
 
         # ユーザー指定のモデルを使用
-        use_anixplore = model == "anixplore" and MODAL_AVAILABLE
-
-        if use_anixplore:
+        if model == "dinov3" and MODAL_AVAILABLE:
+            try:
+                result = await analyze_with_dinov3(contents)
+            except Exception as e:
+                error_info = f"DINOv3 failed: {str(e)}"
+                print(error_info)
+        elif model == "anixplore" and MODAL_AVAILABLE:
             try:
                 result = await analyze_with_anixplore(contents)
             except Exception as e:
                 error_info = f"AniXplore failed: {str(e)}"
                 print(error_info)
+        elif model == "legekka":
+            try:
+                result = await analyze_with_legekka(image, contents)
+            except Exception as e:
+                error_info = f"Legekka failed: {str(e)}"
+                print(error_info)
         
-        # 2. フォールバック: legekka (ローカル)
+        # フォールバック: legekka (ローカル)
         if result is None:
             try:
                 result = await analyze_with_legekka(image, contents)
                 if error_info:
                     result["fallback_reason"] = error_info
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Both models failed. Last error: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"All models failed. Last error: {str(e)}")
 
         processing_time = time.time() - start_time
 
