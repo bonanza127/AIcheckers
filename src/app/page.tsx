@@ -69,6 +69,7 @@ export default function Home() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka">("anixplore");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -219,6 +220,7 @@ export default function Home() {
     // API呼び出し
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("model", selectedModel);
 
     let aiScore: number;
     let humanScore: number;
@@ -597,7 +599,13 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">Mirror_of_Ra-Vit V1.1</span></span>
+                <span>使用モデル: <button
+                  onClick={() => setSelectedModel(prev => prev === "anixplore" ? "legekka" : "anixplore")}
+                  className="text-accent font-bold hover:text-cyan-300 transition-colors cursor-pointer underline decoration-dotted"
+                  title="クリックでモデル切り替え"
+                >
+                  {selectedModel === "anixplore" ? "AniXplore V1.0" : "Legekka-ViT V1.1"}
+                </button></span>
                 <span>ロジック: <span className="text-dim font-bold">Anime-Specialized V1.0</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>

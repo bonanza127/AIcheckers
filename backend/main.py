@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 import torch
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from transformers import AutoModelForImageClassification, AutoImageProcessor
@@ -240,12 +240,15 @@ async def analyze_with_legekka(image: Image.Image, image_bytes: bytes) -> dict:
 
 
 @app.post("/analyze")
-async def analyze_image(file: UploadFile = File(...)):
+async def analyze_image(
+    file: UploadFile = File(...),
+    model: str = Form(default="anixplore")  # "anixplore" or "legekka"
+):
     """
     画像を解析してAI生成かどうかを判定
-    
-    メイン: AniXplore (Modal) - F1: 0.9999
-    フォールバック: legekka - Modal失敗時に使用
+
+    Args:
+        model: 使用するモデル ("anixplore" or "legekka")
 
     Returns:
         - is_ai: AI生成かどうか
@@ -265,12 +268,14 @@ async def analyze_image(file: UploadFile = File(...)):
         # 画像読み込み
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
-        
+
         result = None
         error_info = None
-        
-        # 1. AniXplore (Modal) で試行
-        if MODAL_AVAILABLE:
+
+        # ユーザー指定のモデルを使用
+        use_anixplore = model == "anixplore" and MODAL_AVAILABLE
+
+        if use_anixplore:
             try:
                 result = await analyze_with_anixplore(contents)
             except Exception as e:
