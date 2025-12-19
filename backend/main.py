@@ -158,20 +158,11 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    # AniXplore (Modal) の接続確認
-    anixplore_status = "unavailable"
-    if MODAL_AVAILABLE:
-        try:
-            detector = get_anixplore_detector()
-            if detector:
-                anixplore_status = "available"
-        except:
-            anixplore_status = "error"
-    
+    # 軽量なヘルスチェック（Modal接続は試みない）
     return {
         "status": "healthy",
         "primary_model": "AniXplore (Modal)",
-        "primary_status": anixplore_status,
+        "primary_status": "available" if MODAL_AVAILABLE else "unavailable",
         "fallback_model": MODEL_NAME,
         "fallback_loaded": model is not None,
         "device": str(device) if device else None,

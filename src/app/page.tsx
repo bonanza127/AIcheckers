@@ -3,6 +3,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, EyeOff } from "lucide-react";
 
+// API URL: 本番環境では api.aicheckers.net を使用
+const getApiUrl = () => {
+  if (typeof window !== "undefined" && window.location.hostname === "aicheckers.net") {
+    return "https://api.aicheckers.net";
+  }
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+};
+
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
 type LogEntry = {
@@ -66,14 +74,15 @@ export default function Home() {
   useEffect(() => {
     const checkBackendHealth = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const apiUrl = getApiUrl();
         const response = await fetch(`${apiUrl}/health`, { 
           method: "GET",
           signal: AbortSignal.timeout(3000)
         });
         if (response.ok) {
           const data = await response.json();
-          setBackendOnline(data.model_loaded === true);
+          // AniXplore or legekka が使用可能ならオンライン
+          setBackendOnline(data.primary_status === "available" || data.fallback_loaded === true);
         } else {
           setBackendOnline(false);
         }
@@ -216,7 +225,7 @@ export default function Home() {
     let attentionMap: string | undefined;
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const apiUrl = getApiUrl();
       const [response] = await Promise.all([
         fetch(`${apiUrl}/analyze`, {
           method: "POST",
