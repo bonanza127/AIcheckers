@@ -91,7 +91,7 @@ export default function Disclaimer() {
       {/* Footer */}
       <footer className="site-footer p-4 mt-12">
         <div className="container mx-auto text-center text-xs text-muted">
-          <p><a href="/disclaimer" className="hover:underline">免責事項</a> | &copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="text-accent hover:underline">お問い合わせ</a></p>
+          <p><a href="/disclaimer" className="hover:underline">免責事項</a> | &copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="hover:underline">お問い合わせ</a></p>
         </div>
       </footer>
     </div>
