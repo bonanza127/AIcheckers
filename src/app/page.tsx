@@ -721,17 +721,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <button
-                  onClick={() => setSelectedModel(prev =>
-                    prev === "anixplore" ? "legekka" :
-                    prev === "legekka" ? "dinov3" : "anixplore"
-                  )}
-                  className="text-accent font-bold hover:text-cyan-300 transition-colors cursor-pointer underline decoration-dotted"
-                  title="クリックでモデル切り替え (AniXplore → Legekka → Moonlight)"
-                >
-                  {selectedModel === "anixplore" ? "AniXplore V1.0" :
-                   selectedModel === "legekka" ? "Legekka-ViT V1.1" : "Moonlight V1.3"}
-                </button></span>
+                <span>使用モデル: <span className="text-accent font-bold">Moonlight V1.3</span></span>
                 <span>ロジック: <span className="text-dim font-bold">カスケード方式</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
