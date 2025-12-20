@@ -82,14 +82,14 @@ export default function Home() {
     const checkBackendHealth = async () => {
       try {
         const apiUrl = getApiUrl();
-        const response = await fetch(`${apiUrl}/health`, { 
+        const response = await fetch(`${apiUrl}/health`, {
           method: "GET",
           signal: AbortSignal.timeout(3000)
         });
         if (response.ok) {
           const data = await response.json();
-          // AniXplore or legekka が使用可能ならオンライン
-          setBackendOnline(data.primary_status === "available" || data.fallback_loaded === true);
+          // Moonlight (status: "healthy") がオンラインならOK
+          setBackendOnline(data.status === "healthy");
         } else {
           setBackendOnline(false);
         }
@@ -100,7 +100,7 @@ export default function Home() {
 
     // 初回チェック
     checkBackendHealth();
-    
+
     // 10秒ごとにチェック
     const interval = setInterval(checkBackendHealth, 10000);
     return () => clearInterval(interval);
@@ -325,7 +325,7 @@ export default function Home() {
       }
 
       const data = await response.json();
-      
+
       aiScore = Math.round(data.ai_score);
       humanScore = Math.round(data.human_score);
       isAI = aiScore >= 80; // 80%以上でAI判定
@@ -422,9 +422,9 @@ export default function Home() {
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
 
     setPhase("complete");
-    const logMessage = aiScore >= 80 
+    const logMessage = aiScore >= 80
       ? `最終判定: AI生成の可能性が高い (${aiScore}%)`
-      : aiScore >= 50 
+      : aiScore >= 50
         ? `最終判定: 判定困難 (${aiScore}%)`
         : `最終判定: 人間による創作物 (${aiScore}%)`;
     addLog(logMessage, "result");
@@ -450,7 +450,7 @@ export default function Home() {
     setStartTime(null);
     addLog("--- BATCH SCAN COMPLETE (一括解析完了) ---", "heading");
     addLog(`STATUS: 全ての${files.length}個のアーティファクトの処理が完了しました。`, "process");
-    
+
     // Clear pending files
     (window as unknown as { _pendingFiles: File[] })._pendingFiles = [];
   };
@@ -473,10 +473,10 @@ export default function Home() {
 
   const deleteSelectedItem = () => {
     if (isScanning || !selectedQueueId) return;
-    
+
     const index = queue.findIndex(item => item.id === selectedQueueId);
     if (index === -1) return;
-    
+
     setQueue(prev => prev.filter(item => item.id !== selectedQueueId));
     const pendingFiles = (window as unknown as { _pendingFiles?: File[] })._pendingFiles || [];
     (window as unknown as { _pendingFiles: File[] })._pendingFiles = pendingFiles.filter((_, i) => i !== index);
@@ -596,13 +596,13 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
           <div className="flex items-center gap-3">
             <Fingerprint className="w-8 h-8 text-accent" />
             <h2 className="text-2xl font-bold tracking-tight">
-              AIチェッカー<span className="text-sm font-light text-muted">　//　AI-art-integrity V4.2</span>
+              AIチェッカー
+              <a href="/how-it-works" className="ml-3 text-sm font-light text-muted hover:text-accent transition-colors">
+                How it works?
+              </a>
             </h2>
           </div>
           <nav className="hidden md:flex items-center gap-1">
-            <a href="/how-it-works" className="px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-white/5 rounded transition-all border border-transparent hover:border-gray-700">
-              How it works?
-            </a>
             <a href="/disclaimer" className="px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-white/5 rounded transition-all border border-transparent hover:border-gray-700">
               免責事項
             </a>
@@ -661,11 +661,10 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                       {result?.attentionMap && (
                         <button
                           onClick={() => setShowHeatmap(!showHeatmap)}
-                          className={`absolute top-2 right-2 p-2 rounded-lg transition-all ${
-                            showHeatmap 
-                              ? "bg-accent text-white" 
-                              : "bg-black/50 text-white hover:bg-accent/70"
-                          }`}
+                          className={`absolute top-2 right-2 p-2 rounded-lg transition-all ${showHeatmap
+                            ? "bg-accent text-white"
+                            : "bg-black/50 text-white hover:bg-accent/70"
+                            }`}
                           title={showHeatmap ? "オリジナル画像を表示" : "Attention Mapを表示"}
                         >
                           {showHeatmap ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -738,19 +737,17 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <span className="font-semibold uppercase text-danger">
                     AI POSSIBILITY
                   </span>
-                  <span className={`font-bold ${
-                    (result?.aiScore ?? 0) >= 80 ? "text-danger" : 
+                  <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
                     (result?.aiScore ?? 0) >= 50 ? "text-gray-400" : "text-success"
-                  }`}>
+                    }`}>
                     {result?.aiScore ?? 0}%
                   </span>
                 </div>
                 <div className="progress-bar-bg">
                   <div
-                    className={`progress-bar-fill ${
-                      (result?.aiScore ?? 0) >= 80 ? "ai" : 
+                    className={`progress-bar-fill ${(result?.aiScore ?? 0) >= 80 ? "ai" :
                       (result?.aiScore ?? 0) >= 50 ? "unknown" : "human"
-                    }`}
+                      }`}
                     style={{ width: `${result?.aiScore ?? 0}%` }}
                   />
                 </div>
@@ -787,7 +784,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     const labelClass = item.aiScore >= 80 ? "bg-danger text-white" : item.aiScore >= 50 ? "bg-gray-500 text-white" : "bg-success text-white";
                     const labelText = item.aiScore >= 80 ? "AI" : item.aiScore >= 50 ? "?" : "人";
                     const scoreClass = item.aiScore >= 80 ? "text-danger" : item.aiScore >= 50 ? "text-gray-400" : "text-success";
-                    
+
                     return (
                       <div
                         key={item.id}
@@ -859,12 +856,11 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                           setSelectedQueueId(selectedQueueId === item.id ? null : item.id);
                           setSelectedHistoryId(null); // Clear history selection
                         }}
-                        className={`queue-item relative group cursor-pointer ${
-                          item.status === "processing" ? "active" :
+                        className={`queue-item relative group cursor-pointer ${item.status === "processing" ? "active" :
                           item.status === "ai" ? "result-ai" :
-                          item.status === "unknown" ? "result-unknown" :
-                          item.status === "human" ? "result-human" : ""
-                        } ${selectedQueueId === item.id ? "ring-2 ring-accent ring-offset-2 ring-offset-card-bg" : ""}`}
+                            item.status === "unknown" ? "result-unknown" :
+                              item.status === "human" ? "result-human" : ""
+                          } ${selectedQueueId === item.id ? "ring-2 ring-accent ring-offset-2 ring-offset-card-bg" : ""}`}
                       >
                         <img
                           src={item.preview}
@@ -891,24 +887,24 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
             {/* URL Input - 将来のBot連携用に非表示 */}
             {false && (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !isLoadingUrl && handleUrlSubmit()}
-                placeholder="画像URLを貼り付け（Twitter/Pixiv等）"
-                className="flex-1 px-3 py-2 rounded-lg bg-card-bg border border-border text-text-primary placeholder-muted text-sm focus:outline-none focus:border-accent"
-                disabled={isLoadingUrl}
-              />
-              <button
-                onClick={handleUrlSubmit}
-                disabled={!urlInput.trim() || isLoadingUrl || !backendOnline}
-                className="px-4 py-2 rounded-lg bg-accent/20 border border-accent text-accent font-medium text-sm hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoadingUrl ? "読込中..." : "URL解析"}
-              </button>
-            </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !isLoadingUrl && handleUrlSubmit()}
+                  placeholder="画像URLを貼り付け（Twitter/Pixiv等）"
+                  className="flex-1 px-3 py-2 rounded-lg bg-card-bg border border-border text-text-primary placeholder-muted text-sm focus:outline-none focus:border-accent"
+                  disabled={isLoadingUrl}
+                />
+                <button
+                  onClick={handleUrlSubmit}
+                  disabled={!urlInput.trim() || isLoadingUrl || !backendOnline}
+                  className="px-4 py-2 rounded-lg bg-accent/20 border border-accent text-accent font-medium text-sm hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoadingUrl ? "読込中..." : "URL解析"}
+                </button>
+              </div>
             )}
 
             {/* Buttons */}
