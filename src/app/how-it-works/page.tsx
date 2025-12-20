@@ -23,11 +23,13 @@ export default function HowItWorks() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-12 max-w-3xl">
-        <h1 className="text-3xl font-bold mb-8 text-center">How it works?</h1>
+        <h1 className="text-4xl font-extrabold mb-10 text-center">
+          <span className="bg-gradient-to-r from-accent via-purple-400 to-accent bg-clip-text text-transparent">How it works?</span>
+        </h1>
 
         {/* Section 1: Problem Statement */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-accent border-b border-gray-700 pb-2">現状の問題</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">現状の問題</h2>
           <p className="text-muted leading-relaxed">
             生成AIの急速な発展により、AIの判別が非常に難しくなっています。
           </p>
@@ -44,7 +46,7 @@ export default function HowItWorks() {
 
         {/* Section 2: Vision Transformer */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-accent border-b border-gray-700 pb-2">使用技術：Vision Transformer</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">使用しているモデルについて</h2>
           <p className="text-muted leading-relaxed">
             Vision Transformer（ViT）は、画像を小さなパッチに分割し、それぞれの関係性を解析する革新的なアーキテクチャです。
             従来の畳み込みニューラルネットワーク（CNN）と異なり、画像全体のコンテキストを同時に理解できるため、
@@ -58,7 +60,7 @@ export default function HowItWorks() {
 
         {/* Section 3: Detection Flow - ViT Internal */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-accent border-b border-gray-700 pb-2">検出の仕組み</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">検出の仕組み</h2>
 
           {/* ViT Processing Diagram */}
           <div className="bg-gray-800/30 rounded-lg p-6 mb-6">
@@ -120,7 +122,7 @@ export default function HowItWorks() {
 
         {/* Section 4: Supported Models */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-accent border-b border-gray-700 pb-2">対応AIモデル</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">対応AIモデル</h2>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
               <p className="font-bold text-foreground">SDXL</p>
@@ -143,7 +145,7 @@ export default function HowItWorks() {
 
         {/* Section 5: Accuracy */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-accent border-b border-gray-700 pb-2">検出精度について</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">検出精度について</h2>
           <p className="text-muted leading-relaxed">
             現在主流のモデルやLoRAに対しては<span className="text-accent font-bold">高精度で検出</span>します。
             ただし、以下のケースでは判定が難しい場合があります：
@@ -173,10 +175,10 @@ export default function HowItWorks() {
         </section>
 
         {/* Back Link */}
-        <div className="text-center pt-6 border-t border-gray-700">
+        <div className="text-center pt-8 border-t border-gray-700">
           <Link
             href="/"
-            className="inline-block px-6 py-3 bg-accent text-white font-bold rounded hover:opacity-90 transition"
+            className="inline-block px-8 py-3 bg-gradient-to-r from-accent to-purple-500 text-white font-bold rounded-lg hover:from-accent/90 hover:to-purple-500/90 transition-all shadow-lg shadow-accent/20"
           >
             画像をスキャンする →
           </Link>
