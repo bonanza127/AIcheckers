@@ -39,10 +39,12 @@ device = None
 dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
+model_centroids = {}  # モデル別セントロイド（類似度計算用）
 
 MODEL_NAME = "legekka/AI-Anime-Image-Detector-ViT"
 DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
+EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
 HF_TOKEN = "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"
 
 
@@ -62,7 +64,7 @@ def get_anixplore_detector():
 async def lifespan(app: FastAPI):
     """起動時にモデルをロード"""
     global model, processor, device
-    global dinov3_model, dinov3_processor, dinov3_classifier
+    global dinov3_model, dinov3_processor, dinov3_classifier, model_centroids
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -85,7 +87,11 @@ async def lifespan(app: FastAPI):
         login(token=HF_TOKEN, add_to_git_credential=False)
         
         dinov3_processor = AutoImageProcessor.from_pretrained(DINOV3_MODEL_NAME, token=HF_TOKEN)
-        dinov3_model = AutoModel.from_pretrained(DINOV3_MODEL_NAME, token=HF_TOKEN)
+        dinov3_model = AutoModel.from_pretrained(
+            DINOV3_MODEL_NAME,
+            token=HF_TOKEN,
+            attn_implementation="eager"  # attention出力に必要
+        )
         dinov3_model.to(device)
         dinov3_model.eval()
         
@@ -103,6 +109,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Failed to load DINOv3: {e}")
         dinov3_model = None
+
+    # モデル別セントロイドをロード（類似度計算用）
+    print("Loading model centroids for similarity detection...")
+    model_name_map = {
+        "illustrious_ai": "Illustrious",
+        "pony_ai": "Pony",
+        "sdxl10_ai": "SDXL 1.0",
+        "sd15_ai": "SD 1.5",
+        "flux1d_ai": "FLUX.1",
+        "other_ai": "Other",
+    }
+    for npy_file in EMBEDDINGS_DIR.glob("*_ai.npy"):
+        key = npy_file.stem  # e.g., "illustrious_ai"
+        embeddings = np.load(npy_file)
+        centroid = embeddings.mean(axis=0)
+        # 正規化（コサイン類似度用）
+        centroid = centroid / (np.linalg.norm(centroid) + 1e-8)
+        display_name = model_name_map.get(key, key.replace("_ai", "").title())
+        model_centroids[display_name] = centroid
+        print(f"  Loaded centroid: {display_name} ({len(embeddings)} samples)")
+    print(f"Loaded {len(model_centroids)} model centroids")
 
     # AniXplore (Modal) の状態確認
     if MODAL_AVAILABLE:
@@ -387,6 +414,7 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
     concentration = None
     feat_std = None
     feat_kurtosis = None
+    spatial_info = None
 
     # 1. Attention分布の分析
     if attention_map is not None:
@@ -402,6 +430,15 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
         sorted_attn = np.sort(flat_norm)[::-1]
         top_10_pct = max(1, int(len(sorted_attn) * 0.1))
         concentration = sorted_attn[:top_10_pct].sum()
+
+        # 空間パターン分析（中央 vs エッジ）
+        h, w = attention_map.shape
+        # 中央領域（内側50%）
+        h_margin, w_margin = h // 4, w // 4
+        center = attention_map[h_margin:h-h_margin, w_margin:w-w_margin]
+        center_ratio = center.sum() / (attention_map.sum() + 1e-8)
+        edge_ratio = 1 - center_ratio
+        spatial_info = f"中央{center_ratio*100:.0f}%/周縁{edge_ratio*100:.0f}%"
 
         if is_ai:
             if entropy_ratio < 0.78:
@@ -450,15 +487,13 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
 
     # 4. 検出された痕跡サマリー（1-2行の説得力ある文章）
     if is_ai:
-        if evidence:
-            detected_traces = f"注目パターンの空間分布（{', '.join(evidence[:2])}）に拡散モデル特有の規則性を検出。ノイズ除去過程で生じる決定論的な構造が特徴量に残存。"
-        else:
-            detected_traces = f"特徴ベクトルの分布パターンから機械学習による生成痕跡を検出。自然画像には見られない統計的規則性を確認。"
+        spatial_str = f"空間分布{spatial_info}、" if spatial_info else ""
+        evidence_str = f"（{', '.join(evidence[:2])}）" if evidence else ""
+        detected_traces = f"【拡散モデル生成と推測】{spatial_str}特徴パターン{evidence_str}に機械的規則性を検出。ノイズ除去過程で生じる決定論的構造が残存。"
     else:
-        if evidence:
-            detected_traces = f"注目分布が画像全体に自然に分散（{', '.join(evidence[:2])}）。人間の筆致に特有の不規則性と有機的なテクスチャパターンを確認。"
-        else:
-            detected_traces = f"特徴量の分布が自然画像の統計的特性と一致。機械的な生成パターンは検出されず、人間による創作と判断。"
+        spatial_str = f"（{spatial_info}）" if spatial_info else ""
+        evidence_str = f"、{', '.join(evidence[:2])}" if evidence else ""
+        detected_traces = f"注目が画像全体に自然分散{spatial_str}{evidence_str}。人間の筆致に特有の不規則性と有機的テクスチャを確認。"
 
     return (logs if logs else ["分析完了: 明確な特徴パターンなし"], detected_traces)
 
@@ -494,9 +529,12 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             attention_avg = last_attention.mean(dim=1)[0]  # [seq_len, seq_len]
             cls_attention = attention_avg[0, 1:]  # CLSトークンから各パッチへ
 
-            # グリッドサイズを計算
+            # グリッドサイズを計算（DINOv3はregister tokensがあるため調整）
             num_patches = int(np.sqrt(cls_attention.shape[0]))
-            if num_patches * num_patches == cls_attention.shape[0]:
+            # 14x14=196パッチに収まるようにトリム（余分なregister tokensを除外）
+            target_patches = num_patches * num_patches
+            if target_patches <= cls_attention.shape[0]:
+                cls_attention = cls_attention[:target_patches]
                 attention_map_raw = cls_attention.reshape(num_patches, num_patches).cpu().numpy()
 
                 # 正規化
@@ -522,7 +560,9 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 buf.seek(0)
                 attention_heatmap = base64.b64encode(buf.getvalue()).decode('utf-8')
         except Exception as e:
+            import traceback
             print(f"Attention map generation failed: {e}")
+            traceback.print_exc()
 
     # フォレンジック分析ログ生成
     forensic_logs, detected_traces = generate_forensic_analysis(attention_map_raw, features, ai_prob)
