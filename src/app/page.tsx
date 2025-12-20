@@ -618,7 +618,10 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
           <h1 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した日本発のAIイラストチェッカー</h1>
           <p className="text-muted text-lg">
             AIが生成したアニメ画像を学習し、ファインチューニングしたViTが生成画像の痕跡を解析。<br />
-            人間的な筆致の有無を検出し、生成画像を高精度で判別します。
+            人間的な筆致の有無を検出し、生成画像を<span className="text-accent font-bold">98.35%の精度</span><sup className="text-xs text-muted">*</sup>で判別します。
+          </p>
+          <p className="text-xs text-muted mt-2">
+            * DINOv3モデル使用時。AnimeDL-2Mデータセットでの検証精度。
           </p>
         </div>
 
@@ -888,7 +891,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               )}
             </div>
 
-            {/* URL Input */}
+            {/* URL Input - 将来のBot連携用に非表示 */}
+            {false && (
             <div className="flex gap-2">
               <input
                 type="text"
@@ -907,6 +911,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 {isLoadingUrl ? "読込中..." : "URL解析"}
               </button>
             </div>
+            )}
 
             {/* Buttons */}
             <div className="flex gap-3">
