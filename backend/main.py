@@ -1,6 +1,6 @@
 """
 AIcheckers Backend API
-AniXplore (Modal) をメイン、legekka をフォールバック、DINOv3 (ローカル) をオプションとして使用
+Moonlight (DINOv3 Linear Probe) のみ使用
 """
 
 import io
@@ -18,137 +18,71 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from pydantic import BaseModel
-from transformers import AutoModelForImageClassification, AutoImageProcessor, AutoModel
+from transformers import AutoImageProcessor, AutoModel
 
 
 class URLAnalyzeRequest(BaseModel):
     url: str
-    model: str = "dinov3"
 
 
 import matplotlib
-matplotlib.use('Agg')  # GUIなしで使用
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-
-# Modal (AniXplore用)
-try:
-    import modal
-    MODAL_AVAILABLE = True
-except ImportError:
-    MODAL_AVAILABLE = False
-    print("Warning: modal not installed, AniXplore will not be available")
-
 
 # グローバル変数
-model = None  # legekka (フォールバック用)
-processor = None
 device = None
-
-# DINOv3 ローカル用
 dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
-model_centroids = {}  # モデル別セントロイド（類似度計算用）
 
-MODEL_NAME = "legekka/AI-Anime-Image-Detector-ViT"
 DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
 EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
 HF_TOKEN = "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"
 
 
-def get_anixplore_detector():
-    """AniXplore detector インスタンスを取得"""
-    if not MODAL_AVAILABLE:
-        return None
-    try:
-        Detector = modal.Cls.from_name("anixplore-detector", "AniXploreDetector")
-        return Detector()
-    except Exception as e:
-        print(f"Failed to get AniXplore detector: {e}")
-        return None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """起動時にモデルをロード"""
-    global model, processor, device
-    global dinov3_model, dinov3_processor, dinov3_classifier, model_centroids
+    """起動時にMoonlight (DINOv3) をロード"""
+    global device, dinov3_model, dinov3_processor, dinov3_classifier
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # legekka ロード
-    print(f"Loading legekka model: {MODEL_NAME}")
-    processor = AutoImageProcessor.from_pretrained(MODEL_NAME)
-    model = AutoModelForImageClassification.from_pretrained(
-        MODEL_NAME,
-        attn_implementation="eager"
-    )
-    model.to(device)
-    model.eval()
-    print("legekka model loaded!")
-
-    # DINOv3 ローカルロード
-    print(f"Loading DINOv3 model: {DINOV3_MODEL_NAME}")
+    # Moonlight (DINOv3) ロード
+    print(f"Loading Moonlight (DINOv3): {DINOV3_MODEL_NAME}")
     try:
         from huggingface_hub import login
         login(token=HF_TOKEN, add_to_git_credential=False)
-        
+
         dinov3_processor = AutoImageProcessor.from_pretrained(DINOV3_MODEL_NAME, token=HF_TOKEN)
         dinov3_model = AutoModel.from_pretrained(
             DINOV3_MODEL_NAME,
             token=HF_TOKEN,
-            attn_implementation="eager"  # attention出力に必要
+            attn_implementation="eager"
         )
         dinov3_model.to(device)
         dinov3_model.eval()
-        
+
         # 分類器ロード
         if DINOV3_CLASSIFIER_PATH.exists():
             checkpoint = torch.load(DINOV3_CLASSIFIER_PATH, map_location=device)
             dinov3_classifier = nn.Linear(768, 2).to(device)
             dinov3_classifier.load_state_dict(checkpoint["classifier"])
             dinov3_classifier.eval()
-            print(f"DINOv3 classifier loaded! (val_acc: {checkpoint.get('val_acc', 'N/A')})")
+            print(f"Moonlight classifier loaded! (val_acc: {checkpoint.get('val_acc', 'N/A')})")
         else:
-            print(f"Warning: DINOv3 classifier not found at {DINOV3_CLASSIFIER_PATH}")
-            
-        print("DINOv3 model loaded!")
+            raise Exception(f"Classifier not found at {DINOV3_CLASSIFIER_PATH}")
+
+        print("Moonlight loaded successfully!")
     except Exception as e:
-        print(f"Failed to load DINOv3: {e}")
-        dinov3_model = None
+        print(f"FATAL: Failed to load Moonlight: {e}")
+        raise
 
-    # モデル別セントロイドをロード（類似度計算用）
-    print("Loading model centroids for similarity detection...")
-    model_name_map = {
-        "illustrious_ai": "Illustrious",
-        "pony_ai": "Pony",
-        "sdxl10_ai": "SDXL 1.0",
-        "sd15_ai": "SD 1.5",
-        "flux1d_ai": "FLUX.1",
-        "other_ai": "Other",
-    }
-    for npy_file in EMBEDDINGS_DIR.glob("*_ai.npy"):
-        key = npy_file.stem  # e.g., "illustrious_ai"
-        embeddings = np.load(npy_file)
-        centroid = embeddings.mean(axis=0)
-        # 正規化（コサイン類似度用）
-        centroid = centroid / (np.linalg.norm(centroid) + 1e-8)
-        display_name = model_name_map.get(key, key.replace("_ai", "").title())
-        model_centroids[display_name] = centroid
-        print(f"  Loaded centroid: {display_name} ({len(embeddings)} samples)")
-    print(f"Loaded {len(model_centroids)} model centroids")
-
-    # AniXplore (Modal) の状態確認
-    if MODAL_AVAILABLE:
-        print("Modal available, AniXplore will be used as primary detector")
-    
     yield
 
     # クリーンアップ
-    del model, processor, dinov3_model, dinov3_processor, dinov3_classifier
+    del dinov3_model, dinov3_processor, dinov3_classifier
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
@@ -176,230 +110,21 @@ app.add_middleware(
 )
 
 
-def generate_attention_heatmap(attentions, original_image):
-    """
-    Attention weightsからヒートマップを生成
-    
-    Args:
-        attentions: モデルのattention outputs
-        original_image: 元のPIL Image
-    
-    Returns:
-        Base64エンコードされたヒートマップ画像
-    """
-    # 最後の層のattentionを取得 (shape: [batch, heads, seq_len, seq_len])
-    last_attention = attentions[-1]
-    
-    # 全ヘッドの平均を取る
-    attention_avg = last_attention.mean(dim=1)[0]  # [seq_len, seq_len]
-    
-    # CLSトークン（index 0）から各パッチへのattentionを取得
-    cls_attention = attention_avg[0, 1:]  # CLSトークン自身を除く
-    
-    # 14x14のグリッドにリシェイプ（ViT-base: 224/16 = 14）
-    num_patches = int(np.sqrt(cls_attention.shape[0]))
-    attention_map = cls_attention.reshape(num_patches, num_patches).cpu().numpy()
-    
-    # 正規化
-    attention_map = (attention_map - attention_map.min()) / (attention_map.max() - attention_map.min() + 1e-8)
-    
-    # 元の画像サイズにリサイズ
-    original_size = original_image.size  # (width, height)
-    attention_resized = np.array(Image.fromarray((attention_map * 255).astype(np.uint8)).resize(
-        original_size, Image.BILINEAR
-    )) / 255.0
-    
-    # ヒートマップを作成（元画像にオーバーレイ）
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    ax.imshow(original_image)
-    ax.imshow(attention_resized, cmap='jet', alpha=0.5)
-    ax.axis('off')
-    plt.tight_layout(pad=0)
-    
-    # Base64エンコード
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=100)
-    plt.close(fig)
-    buf.seek(0)
-    
-    return base64.b64encode(buf.getvalue()).decode('utf-8')
-
-
-def generate_dinov3_attention_heatmap(model, inputs, original_image, device):
-    """
-    DINOv3のself-attentionからヒートマップを生成
-    DINOv3は自己教師学習で訓練されているため、セマンティックに意味のある領域を強調する
-    
-    Args:
-        model: DINOv3モデル
-        inputs: 前処理済み入力
-        original_image: 元のPIL Image
-        device: torch device
-    
-    Returns:
-        Base64エンコードされたヒートマップ画像
-    """
-    # Attention出力を取得するためにフックを設定
-    attentions = []
-    
-    def get_attention_hook(module, input, output):
-        # DINOv3のattention layerからattention weightsを取得
-        attentions.append(output[1] if isinstance(output, tuple) else output)
-    
-    # 最後のattention layerにフックを登録
-    # DINOv3 (dinov2ベース) のアーキテクチャに合わせる
-    hook_handle = None
-    try:
-        # DINOv3のViTエンコーダの最後の層のattentionを取得
-        encoder_layers = model.encoder.layer
-        last_layer = encoder_layers[-1]
-        hook_handle = last_layer.attention.attention.register_forward_hook(
-            lambda m, i, o: attentions.append(o[1]) if len(o) > 1 else None
-        )
-    except AttributeError:
-        # 別のアーキテクチャの場合
-        pass
-    
-    # output_attentions=Trueで推論
-    with torch.no_grad():
-        outputs = model(**inputs, output_attentions=True)
-    
-    if hook_handle:
-        hook_handle.remove()
-    
-    # attentionsを取得
-    if hasattr(outputs, 'attentions') and outputs.attentions is not None:
-        model_attentions = outputs.attentions
-    else:
-        return None
-    
-    # 最後の層のattentionを取得 (shape: [batch, heads, seq_len, seq_len])
-    last_attention = model_attentions[-1]
-    
-    # 全ヘッドの平均を取る
-    attention_avg = last_attention.mean(dim=1)[0]  # [seq_len, seq_len]
-    
-    # CLSトークン（index 0）から各パッチへのattentionを取得
-    cls_attention = attention_avg[0, 1:]  # CLSトークン自身を除く
-    
-    # パッチ数からグリッドサイズを計算（DINOv3: 518/14 = 37 または 224/14 = 16）
-    num_patches = int(np.sqrt(cls_attention.shape[0]))
-    if num_patches * num_patches != cls_attention.shape[0]:
-        # 正方形でない場合はスキップ
-        return None
-    
-    attention_map = cls_attention.reshape(num_patches, num_patches).cpu().numpy()
-    
-    # 正規化
-    attention_map = (attention_map - attention_map.min()) / (attention_map.max() - attention_map.min() + 1e-8)
-    
-    # 元の画像サイズにリサイズ
-    original_size = original_image.size  # (width, height)
-    attention_resized = np.array(Image.fromarray((attention_map * 255).astype(np.uint8)).resize(
-        original_size, Image.BILINEAR
-    )) / 255.0
-    
-    # ヒートマップを作成（元画像にオーバーレイ）
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    ax.imshow(original_image)
-    ax.imshow(attention_resized, cmap='jet', alpha=0.5)
-    ax.axis('off')
-    plt.tight_layout(pad=0)
-    
-    # Base64エンコード
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=100)
-    plt.close(fig)
-    buf.seek(0)
-    
-    return base64.b64encode(buf.getvalue()).decode('utf-8')
-
-
 @app.get("/")
 async def root():
     return {
         "status": "ok",
-        "primary_model": "AniXplore (Modal)" if MODAL_AVAILABLE else MODEL_NAME,
-        "fallback_model": MODEL_NAME,
-        "optional_models": ["dinov3", "legekka"]
+        "model": "Moonlight"
     }
 
 
 @app.get("/health")
 async def health_check():
     return {
-        "status": "healthy",
-        "primary_model": "AniXplore (Modal)",
-        "primary_status": "available" if MODAL_AVAILABLE else "unavailable",
-        "fallback_model": MODEL_NAME,
-        "fallback_loaded": model is not None,
-        "dinov3_status": "available" if dinov3_model is not None and dinov3_classifier is not None else "unavailable",
-        "dinov3_local": True,
+        "status": "healthy" if dinov3_model is not None and dinov3_classifier is not None else "unhealthy",
+        "model": "Moonlight",
         "device": str(device) if device else None,
         "cuda_available": torch.cuda.is_available()
-    }
-
-
-async def analyze_with_anixplore(image_bytes: bytes) -> dict:
-    """AniXplore (Modal) で解析"""
-    detector = get_anixplore_detector()
-    if not detector:
-        raise Exception("AniXplore detector not available")
-    
-    result = detector.detect.remote(image_bytes)
-    
-    # AniXploreの結果をAPIレスポンス形式に変換
-    ai_score = result["probability"] * 100
-    human_score = 100 - ai_score
-    
-    return {
-        "ai_score": round(ai_score, 2),
-        "human_score": round(human_score, 2),
-        "confidence": round(result["confidence"] * 100, 2),
-        "is_ai": result["is_ai"],
-        "model_used": "AniXplore",
-        "attention_map": None  # AniXploreは周波数分析ベースなのでattention mapなし
-    }
-
-
-async def analyze_with_legekka(image: Image.Image, image_bytes: bytes) -> dict:
-    """legekka (ローカル) で解析"""
-    if model is None:
-        raise Exception("Legekka model not loaded")
-
-    # 前処理
-    inputs = processor(images=image, return_tensors="pt")
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-
-    # 推論（attention出力も取得）
-    with torch.no_grad():
-        outputs = model(**inputs, output_attentions=True)
-        logits = outputs.logits
-        probabilities = torch.nn.functional.softmax(logits, dim=1)[0]
-        attentions = outputs.attentions
-
-    # Attention Mapヒートマップを生成
-    attention_heatmap = generate_attention_heatmap(attentions, image)
-
-    # ラベルマッピング
-    id2label = model.config.id2label
-
-    # スコア取得
-    scores = {}
-    for idx, label in id2label.items():
-        scores[label.lower()] = float(probabilities[idx].cpu()) * 100
-
-    # AI/Humanのスコアを正規化
-    ai_score = scores.get("ai", scores.get("artificial", 0))
-    human_score = scores.get("human", scores.get("real", 100 - ai_score))
-
-    return {
-        "ai_score": round(ai_score, 2),
-        "human_score": round(human_score, 2),
-        "confidence": round(max(ai_score, human_score), 2),
-        "is_ai": ai_score > human_score,
-        "model_used": "legekka",
-        "attention_map": attention_heatmap
     }
 
 
@@ -637,7 +362,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         "human_score": round(human_score, 2),
         "confidence": round(abs(ai_prob - 0.5) * 200, 2),
         "is_ai": ai_prob > 0.5,
-        "model_used": "DINOv3",
+        "model_used": "Moonlight",
         "attention_map": attention_heatmap,
         "forensic_logs": forensic_logs,
         "detected_traces": detected_traces,
@@ -647,21 +372,10 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 @app.post("/analyze")
 async def analyze_image(
     file: UploadFile = File(...),
-    model: str = Form(default="anixplore")  # "anixplore", "legekka", or "dinov3"
+    model: str = Form(default="dinov3")
 ):
     """
-    画像を解析してAI生成かどうかを判定
-
-    Args:
-        model: 使用するモデル ("anixplore", "legekka", or "dinov3")
-
-    Returns:
-        - is_ai: AI生成かどうか
-        - ai_score: AI生成の確信度 (0-100)
-        - human_score: 人間作の確信度 (0-100)
-        - processing_time: 処理時間(秒)
-        - model_used: 使用したモデル
-        - attention_map: Attention Mapのヒートマップ (legekka/DINOv3使用時)
+    画像を解析してAI生成かどうかを判定（Moonlightのみ）
     """
     # ファイル形式チェック
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -674,37 +388,8 @@ async def analyze_image(
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        result = None
-        error_info = None
-
-        # ユーザー指定のモデルを使用
-        if model == "dinov3":
-            try:
-                result = await analyze_with_dinov3(image)
-            except Exception as e:
-                error_info = f"DINOv3 failed: {str(e)}"
-                print(error_info)
-        elif model == "anixplore" and MODAL_AVAILABLE:
-            try:
-                result = await analyze_with_anixplore(contents)
-            except Exception as e:
-                error_info = f"AniXplore failed: {str(e)}"
-                print(error_info)
-        elif model == "legekka":
-            try:
-                result = await analyze_with_legekka(image, contents)
-            except Exception as e:
-                error_info = f"Legekka failed: {str(e)}"
-                print(error_info)
-        
-        # フォールバック: legekka (ローカル)
-        if result is None:
-            try:
-                result = await analyze_with_legekka(image, contents)
-                if error_info:
-                    result["fallback_reason"] = error_info
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"All models failed. Last error: {str(e)}")
+        # Moonlight (DINOv3) で解析
+        result = await analyze_with_dinov3(image)
 
         processing_time = time.time() - start_time
 
@@ -720,7 +405,6 @@ async def analyze_image(
             "attention_map": result.get("attention_map"),
             "forensic_logs": result.get("forensic_logs", []),
             "detected_traces": result.get("detected_traces"),
-            "fallback_reason": result.get("fallback_reason")
         }
 
     except HTTPException:
@@ -755,11 +439,9 @@ def extract_twitter_image_url(url: str) -> str:
 @app.post("/analyze-url")
 async def analyze_image_from_url(request: URLAnalyzeRequest):
     """
-    URLから画像を取得して解析
-    Twitter/X, Pixiv, その他の画像URLに対応
+    URLから画像を取得して解析（Moonlightのみ）
     """
     url = request.url.strip()
-    model_name = request.model
 
     if not url:
         raise HTTPException(status_code=400, detail="URLが指定されていません")
@@ -799,37 +481,8 @@ async def analyze_image_from_url(request: URLAnalyzeRequest):
         # 画像を開く
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        result = None
-        error_info = None
-
-        # ユーザー指定のモデルを使用
-        if model_name == "dinov3":
-            try:
-                result = await analyze_with_dinov3(image)
-            except Exception as e:
-                error_info = f"DINOv3 failed: {str(e)}"
-                print(error_info)
-        elif model_name == "anixplore" and MODAL_AVAILABLE:
-            try:
-                result = await analyze_with_anixplore(contents)
-            except Exception as e:
-                error_info = f"AniXplore failed: {str(e)}"
-                print(error_info)
-        elif model_name == "legekka":
-            try:
-                result = await analyze_with_legekka(image, contents)
-            except Exception as e:
-                error_info = f"Legekka failed: {str(e)}"
-                print(error_info)
-
-        # フォールバック: legekka (ローカル)
-        if result is None:
-            try:
-                result = await analyze_with_legekka(image, contents)
-                if error_info:
-                    result["fallback_reason"] = error_info
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"All models failed. Last error: {str(e)}")
+        # Moonlight (DINOv3) で解析
+        result = await analyze_with_dinov3(image)
 
         processing_time = time.time() - start_time
 
@@ -849,7 +502,6 @@ async def analyze_image_from_url(request: URLAnalyzeRequest):
             "attention_map": result.get("attention_map"),
             "forensic_logs": result.get("forensic_logs", []),
             "detected_traces": result.get("detected_traces"),
-            "fallback_reason": result.get("fallback_reason")
         }
 
     except HTTPException:

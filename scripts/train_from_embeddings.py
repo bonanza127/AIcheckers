@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from pathlib import Path
-from sklearn.model_selection import train_test_split
 
 EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
 OUTPUT_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
@@ -70,7 +69,7 @@ def load_embeddings():
     return X, y
 
 
-def train_classifier(X, y, epochs=20, lr=0.001):
+def train_classifier(X, y, epochs=30, lr=0.001):
     """Linear Probe分類器を学習（元のアーキテクチャ）"""
     from torch.utils.data import DataLoader, TensorDataset
 
@@ -103,6 +102,7 @@ def train_classifier(X, y, epochs=20, lr=0.001):
     model = nn.Linear(768, 2).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     best_acc = 0.0
     best_state = None
@@ -118,6 +118,8 @@ def train_classifier(X, y, epochs=20, lr=0.001):
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+
+        scheduler.step()
 
         # Validation
         model.eval()
@@ -143,7 +145,7 @@ def train_classifier(X, y, epochs=20, lr=0.001):
 
     # Save best model
     model.load_state_dict(best_state)
-    return model
+    return model, best_acc
 
 
 def main():
@@ -164,12 +166,15 @@ def main():
     X, y = load_embeddings()
 
     # Train
-    model = train_classifier(X, y, epochs=20)
+    model, best_acc = train_classifier(X, y)  # epochs=30 (default)
 
-    # Save
+    # Save (checkpoint形式: バックエンドが checkpoint["classifier"] を期待)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), OUTPUT_PATH)
-    print(f"\nModel saved to {OUTPUT_PATH}")
+    torch.save({
+        "classifier": model.state_dict(),
+        "val_acc": best_acc
+    }, OUTPUT_PATH)
+    print(f"\nModel saved to {OUTPUT_PATH} (val_acc: {best_acc*100:.2f}%)")
 
 
 if __name__ == "__main__":

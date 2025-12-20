@@ -7,25 +7,13 @@
 - **フロントエンド**: https://aicheckers.net (Vercel)
 - **API**: https://api.aicheckers.net (Cloudflare Tunnel → localhost:8000)
 
-## 現在のアーキテクチャ（2024-12-20更新）
+## 現在のアーキテクチャ（2025-12-20更新）
 
 ```
-aicheckers.net
-    ↓
-┌──────────────────────────────────────────────────────┐
-│ Moonlight V1.3 (ローカル) │ ← 98.29%精度、37-56ms、推奨│
-│ AniXplore (Modal)         │ ← F1: 0.9999、コールドスタート25秒│
-│ legekka (ローカル)        │ ← 94.68%、汎化性能高      │
-└──────────────────────────────────────────────────────┘
+aicheckers.net → Moonlight (DINOv3 Linear Probe) のみ
 ```
 
-## モデル比較
-
-| モデル | 方式 | 精度 | 速度 | 強み |
-|--------|------|------|------|------|
-| **Moonlight V1.3** | Linear Probe (ローカル) | 98.29% | **37-56ms** | 高速・高精度・NovelAI対応 |
-| AniXplore | 周波数分析 (Modal) | F1: 0.9999 | 2秒+ | AnimeDL-2M学習データに最強 |
-| legekka | ViT分類 (ローカル) | 94.68% | ~200ms | 汎化性能高、未知モデルに対応 |
+**精度**: 98.13% | **速度**: 37-56ms
 
 ---
 
@@ -83,6 +71,22 @@ embeddings/
 # 現在のアーキテクチャ（変更する場合はバックアップを取ってから）
 model = nn.Linear(768, 2)
 criterion = nn.CrossEntropyLoss()
+```
+
+### 保存形式（絶対厳守）
+```python
+# バックエンド (backend/main.py:111-112) が期待する形式：
+checkpoint = torch.load(path)
+classifier.load_state_dict(checkpoint["classifier"])  # ← "classifier" キー必須
+
+# 正しい保存方法：
+torch.save({
+    "classifier": model.state_dict(),
+    "val_acc": best_acc
+}, OUTPUT_PATH)
+
+# ❌ 間違い（これをやるとバックエンドがロードできない）：
+torch.save(model.state_dict(), OUTPUT_PATH)
 ```
 
 ### 学習コマンド
@@ -174,6 +178,13 @@ python scripts/train_from_embeddings.py
 NovelAI画像収集など、Cloudflare保護サイトからのスクレイピング用
 - `curl_cffi`ライブラリでChrome偽装
 - Skills: `~/.claude/skills/cloudflare-bypass-scraper/`
+
+---
+
+## 注意事項
+
+- **新規スクリプト作成前に、その出力を使う側のコードを必ず読め**
+- **問題発生時は手を止めて原因特定。焦って修正するな**
 
 ---
 
