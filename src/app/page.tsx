@@ -71,6 +71,8 @@ export default function Home() {
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
+  const [urlInput, setUrlInput] = useState("");
+  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -174,6 +176,84 @@ export default function Home() {
     handleFiles(e.target.files);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [handleFiles]);
+
+  const handleUrlSubmit = useCallback(async () => {
+    if (!urlInput.trim()) return;
+
+    setIsLoadingUrl(true);
+    addLog(`URL解析開始: ${urlInput}`, "process");
+
+    try {
+      const apiUrl = getApiUrl();
+      const response = await fetch(`${apiUrl}/analyze-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urlInput, model: selectedModel })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "URL解析に失敗しました");
+      }
+
+      const data = await response.json();
+
+      // 結果を表示
+      const detectionResult: DetectionResult = {
+        isAI: data.is_ai,
+        aiScore: data.ai_score,
+        humanScore: data.human_score,
+        verdict: data.verdict,
+        confidence: data.confidence,
+        processingTime: data.processing_time,
+        artifacts: data.detected_traces || "分析完了",
+        attentionMap: data.attention_map
+      };
+
+      setResult(detectionResult);
+      setPhase("complete");
+      setCurrentFileName(data.filename || "URL Image");
+
+      // 画像プレビューを設定（attention_mapがあればそれを使用）
+      if (data.attention_map) {
+        setCurrentImage(`data:image/png;base64,${data.attention_map}`);
+      }
+
+      // ログ出力
+      addLog("═══════════════════════════════════════", "heading");
+      addLog(`[ANALYZED] URL: ${urlInput}`, "heading");
+      addLog("═══════════════════════════════════════", "heading");
+      addLog(`[MODEL] ${data.model_used.toUpperCase()}`, "info");
+      addLog(`[VERDICT] ${data.verdict}`, detectionResult.isAI ? "error" : "result");
+      addLog(`[SCORE] AI: ${data.ai_score.toFixed(1)}% | Human: ${data.human_score.toFixed(1)}%`, "detail");
+
+      if (data.forensic_logs) {
+        data.forensic_logs.forEach((log: string) => addLog(`  ${log}`, "detail"));
+      }
+
+      // 履歴に追加（プレビュー画像はattention_mapから）
+      const historyItem: HistoryItem = {
+        id: `url-${Date.now()}`,
+        name: data.filename || "URL Image",
+        preview: data.attention_map ? `data:image/png;base64,${data.attention_map}` : "",
+        isAI: data.is_ai,
+        score: data.ai_score,
+        aiScore: data.ai_score,
+        attentionMap: data.attention_map,
+        artifacts: data.detected_traces,
+        timestamp: new Date()
+      };
+      setHistory(prev => [historyItem, ...prev].slice(0, 20));
+
+      setUrlInput("");
+      addLog(`URL解析完了: ${data.processing_time.toFixed(3)}秒`, "result");
+
+    } catch (error) {
+      addLog(`ERROR: ${error instanceof Error ? error.message : "URL解析に失敗しました"}`, "error");
+    } finally {
+      setIsLoadingUrl(false);
+    }
+  }, [urlInput, selectedModel, addLog]);
 
   const processFile = async (file: File, queueItemId: string, displayIndex: number, total: number) => {
     const fileStartTime = Date.now();
@@ -483,7 +563,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
   const handleHistoryClick = (item: HistoryItem) => {
     setSelectedHistoryId(item.id);
     setSelectedQueueId(null); // Clear queue selection
-    setShowHeatmap(false); // Reset heatmap view
+    setShowHeatmap(true); // Attention Mapをデフォルト表示
     setCurrentImage(item.preview);
     setCurrentFileName(item.name);
     // 保存されたartifactsを使用、なければフォールバック
@@ -799,6 +879,26 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* URL Input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !isLoadingUrl && handleUrlSubmit()}
+                placeholder="画像URLを貼り付け（Twitter/Pixiv等）"
+                className="flex-1 px-3 py-2 rounded-lg bg-card-bg border border-border text-text-primary placeholder-muted text-sm focus:outline-none focus:border-accent"
+                disabled={isLoadingUrl}
+              />
+              <button
+                onClick={handleUrlSubmit}
+                disabled={!urlInput.trim() || isLoadingUrl || !backendOnline}
+                className="px-4 py-2 rounded-lg bg-accent/20 border border-accent text-accent font-medium text-sm hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoadingUrl ? "読込中..." : "URL解析"}
+              </button>
             </div>
 
             {/* Buttons */}
