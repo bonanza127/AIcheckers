@@ -250,25 +250,45 @@ export default function Home() {
       isAI = aiScore >= 80; // 80%以上でAI判定
       processingTime = data.processing_time;
       attentionMap = data.attention_map; // Attention Mapを取得
-      
-      // 3段階の判定に応じた詳細ログと痕跡
-      if (aiScore >= 80) {
-        addLog("> 検出: 均一すぎるテクスチャパターン", "detail");
-        addLog("> 検出: 不自然なエッジ処理の痕跡", "detail");
-        addLog("> 警告: AI生成の特徴が顕著", "error");
-        artifacts = "均一テクスチャ、不自然なエッジ処理";
-      } else if (aiScore >= 50) {
-        addLog("> 検出: AI/人間の特徴が混在", "detail");
-        addLog("> 警告: 判定が困難な領域", "info");
-        addLog("> 推奨: 追加の検証が必要", "info");
-        artifacts = "特徴混在 - 追加検証を推奨";
-      } else {
-        addLog("> 検出: 有機的な筆致の揺らぎ", "detail");
-        addLog("> 検出: 自然なテクスチャ分布", "detail");
-        addLog("> 確認: AI生成の痕跡なし", "process");
-        artifacts = "有機的筆致、自然なテクスチャ";
+
+      // detected_tracesがあればそれを優先、なければforensic_logsから生成
+      const detectedTraces: string = data.detected_traces || "";
+      const forensicLogs: string[] = data.forensic_logs || [];
+
+      if (forensicLogs.length > 0) {
+        // バックエンドからのforensic_logsを使用
+        forensicLogs.forEach((log: string) => {
+          const logType = log.includes("判定") ? (aiScore >= 80 ? "error" : aiScore >= 50 ? "info" : "process") : "detail";
+          addLog(`> ${log}`, logType);
+        });
       }
-      
+
+      // 検出された痕跡の設定（優先順位: detected_traces > forensic_logs > フォールバック）
+      if (detectedTraces) {
+        artifacts = detectedTraces;
+      } else if (forensicLogs.length > 0) {
+        const traces = forensicLogs.filter(l => !l.startsWith("判定")).slice(0, 2);
+        artifacts = traces.length > 0 ? traces.join(" / ") : forensicLogs[0];
+      } else {
+        // フォールバック: 従来のロジック
+        if (aiScore >= 80) {
+          addLog("> 検出: 均一すぎるテクスチャパターン", "detail");
+          addLog("> 検出: 不自然なエッジ処理の痕跡", "detail");
+          addLog("> 警告: AI生成の特徴が顕著", "error");
+          artifacts = "均一テクスチャ、不自然なエッジ処理";
+        } else if (aiScore >= 50) {
+          addLog("> 検出: AI/人間の特徴が混在", "detail");
+          addLog("> 警告: 判定が困難な領域", "info");
+          addLog("> 推奨: 追加の検証が必要", "info");
+          artifacts = "特徴混在 - 追加検証を推奨";
+        } else {
+          addLog("> 検出: 有機的な筆致の揺らぎ", "detail");
+          addLog("> 検出: 自然なテクスチャ分布", "detail");
+          addLog("> 確認: AI生成の痕跡なし", "process");
+          artifacts = "有機的筆致、自然なテクスチャ";
+        }
+      }
+
       addLog("> Attention Map生成完了", "process");
       addLog("> 推論完了", "process");
 
