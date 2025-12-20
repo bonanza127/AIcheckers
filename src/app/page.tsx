@@ -615,7 +615,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       <main className="flex-grow container mx-auto px-4 py-8">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
-          <h1 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した日本発のAIイラストチェッカー</h1>
+          <h1 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した日本のためのAIイラストチェッカー</h1>
           <p className="text-muted text-lg">
             AIが生成したアニメ画像を学習し、ファインチューニングしたViTが生成画像の痕跡を解析。<br />
             人間的な筆致の有無を検出し、生成画像を<span className="text-accent font-bold">98.35%の精度</span><sup className="text-xs text-muted">*</sup>で判別します。
@@ -939,7 +939,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       {/* Footer */}
       <footer className="site-footer p-4">
         <div className="container mx-auto text-center text-xs text-muted">
-          <p>&copy; 2025 AI Art Integrity Console. All rights reserved. | <span className="text-accent">Professional Frontend V4.2</span></p>
+          <p>&copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="text-accent hover:underline">お問い合わせ</a></p>
         </div>
       </footer>
     </div>
