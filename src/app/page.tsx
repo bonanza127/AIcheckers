@@ -686,7 +686,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 </span>
                 <span className="text-sm font-normal text-muted">({history.length}件)</span>
               </h3>
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-1">
+              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
                 {history.length === 0 ? (
                   <p className="text-muted text-sm italic">解析履歴はありません。</p>
                 ) : (
