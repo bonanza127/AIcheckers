@@ -80,7 +80,7 @@ embeddings/
 
 ### アーキテクチャ（重要）
 ```python
-# 正しいアーキテクチャ
+# 現在のアーキテクチャ（変更する場合はバックアップを取ってから）
 model = nn.Linear(768, 2)
 criterion = nn.CrossEntropyLoss()
 ```
