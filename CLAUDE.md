@@ -228,6 +228,75 @@ for tar in *.tar; do tar -xf "$tar"; done
 
 ---
 
+## ブランディング
+
+- **モデル名**: Moonlight V1.3（DINOv3ベースのLinear Probe）
+- **ロジック表記**: カスケード方式
+- **キャッチコピー**: 「二次元に特化した日本のためのAIイラストチェッカー」
+
+---
+
+## 連絡先・メール
+
+- **ドメインメール**: contact@aicheckers.net
+- **設定**: Cloudflare Email Routing（受信専用、転送）
+- **用途**: お問い合わせ、FANBOX連絡用
+
+---
+
+## 収益化方針
+
+### 短期（3ヶ月後目安）
+- **広告**: 忍者AdMax または Google AdSense
+- AdSenseは審査厳しめ（コンテンツ不足で落ちやすい）
+
+### 中期
+- **pixivFANBOX**: クリエイター支援型
+  - 支援者特典: スキャン無制限
+  - 一般ユーザー: 1日10枚まで無料
+- pixiv OAuth連携で支援者判定可能
+
+### 検討中
+- CAMPFIRE単発クラファン（開発資金・サーバー維持費）
+- AI絵を忌避するクリエイター層からの支援が見込める
+
+---
+
+## 動的OGP
+
+- **エンドポイント**: `/api/og?verdict=AI&score=98`
+- **シェアページ**: `/share?verdict=AI&score=98`
+- **用途**: X共有時に判定結果をバナー表示
+
+---
+
+## NovelAI対応
+
+### 現状
+- Moonlight V1.3はNovelAI画像に弱い（学習データに含まれていない）
+
+### データ収集
+- **ソース**: aibooru.online（NovelAIタグあり）
+- **スクリプト**: `scripts/aibooru_scraper.py`
+- **保存先**: `data/novelai/`
+
+```bash
+# NovelAI画像収集（Cloudflare bypass使用）
+python scripts/aibooru_scraper.py --count 1000 --rating s --skip 10
+
+# 完了後: embedding抽出
+python scripts/extract_embeddings.py --dir data/novelai --name novelai_ai
+
+# 分類器再学習
+python modal_dinov3/train_linear_probe.py
+```
+
+### Cloudflare Bypass
+- `curl_cffi`ライブラリでChrome偽装
+- Skills: `~/.claude/skills/cloudflare-bypass-scraper/`
+
+---
+
 ## セッション履歴 (2024-12-20)
 
 ### 実施内容
