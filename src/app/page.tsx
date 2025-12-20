@@ -621,7 +621,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             人間的な筆致の有無を検出し、生成画像を<span className="text-accent font-bold">98.35%の精度</span><sup className="text-xs text-muted">*</sup>で判別します。
           </p>
           <p className="text-xs text-muted mt-2">
-            * DINOv3モデル使用時。AnimeDL-2Mデータセットでの検証精度。
+            * 学習済みモデルの精度。画像は一万枚で検証。
           </p>
         </div>
 
@@ -719,10 +719,10 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     prev === "legekka" ? "dinov3" : "anixplore"
                   )}
                   className="text-accent font-bold hover:text-cyan-300 transition-colors cursor-pointer underline decoration-dotted"
-                  title="クリックでモデル切り替え (AniXplore → Legekka → DINOv3)"
+                  title="クリックでモデル切り替え (AniXplore → Legekka → Moonlight)"
                 >
                   {selectedModel === "anixplore" ? "AniXplore V1.0" :
-                   selectedModel === "legekka" ? "Legekka-ViT V1.1" : "DINOv3-ViT"}
+                   selectedModel === "legekka" ? "Legekka-ViT V1.1" : "Moonlight V1.3"}
                 </button></span>
                 <span>ロジック: <span className="text-dim font-bold">Anime-Specialized V1.0</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
