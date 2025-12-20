@@ -492,24 +492,31 @@ export default function Home() {
     }
   };
 
-  // X（Twitter）に結果を共有
+  // X（Twitter）に結果を共有（動的OGP対応）
   const shareToX = () => {
     if (!result) return;
 
-    const verdict = result.aiScore >= 80
-      ? "🤖 AI DETECTED"
+    const verdictText = result.aiScore >= 80
+      ? "AI DETECTED"
       : result.aiScore >= 50
-        ? "❓ UNKNOWN"
-        : "✅ HUMAN CONFIRMED";
+        ? "UNKNOWN"
+        : "HUMAN CONFIRMED";
+
+    const verdictEmoji = result.aiScore >= 80
+      ? "🤖"
+      : result.aiScore >= 50
+        ? "❓"
+        : "✅";
 
     const text = `【AI判定結果】
-${verdict}
+${verdictEmoji} ${verdictText}
 AI Possibility: ${result.aiScore.toFixed(1)}%
 
 #AIイラスト判定 #aicheckers`;
 
-    const url = "https://aicheckers.net";
-    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+    // 動的OGP付きのシェアURL
+    const shareUrl = `https://aicheckers.net/share?verdict=${encodeURIComponent(verdictText)}&score=${Math.round(result.aiScore)}`;
+    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
   };
