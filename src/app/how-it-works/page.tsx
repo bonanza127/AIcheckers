@@ -124,7 +124,7 @@ export default function HowItWorks() {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
               <p className="font-bold text-foreground">SDXL</p>
-              <p className="text-success text-sm mt-1">高頻度で検出</p>
+              <p className="text-success text-sm mt-1">攻略完了</p>
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
               <p className="font-bold text-foreground">Illustrious</p>
@@ -136,7 +136,7 @@ export default function HowItWorks() {
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
               <p className="font-bold text-foreground">NovelAI</p>
-              <p className="text-yellow-400 text-sm mt-1">対応強化中</p>
+              <p className="text-yellow-400 text-sm mt-1">やや弱い？（7.5割程度）対応強化中</p>
             </div>
           </div>
         </section>
@@ -167,7 +167,7 @@ export default function HowItWorks() {
             <p className="text-foreground font-medium">推定無罪の原則</p>
             <p className="text-muted text-sm mt-2">
               人間の作品がAIと誤判定されることを防ぐため、本サービスでは<span className="text-foreground">確信度が高い場合のみAI判定</span>を下すよう設計しています。
-              そのため理論上の数値よりは控えめな判定になりますが、二次元イラスト向けのAIチェッカーとしては最も信頼できるものを目指しています。
+              しかし、それでも100%の精度ではありません。あくまでも判断材料の一つとしてご活用いただければ幸いです。
             </p>
           </div>
         </section>
