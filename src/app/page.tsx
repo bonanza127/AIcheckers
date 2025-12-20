@@ -66,7 +66,21 @@ export default function Home() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('aicheckers-history');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          return parsed.map((item: HistoryItem & { timestamp: string }) => ({
+            ...item,
+            timestamp: new Date(item.timestamp)
+          }));
+        } catch { return []; }
+      }
+    }
+    return [];
+  });
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
@@ -105,6 +119,13 @@ export default function Home() {
     const interval = setInterval(checkBackendHealth, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  // 履歴をlocalStorageに保存
+  useEffect(() => {
+    if (history.length > 0) {
+      localStorage.setItem('aicheckers-history', JSON.stringify(history));
+    }
+  }, [history]);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "info") => {
     setLogs(prev => [...prev, { message, type }]);
@@ -243,7 +264,7 @@ export default function Home() {
         artifacts: data.detected_traces,
         timestamp: new Date()
       };
-      setHistory(prev => [historyItem, ...prev].slice(0, 20));
+      setHistory(prev => [historyItem, ...prev].slice(0, 100));
 
       setUrlInput("");
       addLog(`URL解析完了: ${data.processing_time.toFixed(3)}秒`, "result");
@@ -416,7 +437,7 @@ export default function Home() {
       attentionMap,
       artifacts, // detected_traces も保存
       timestamp: new Date()
-    }, ...prev].slice(0, 20)); // Keep last 20 items
+    }, ...prev].slice(0, 100)); // Keep last 100 items
 
     // Remove from queue after scan complete
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
@@ -776,7 +797,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 </span>
                 <span className="text-sm font-normal text-muted">({history.length}件)</span>
               </h3>
-              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
+              <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                 {history.length === 0 ? (
                   <p className="text-muted text-sm italic">解析履歴はありません。</p>
                 ) : (
