@@ -724,7 +724,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   {selectedModel === "anixplore" ? "AniXplore V1.0" :
                    selectedModel === "legekka" ? "Legekka-ViT V1.1" : "Moonlight V1.3"}
                 </button></span>
-                <span>ロジック: <span className="text-dim font-bold">Anime-Specialized V1.0</span></span>
+                <span>ロジック: <span className="text-dim font-bold">カスケード方式</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
 
