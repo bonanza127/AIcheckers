@@ -12,7 +12,7 @@ export default function HowItWorks() {
       {/* Header */}
       <header className="site-header border-b border-gray-700">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-accent hover:opacity-80">
+          <Link href="/" className="text-2xl font-bold text-foreground hover:opacity-80">
             AIチェッカー
           </Link>
           <nav className="text-sm text-muted">
@@ -167,7 +167,7 @@ export default function HowItWorks() {
             <p className="text-foreground font-medium">推定無罪の原則</p>
             <p className="text-muted text-sm mt-2">
               人間の作品がAIと誤判定されることを防ぐため、本サービスでは<span className="text-foreground">確信度が高い場合のみAI判定</span>を下すよう設計しています。
-              しかし、それでも100%の精度ではありません。あくまでも判断材料の一つとしてご活用いただければ幸いです。
+              しかしそれでも、100%の精度を保証することはできませんので、<span className="text-accent font-bold">あくまでも判断材料の一つとして</span>本ツールをご活用いただければ幸いです。
             </p>
           </div>
         </section>
@@ -176,9 +176,9 @@ export default function HowItWorks() {
         <div className="text-center pt-6 border-t border-gray-700">
           <Link
             href="/"
-            className="inline-block px-6 py-3 bg-accent text-background font-bold rounded hover:opacity-90 transition"
+            className="inline-block px-6 py-3 bg-accent text-white font-bold rounded hover:opacity-90 transition"
           >
-            画像をチェックする →
+            画像をスキャンする →
           </Link>
         </div>
       </main>
