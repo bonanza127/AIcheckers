@@ -157,26 +157,17 @@ export default function Home() {
     }
 
     validFiles.forEach(file => {
-      if (queue.length < 10) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const newItem: QueueItem = {
-            id: `${Date.now()}-${file.name}`,
-            name: file.name,
-            preview: e.target?.result as string,
-            status: "wait"
-          };
-          setQueue(prev => {
-            if (prev.length < 10) {
-              return [...prev, newItem];
-            }
-            return prev;
-          });
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const newItem: QueueItem = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`,
+          name: file.name,
+          preview: e.target?.result as string,
+          status: "wait"
         };
-        reader.readAsDataURL(file);
-      } else {
-        addLog("WARNING: キューの制限（10ファイル）に達しました。", "error");
-      }
+        setQueue(prev => [...prev, newItem]);
+      };
+      reader.readAsDataURL(file);
     });
 
     addLog(`キュー登録: ${validFiles.length}個のアーティファクトが処理キューに追加されました。`, "process");
@@ -869,7 +860,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                       キュー ({queue.length}件)
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-2 flex-1 content-start overflow-y-auto">
+                  <div className="flex flex-wrap gap-2 flex-1 content-start overflow-y-auto max-h-40 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                     {queue.map((item) => (
                       <div
                         key={item.id}
