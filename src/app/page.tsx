@@ -597,7 +597,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             <Fingerprint className="w-8 h-8 text-accent" />
             <h2 className="text-2xl font-bold tracking-tight">
               AIチェッカー
-              <a href="/how-it-works" className="ml-3 text-sm font-light text-muted hover:text-accent transition-colors">
+              <span className="text-sm font-light text-muted">　//　</span>
+              <a href="/how-it-works" className="text-sm font-medium text-muted hover:text-foreground hover:bg-white/5 px-2 py-1 rounded transition-all border border-transparent hover:border-gray-700">
                 How it works?
               </a>
             </h2>
