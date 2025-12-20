@@ -44,5 +44,13 @@ backend/venv/
 # Large model files
 models/
 
+# Training data and embeddings
+data/
+embeddings/
+
+# Python cache
+__pycache__/
+*.pyc
+
 # Temporary/cache files
 tag_translation_cache.json

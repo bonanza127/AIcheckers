@@ -1,14 +1,14 @@
 """
 DINOv3 AI Image Detector - Modal App
-k-NN方式: 参照画像の特徴量との類似度で分類
+Linear Probe方式: 凍結backbone + 学習済み分類器
 """
 import modal
 
 app = modal.App("dinov3-detector")
 
-# Volume for reference embeddings
+# Volume for trained classifier
 volume = modal.Volume.from_name("dinov3-embeddings", create_if_missing=True)
-EMBEDDINGS_PATH = "/embeddings/reference_embeddings.pt"
+CLASSIFIER_PATH = "/embeddings/linear_classifier.pt"
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -18,6 +18,7 @@ image = (
         "transformers>=4.40.0",
         "Pillow>=10.0.0",
         "numpy>=1.24.0",
+        "huggingface_hub>=0.20.0",
     )
 )
 
@@ -27,6 +28,7 @@ image = (
     gpu="T4",
     volumes={"/embeddings": volume},
     scaledown_window=60,
+    secrets=[modal.Secret.from_name("huggingface-secret")],
 )
 class DINOv3Detector:
     @modal.enter()
@@ -34,35 +36,36 @@ class DINOv3Detector:
         import torch
         from transformers import AutoImageProcessor, AutoModel
         from pathlib import Path
+        import os
+
+        # HuggingFace login for gated model
+        hf_token = os.environ.get("HF_TOKEN")
+        if hf_token:
+            from huggingface_hub import login
+            login(token=hf_token)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Loading DINOv3 on {self.device}...")
 
-        # Load DINOv3 or fallback to DINOv2
+        # Load DINOv3 (gated model)
         model_name = "facebook/dinov3-vitb16-pretrain-lvd1689m"
-        try:
-            self.processor = AutoImageProcessor.from_pretrained(model_name)
-            self.model = AutoModel.from_pretrained(model_name)
-            print(f"Loaded DINOv3")
-        except Exception as e:
-            print(f"DINOv3 unavailable ({e}), using DINOv2")
-            model_name = "facebook/dinov2-base"
-            self.processor = AutoImageProcessor.from_pretrained(model_name)
-            self.model = AutoModel.from_pretrained(model_name)
+        self.processor = AutoImageProcessor.from_pretrained(model_name, token=hf_token)
+        self.model = AutoModel.from_pretrained(model_name, token=hf_token)
         self.model.to(self.device)
         self.model.eval()
+        print("DINOv3 loaded!")
 
-        # Load reference embeddings if available
-        embeddings_path = Path(EMBEDDINGS_PATH)
-        if embeddings_path.exists():
-            data = torch.load(embeddings_path, map_location=self.device)
-            self.ai_embeddings = data["ai"].to(self.device)
-            self.real_embeddings = data["real"].to(self.device)
-            print(f"Loaded {len(self.ai_embeddings)} AI + {len(self.real_embeddings)} real reference embeddings")
+        # Load linear classifier if available
+        classifier_path = Path(CLASSIFIER_PATH)
+        if classifier_path.exists():
+            checkpoint = torch.load(classifier_path, map_location=self.device)
+            self.classifier = torch.nn.Linear(768, 2).to(self.device)
+            self.classifier.load_state_dict(checkpoint["classifier"])
+            self.classifier.eval()
+            print("Linear classifier loaded!")
         else:
-            print("WARNING: No reference embeddings found. Run build_reference_embeddings() first.")
-            self.ai_embeddings = None
-            self.real_embeddings = None
+            print("WARNING: No classifier found. Run train_linear_probe() first.")
+            self.classifier = None
 
         print("DINOv3 ready!")
 
@@ -80,148 +83,158 @@ class DINOv3Detector:
             outputs = self.model(**inputs)
             # Use CLS token (first token)
             features = outputs.last_hidden_state[:, 0, :]
-            # Normalize for cosine similarity
-            features = features / features.norm(dim=-1, keepdim=True)
 
         return features
 
     @modal.method()
     def detect(self, image_bytes: bytes) -> dict:
         """
-        Detect if image is AI-generated using k-NN.
+        Detect if image is AI-generated using Linear Probe.
 
         Returns:
             dict with probability, is_ai, confidence
         """
         import torch
 
-        if self.ai_embeddings is None or self.real_embeddings is None:
+        if self.classifier is None:
             return {
-                "error": "Reference embeddings not loaded",
+                "error": "Linear classifier not loaded",
                 "probability": 0.5,
                 "is_ai": False,
                 "confidence": 0.0,
             }
 
-        # Extract query features
-        query = self.extract_features(image_bytes)
+        # Extract features
+        features = self.extract_features(image_bytes)
 
-        # Compute cosine similarities
-        ai_sims = torch.mm(query, self.ai_embeddings.T)
-        real_sims = torch.mm(query, self.real_embeddings.T)
-
-        # k-NN: average top-k similarities
-        k = min(10, len(self.ai_embeddings), len(self.real_embeddings))
-        ai_score = ai_sims.topk(k).values.mean().item()
-        real_score = real_sims.topk(k).values.mean().item()
-
-        # Convert to probability
-        # Higher similarity to AI refs = higher AI probability
-        total = ai_score + real_score
-        if total > 0:
-            ai_prob = ai_score / total
-        else:
-            ai_prob = 0.5
+        # Classify
+        with torch.no_grad():
+            logits = self.classifier(features)
+            probs = torch.softmax(logits, dim=1)[0]
+            # Assuming class 0 = real, class 1 = AI
+            ai_prob = probs[1].item()
 
         return {
             "probability": ai_prob,
             "is_ai": ai_prob > 0.5,
             "confidence": abs(ai_prob - 0.5) * 2,
-            "ai_similarity": ai_score,
-            "real_similarity": real_score,
-        }
-
-    @modal.method()
-    def extract_and_save_embeddings(self, image_bytes_list: list, labels: list):
-        """
-        Extract embeddings from images and save to volume.
-
-        Args:
-            image_bytes_list: List of image bytes
-            labels: List of labels (0=real, 1=ai)
-        """
-        import torch
-
-        ai_features = []
-        real_features = []
-
-        for img_bytes, label in zip(image_bytes_list, labels):
-            try:
-                feat = self.extract_features(img_bytes)
-                if label == 1:
-                    ai_features.append(feat)
-                else:
-                    real_features.append(feat)
-            except Exception as e:
-                print(f"Error processing image: {e}")
-
-        # Stack and save
-        data = {
-            "ai": torch.cat(ai_features, dim=0) if ai_features else torch.empty(0, 768),
-            "real": torch.cat(real_features, dim=0) if real_features else torch.empty(0, 768),
-        }
-
-        torch.save(data, EMBEDDINGS_PATH)
-        volume.commit()
-
-        return {
-            "ai_count": len(ai_features),
-            "real_count": len(real_features),
-            "saved_to": EMBEDDINGS_PATH,
         }
 
 
-@app.function(image=image, gpu="T4", volumes={"/embeddings": volume}, timeout=1800)
-def build_reference_embeddings(ai_image_paths: list, real_image_paths: list):
+@app.function(
+    image=image,
+    gpu="T4",
+    volumes={"/embeddings": volume},
+    timeout=3600,
+    secrets=[modal.Secret.from_name("huggingface-secret")],
+)
+def train_linear_probe(
+    ai_embeddings: bytes,
+    real_embeddings: bytes,
+    epochs: int = 10,
+    lr: float = 0.001,
+):
     """
-    Build reference embeddings from local image files.
+    Train linear classifier on pre-extracted embeddings.
 
     Args:
-        ai_image_paths: List of paths to AI-generated images
-        real_image_paths: List of paths to real images
+        ai_embeddings: Serialized tensor of AI image embeddings
+        real_embeddings: Serialized tensor of real image embeddings
+        epochs: Number of training epochs
+        lr: Learning rate
     """
     import torch
-    from transformers import AutoImageProcessor, AutoModel
-    from PIL import Image
-    from pathlib import Path
+    import torch.nn as nn
+    from torch.utils.data import DataLoader, TensorDataset
+    import io
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Training on {device}")
 
-    # Load model
-    model_name = "facebook/dinov3-vitb16-pretrain-lvd1689m"
-    processor = AutoImageProcessor.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name).to(device).eval()
+    # Load embeddings
+    ai_emb = torch.load(io.BytesIO(ai_embeddings))
+    real_emb = torch.load(io.BytesIO(real_embeddings))
 
-    def extract_batch(paths):
-        features = []
-        for p in paths:
-            try:
-                img = Image.open(p).convert("RGB")
-                inputs = processor(images=img, return_tensors="pt")
-                inputs = {k: v.to(device) for k, v in inputs.items()}
-                with torch.no_grad():
-                    out = model(**inputs)
-                    feat = out.last_hidden_state[:, 0, :]
-                    feat = feat / feat.norm(dim=-1, keepdim=True)
-                    features.append(feat.cpu())
-            except Exception as e:
-                print(f"Error: {p}: {e}")
-        return torch.cat(features, dim=0) if features else torch.empty(0, 768)
+    print(f"AI embeddings: {ai_emb.shape}")
+    print(f"Real embeddings: {real_emb.shape}")
 
-    print(f"Processing {len(ai_image_paths)} AI images...")
-    ai_emb = extract_batch(ai_image_paths)
+    # Create dataset: label 0 = real, label 1 = AI
+    X = torch.cat([real_emb, ai_emb], dim=0)
+    y = torch.cat([
+        torch.zeros(len(real_emb), dtype=torch.long),
+        torch.ones(len(ai_emb), dtype=torch.long),
+    ])
 
-    print(f"Processing {len(real_image_paths)} real images...")
-    real_emb = extract_batch(real_image_paths)
+    # Shuffle
+    perm = torch.randperm(len(X))
+    X, y = X[perm], y[perm]
 
-    # Save
-    data = {"ai": ai_emb, "real": real_emb}
-    torch.save(data, EMBEDDINGS_PATH)
+    # Split train/val (90/10)
+    split_idx = int(len(X) * 0.9)
+    X_train, X_val = X[:split_idx], X[split_idx:]
+    y_train, y_val = y[:split_idx], y[split_idx:]
+
+    print(f"Train: {len(X_train)}, Val: {len(X_val)}")
+
+    # DataLoaders
+    train_loader = DataLoader(
+        TensorDataset(X_train, y_train),
+        batch_size=64,
+        shuffle=True,
+    )
+    val_loader = DataLoader(
+        TensorDataset(X_val, y_val),
+        batch_size=64,
+    )
+
+    # Linear classifier
+    classifier = nn.Linear(768, 2).to(device)
+    optimizer = torch.optim.AdamW(classifier.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss()
+
+    best_val_acc = 0
+    best_state = None
+
+    for epoch in range(epochs):
+        # Train
+        classifier.train()
+        train_loss = 0
+        for batch_x, batch_y in train_loader:
+            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+            optimizer.zero_grad()
+            logits = classifier(batch_x)
+            loss = criterion(logits, batch_y)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+
+        # Validate
+        classifier.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch_x, batch_y in val_loader:
+                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+                logits = classifier(batch_x)
+                preds = logits.argmax(dim=1)
+                correct += (preds == batch_y).sum().item()
+                total += len(batch_y)
+
+        val_acc = correct / total
+        print(f"Epoch {epoch+1}/{epochs}: loss={train_loss/len(train_loader):.4f}, val_acc={val_acc:.4f}")
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state = classifier.state_dict()
+
+    # Save best classifier
+    torch.save({"classifier": best_state, "val_acc": best_val_acc}, CLASSIFIER_PATH)
     volume.commit()
 
     return {
-        "ai_embeddings": len(ai_emb),
-        "real_embeddings": len(real_emb),
+        "best_val_acc": best_val_acc,
+        "train_samples": len(X_train),
+        "val_samples": len(X_val),
     }
 
 
@@ -232,7 +245,6 @@ def main(action: str = "test"):
 
     Usage:
         modal run app.py --action test
-        modal run app.py --action build
     """
     if action == "test":
         print("Testing DINOv3 detector...")
@@ -247,8 +259,3 @@ def main(action: str = "test"):
 
         result = detector.detect.remote(buf.getvalue())
         print(f"Result: {result}")
-
-    elif action == "build":
-        print("Building reference embeddings...")
-        # This would be called with actual image paths
-        print("Please call build_reference_embeddings() with image paths")
