@@ -23,18 +23,25 @@ export default function HowItWorks() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-12 max-w-3xl">
-        <h1 className="text-3xl font-bold mb-8 text-center">AIチェッカーの仕組み</h1>
+        <h1 className="text-3xl font-bold mb-8 text-center">How it works?</h1>
 
         {/* Section 1: Problem Statement */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-accent border-b border-gray-700 pb-2">なぜAIチェッカーが必要か</h2>
+          <h2 className="text-xl font-bold mb-4 text-accent border-b border-gray-700 pb-2">現状の問題点</h2>
           <p className="text-muted leading-relaxed">
             生成AIの急速な発展により、AI生成画像の判別が社会的な課題となっています。
-            海外にはAIチェッカーが存在しますが、それらの多くは実写画像やディープフェイク検出を目的としており、
-            <span className="text-foreground font-medium">アニメ・イラストには最適化されていません。</span>
           </p>
           <p className="text-muted leading-relaxed mt-3">
-            そこで私たちは、<span className="text-accent font-bold">二次元イラストに特化した</span>AI生成画像検出ツールを開発しました。
+            特に日本国内のクリエイターは深刻な被害を受けています。
+            <span className="text-foreground font-medium">無断でAI学習に作品を使用されたり、絵柄を模倣されたり</span>といった問題が多発していますが、
+            現状では有効な対抗手段がほとんどありません。
+          </p>
+          <p className="text-muted leading-relaxed mt-3">
+            さらに問題なのは、AI生成画像を自作と偽り、<span className="text-foreground font-medium">AI禁止のプラットフォームへ投稿したり、
+              不正にマネタイズしている</span>ケースも存在することです。
+          </p>
+          <p className="text-muted leading-relaxed mt-3">
+            こうした状況に対策を講じるべく、<span className="text-accent font-bold">二次元イラストに特化した日本仕様のAIチェッカー</span>を開発しました。
           </p>
         </section>
 
