@@ -47,6 +47,7 @@ type HistoryItem = {
   score: number;
   aiScore: number;
   attentionMap?: string;
+  artifacts?: string; // detected_traces を保存
   timestamp: Date;
 };
 
@@ -69,7 +70,7 @@ export default function Home() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
-  const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("anixplore");
+  const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -333,6 +334,7 @@ export default function Home() {
       score: isAI ? aiScore : humanScore,
       aiScore,
       attentionMap,
+      artifacts, // detected_traces も保存
       timestamp: new Date()
     }, ...prev].slice(0, 20)); // Keep last 20 items
 
@@ -484,6 +486,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
     setShowHeatmap(false); // Reset heatmap view
     setCurrentImage(item.preview);
     setCurrentFileName(item.name);
+    // 保存されたartifactsを使用、なければフォールバック
+    const fallbackArtifacts = item.aiScore >= 80 ? "均一テクスチャ、不自然なエッジ処理" : item.aiScore >= 50 ? "特徴混在 - 追加検証を推奨" : "有機的筆致、自然なテクスチャ";
     setResult({
       isAI: item.isAI,
       aiScore: item.aiScore,
@@ -491,7 +495,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       verdict: item.aiScore >= 80 ? "AI DETECTED" : item.aiScore >= 50 ? "UNKNOWN" : "HUMAN CONFIRMED",
       confidence: item.score,
       processingTime: 0,
-      artifacts: item.aiScore >= 80 ? "均一テクスチャ、不自然なエッジ処理" : item.aiScore >= 50 ? "特徴混在 - 追加検証を推奨" : "有機的筆致、自然なテクスチャ",
+      artifacts: item.artifacts || fallbackArtifacts,
       attentionMap: item.attentionMap
     });
     setPhase("complete");

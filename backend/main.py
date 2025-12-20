@@ -393,7 +393,7 @@ async def analyze_with_legekka(image: Image.Image, image_bytes: bytes) -> dict:
     }
 
 
-def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor, ai_prob: float) -> tuple:
+def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor, ai_prob: float, head_attentions: np.ndarray = None) -> tuple:
     """
     DINOv3の内部分析からフォレンジック風のログを生成
 
@@ -401,6 +401,7 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
         attention_map: attention map (num_patches x num_patches)
         features: CLS token特徴量 (768次元)
         ai_prob: AI確率 (0-1)
+        head_attentions: ヘッド別attention [12, 196] (オプション)
 
     Returns:
         (logs, detected_traces): ログリストと検出痕跡サマリー
@@ -412,9 +413,9 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
 
     entropy_ratio = None
     concentration = None
-    feat_std = None
-    feat_kurtosis = None
-    spatial_info = None
+    head_diversity = None
+    lr_symmetry = None
+    center_ratio = None
 
     # 1. Attention分布の分析
     if attention_map is not None:
@@ -433,67 +434,110 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
 
         # 空間パターン分析（中央 vs エッジ）
         h, w = attention_map.shape
-        # 中央領域（内側50%）
         h_margin, w_margin = h // 4, w // 4
         center = attention_map[h_margin:h-h_margin, w_margin:w-w_margin]
         center_ratio = center.sum() / (attention_map.sum() + 1e-8)
-        edge_ratio = 1 - center_ratio
-        spatial_info = f"中央{center_ratio*100:.0f}%/周縁{edge_ratio*100:.0f}%"
 
-        if is_ai:
-            if entropy_ratio < 0.78:
-                logs.append(f"注目分布: 局所集中型（エントロピー {entropy_ratio:.2f}）→ 機械的構造パターン")
-                evidence.append(f"エントロピー{entropy_ratio:.2f}")
-            if concentration > 0.32:
-                logs.append(f"注目集中度: {concentration*100:.1f}% → 反復的生成の痕跡")
-                evidence.append(f"集中度{concentration*100:.0f}%")
-        else:
-            if entropy_ratio > 0.80:
-                logs.append(f"注目分布: 広域分散型（エントロピー {entropy_ratio:.2f}）→ 有機的な筆致")
-                evidence.append(f"エントロピー{entropy_ratio:.2f}")
-            if concentration < 0.30:
-                logs.append(f"注目集中度: {concentration*100:.1f}% → 均等な特徴分布")
-                evidence.append(f"集中度{concentration*100:.0f}%")
+        # 左右対称性
+        left_half = attention_map[:, :w//2].sum()
+        right_half = attention_map[:, w//2:].sum()
+        lr_symmetry = 1 - abs(left_half - right_half) / (left_half + right_half + 1e-8)
 
-    # 2. 特徴量の分析
-    if features is not None:
-        feat_np = features.cpu().numpy().flatten()
-        feat_std = feat_np.std()
-        feat_kurtosis = ((feat_np - feat_np.mean()) ** 4).mean() / (feat_std ** 4 + 1e-8) - 3
+    # 2. ヘッド多様性分析（12ヘッドがどれだけ異なる場所を見ているか）
+    if head_attentions is not None:
+        head_peaks = head_attentions.argmax(axis=1)  # 各ヘッドのピーク位置
+        unique_peaks = len(np.unique(head_peaks))
+        head_diversity = unique_peaks / 12.0
 
-        if is_ai:
-            if feat_std > 1.05:
-                logs.append(f"特徴分散: {feat_std:.2f}（高）→ 過剰に鮮明な境界線")
-                evidence.append(f"σ={feat_std:.2f}")
-            if feat_kurtosis > 1.5:
-                logs.append(f"特徴尖度: {feat_kurtosis:.1f} → 決定論的な生成パターン")
-        else:
-            if feat_std < 0.95:
-                logs.append(f"特徴分散: {feat_std:.2f}（低）→ 自然なグラデーション")
-                evidence.append(f"σ={feat_std:.2f}")
-            if feat_kurtosis < 1.0:
-                logs.append(f"特徴尖度: {feat_kurtosis:.1f} → 多様な表現の混在")
+    # 3. ログ生成（常に出力する基本情報）
+    # 注目パターン（ヘッド多様性 + 中央集中度）
+    pattern_parts = []
+    if head_diversity is not None:
+        unique_count = int(head_diversity * 12)
+        pattern_parts.append(f"ヘッド多様性{head_diversity*100:.0f}%（{unique_count}/12）")
+    if center_ratio is not None:
+        pattern_parts.append(f"中央集中{center_ratio*100:.0f}%")
+    if pattern_parts:
+        logs.append(f"注目パターン: {', '.join(pattern_parts)}")
 
-    # 3. 総合判定（常に追加）
+    # 集中度 + エントロピー（常に出力）
+    if concentration is not None and entropy_ratio is not None:
+        conc_label = "高" if concentration > 0.35 else "中" if concentration > 0.25 else "低"
+        logs.append(f"注目集中度: {concentration*100:.1f}%（{conc_label}）、エントロピー{entropy_ratio:.2f}")
+
+    # 空間バランス
+    if lr_symmetry is not None:
+        sym_label = "対称的" if lr_symmetry > 0.85 else "やや偏り" if lr_symmetry > 0.7 else "非対称"
+        logs.append(f"空間バランス: 左右対称性{lr_symmetry*100:.0f}%（{sym_label}）")
+
+    # 4. 判定根拠（条件付き）
+    if is_ai:
+        if head_diversity is not None and head_diversity < 0.5:
+            evidence.append(f"ヘッド収束{head_diversity*100:.0f}%")
+        if concentration is not None and concentration > 0.35:
+            evidence.append(f"集中度{concentration*100:.0f}%")
+        if entropy_ratio is not None and entropy_ratio < 0.80:
+            evidence.append(f"低エントロピー")
+    else:
+        if head_diversity is not None and head_diversity > 0.6:
+            evidence.append(f"ヘッド分散{head_diversity*100:.0f}%")
+        if concentration is not None and concentration < 0.30:
+            evidence.append(f"均等分布")
+        if entropy_ratio is not None and entropy_ratio > 0.85:
+            evidence.append(f"高エントロピー")
+
+    # 5. 総合判定（常に追加）
     if confidence > 0.9:
         if is_ai:
-            logs.append("判定: 機械学習モデル特有の生成パターンを高確度で検出")
+            logs.append("総合判定: 機械学習モデル特有の生成パターンを高確度で検出")
         else:
-            logs.append("判定: 人間の創作に特有の不規則性・個性を確認")
+            logs.append("総合判定: 人間の創作に特有の不規則性・個性を確認")
     elif confidence > 0.6:
-        logs.append("判定: 判別可能な特徴を検出、中〜高確度")
+        logs.append("総合判定: 判別可能な特徴を検出、中〜高確度")
     else:
-        logs.append("判定: 境界領域のサンプル、追加検証を推奨")
+        logs.append("総合判定: 境界領域のサンプル、追加検証を推奨")
 
-    # 4. 検出された痕跡サマリー（1-2行の説得力ある文章）
+    # 6. 検出された痕跡サマリー（指標に応じてバリエーション）
     if is_ai:
-        spatial_str = f"空間分布{spatial_info}、" if spatial_info else ""
-        evidence_str = f"（{', '.join(evidence[:2])}）" if evidence else ""
-        detected_traces = f"【拡散モデル生成と推測】{spatial_str}特徴パターン{evidence_str}に機械的規則性を検出。ノイズ除去過程で生じる決定論的構造が残存。"
+        trace_parts = []
+        # ヘッド多様性に基づく分析
+        if head_diversity is not None and head_diversity < 0.5:
+            trace_parts.append(f"12ヘッド中{int(head_diversity*12)}個が同一領域に収束")
+        # 集中度に基づく分析
+        if concentration is not None and concentration > 0.40:
+            trace_parts.append(f"Attentionの{concentration*100:.0f}%が局所領域に集中")
+        elif concentration is not None and concentration > 0.30:
+            trace_parts.append("中程度のAttention集中")
+        # 中央集中に基づく分析
+        if center_ratio is not None and center_ratio > 0.70:
+            trace_parts.append("中央構図への顕著な偏重")
+        # 対称性に基づく分析
+        if lr_symmetry is not None and lr_symmetry > 0.90:
+            trace_parts.append("高い左右対称性")
+
+        if trace_parts:
+            detected_traces = "; ".join(trace_parts)
+        else:
+            detected_traces = "複合的な特徴パターンから機械学習モデルによる生成と推測"
     else:
-        spatial_str = f"（{spatial_info}）" if spatial_info else ""
-        evidence_str = f"、{', '.join(evidence[:2])}" if evidence else ""
-        detected_traces = f"注目が画像全体に自然分散{spatial_str}{evidence_str}。人間の筆致に特有の不規則性と有機的テクスチャを確認。"
+        trace_parts = []
+        # ヘッド多様性に基づく分析
+        if head_diversity is not None and head_diversity > 0.7:
+            trace_parts.append(f"12ヘッドが{int(head_diversity*12)}箇所に分散")
+        # エントロピーに基づく分析
+        if entropy_ratio is not None and entropy_ratio > 0.88:
+            trace_parts.append("高エントロピー（Attentionの自然な分散）")
+        # 非対称性
+        if lr_symmetry is not None and lr_symmetry < 0.75:
+            trace_parts.append("非対称的な構図")
+        # 集中度
+        if concentration is not None and concentration < 0.28:
+            trace_parts.append("特定領域への過度な集中なし")
+
+        if trace_parts:
+            detected_traces = "; ".join(trace_parts)
+        else:
+            detected_traces = "自然なAttention分布と有機的テクスチャを検出"
 
     return (logs if logs else ["分析完了: 明確な特徴パターンなし"], detected_traces)
 
@@ -520,18 +564,26 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     # Attention Map生成 + フォレンジック分析
     attention_heatmap = None
     attention_map_raw = None
+    head_attentions = None
     forensic_logs = []
 
     if hasattr(outputs, 'attentions') and outputs.attentions is not None:
         try:
             # 最後の層のattentionを取得
-            last_attention = outputs.attentions[-1]
-            attention_avg = last_attention.mean(dim=1)[0]  # [seq_len, seq_len]
-            cls_attention = attention_avg[0, 1:]  # CLSトークンから各パッチへ
+            last_attention = outputs.attentions[-1]  # [1, 12, 201, 201]
+            attention_avg = last_attention.mean(dim=1)[0]  # [201, 201]
 
-            # グリッドサイズを計算（DINOv3はregister tokensがあるため調整）
+            # DINOv3のトークン順序: [CLS(0), REG1-4(1-4), PATCH(5-)]
+            # レジスタトークン(4個)を除外してパッチのみのattentionを取得
+            num_register_tokens = 4  # dinov3_model.config.num_register_tokens
+            patch_start_idx = 1 + num_register_tokens  # CLS + REG を除外
+            cls_attention = attention_avg[0, patch_start_idx:]  # CLSからパッチへのattention
+
+            # ヘッド別attention（12ヘッド × 196パッチ）
+            head_attentions = last_attention[0, :, 0, patch_start_idx:patch_start_idx+196].cpu().numpy()
+
+            # グリッドサイズを計算（14x14 = 196パッチ）
             num_patches = int(np.sqrt(cls_attention.shape[0]))
-            # 14x14=196パッチに収まるようにトリム（余分なregister tokensを除外）
             target_patches = num_patches * num_patches
             if target_patches <= cls_attention.shape[0]:
                 cls_attention = cls_attention[:target_patches]
@@ -565,7 +617,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             traceback.print_exc()
 
     # フォレンジック分析ログ生成
-    forensic_logs, detected_traces = generate_forensic_analysis(attention_map_raw, features, ai_prob)
+    forensic_logs, detected_traces = generate_forensic_analysis(attention_map_raw, features, ai_prob, head_attentions)
 
     ai_score = ai_prob * 100
     human_score = 100 - ai_score
