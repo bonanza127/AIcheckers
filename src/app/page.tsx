@@ -599,14 +599,27 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               AIチェッカー<span className="text-sm font-light text-muted">　//　AI-art-integrity V4.2</span>
             </h2>
           </div>
-          <div className="text-sm font-light text-muted hidden sm:block">
-            SYSTEM STATUS: {backendOnline === null ? (
-              <span className="text-gray-400 font-medium">CHECKING...</span>
-            ) : backendOnline ? (
-              <span className="text-success font-medium">ONLINE</span>
-            ) : (
-              <span className="text-danger font-medium">OFFLINE</span>
-            )}
+          <div className="flex items-center gap-6">
+            <div className="text-sm font-light text-muted hidden sm:block">
+              SYSTEM STATUS: {backendOnline === null ? (
+                <span className="text-gray-400 font-medium">CHECKING...</span>
+              ) : backendOnline ? (
+                <span className="text-success font-medium">ONLINE</span>
+              ) : (
+                <span className="text-danger font-medium">OFFLINE</span>
+              )}
+            </div>
+            <nav className="hidden md:flex items-center gap-1">
+              <a href="/how-it-works" className="px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-white/5 rounded transition-all border border-transparent hover:border-gray-700">
+                仕組み
+              </a>
+              <a href="/disclaimer" className="px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-white/5 rounded transition-all border border-transparent hover:border-gray-700">
+                免責事項
+              </a>
+              <a href="mailto:contact@aicheckers.net" className="px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-white/5 rounded transition-all border border-transparent hover:border-gray-700">
+                お問い合わせ
+              </a>
+            </nav>
           </div>
         </div>
       </header>
@@ -679,7 +692,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <div className="w-full md:w-1/2">
                   <div
                     ref={logContainerRef}
-                    className="console-log h-64 overflow-y-auto"
+                    className="console-log h-72 overflow-y-auto"
                   >
                     {logs.map((log, i) => (
                       <div key={i} className={getLogClass(log.type)}>
