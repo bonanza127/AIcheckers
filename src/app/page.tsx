@@ -880,7 +880,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                       キュー ({queue.length}件)
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-2 flex-1 content-start overflow-y-auto max-h-40 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                  <div className="flex flex-wrap gap-2 flex-1 content-start overflow-y-auto max-h-52 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                     {queue.map((item) => (
                       <div
                         key={item.id}
