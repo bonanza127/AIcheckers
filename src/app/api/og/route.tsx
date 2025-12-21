@@ -8,23 +8,7 @@ export async function GET(request: NextRequest) {
 
   const verdict = searchParams.get("verdict") || "AI DETECTED";
   const score = searchParams.get("score") || "98";
-
-  // 3段階判定: AI DETECTED / UNKNOWN / HUMAN CONFIRMED
   const isAI = verdict.includes("AI");
-  const isUnknown = verdict.includes("UNKNOWN");
-
-  // 色の設定
-  const accentColor = isAI ? "#EF4444" : isUnknown ? "#6B7280" : "#10B981";
-  const glowRgba = isAI
-    ? "rgba(239, 68, 68, 0.3)"
-    : isUnknown
-      ? "rgba(107, 114, 128, 0.3)"
-      : "rgba(16, 185, 129, 0.3)";
-  const bgGradient = isAI
-    ? "linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.1))"
-    : isUnknown
-      ? "linear-gradient(135deg, rgba(107, 114, 128, 0.2), rgba(107, 114, 128, 0.1))"
-      : "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1))";
 
   return new ImageResponse(
     (
@@ -97,26 +81,28 @@ export async function GET(request: NextRequest) {
             alignItems: "center",
             padding: "40px 80px",
             borderRadius: 24,
-            background: bgGradient,
-            border: `3px solid ${accentColor}`,
-            boxShadow: `0 0 60px ${glowRgba}`,
+            background: isAI
+              ? "linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.1))"
+              : "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1))",
+            border: `3px solid ${isAI ? "#EF4444" : "#10B981"}`,
+            boxShadow: `0 0 60px ${isAI ? "rgba(239, 68, 68, 0.3)" : "rgba(16, 185, 129, 0.3)"}`,
           }}
         >
           <div
             style={{
-              fontSize: 56,
+              fontSize: 64,
               fontWeight: 900,
-              color: accentColor,
+              color: isAI ? "#EF4444" : "#10B981",
               textAlign: "center",
               letterSpacing: 2,
-              textShadow: `0 0 30px ${glowRgba}`,
+              textShadow: `0 0 30px ${isAI ? "rgba(239, 68, 68, 0.5)" : "rgba(16, 185, 129, 0.5)"}`,
             }}
           >
             {verdict}
           </div>
           <div
             style={{
-              fontSize: 96,
+              fontSize: 80,
               fontWeight: 900,
               color: "#E6E9EE",
               marginTop: 10,
@@ -131,7 +117,7 @@ export async function GET(request: NextRequest) {
               marginTop: 10,
             }}
           >
-            AI Possibility
+            {isAI ? "AI生成" : "人間作"}確信度
           </div>
         </div>
 

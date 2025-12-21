@@ -10,16 +10,13 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const verdict = params.verdict || "AI DETECTED";
   const score = params.score || "98";
   const isAI = verdict.includes("AI");
-  const isUnknown = verdict.includes("UNKNOWN");
 
   const title = `${verdict} (${score}%) - AI Checkers`;
   const description = isAI
     ? `この画像はAI生成の可能性が${score}%です。AI Checkersで判定しました。`
-    : isUnknown
-      ? `この画像の判定は困難です（${score}%）。AI Checkersで判定しました。`
-      : `この画像は人間作の可能性が高いです（AI: ${score}%）。AI Checkersで判定しました。`;
+    : `この画像は人間作の可能性が${score}%です。AI Checkersで判定しました。`;
 
-  const ogImageUrl = `https://www.aicheckers.net/api/og?verdict=${encodeURIComponent(verdict)}&score=${score}`;
+  const ogImageUrl = `https://aicheckers.net/api/og?verdict=${encodeURIComponent(verdict)}&score=${score}`;
 
   return {
     title,
@@ -52,19 +49,6 @@ export default async function SharePage({ searchParams }: Props) {
   const verdict = params.verdict || "AI DETECTED";
   const score = params.score || "98";
   const isAI = verdict.includes("AI");
-  const isUnknown = verdict.includes("UNKNOWN");
-
-  // 色の設定
-  const cardClass = isAI
-    ? "bg-red-500/10 border-red-500"
-    : isUnknown
-      ? "bg-gray-500/10 border-gray-500"
-      : "bg-green-500/10 border-green-500";
-  const textClass = isAI
-    ? "text-red-500"
-    : isUnknown
-      ? "text-gray-400"
-      : "text-green-500";
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
@@ -86,15 +70,25 @@ export default async function SharePage({ searchParams }: Props) {
         </div>
 
         {/* Result Card */}
-        <div className={`p-8 rounded-2xl border-2 ${cardClass}`}>
-          <div className={`text-4xl font-black mb-2 ${textClass}`}>
+        <div
+          className={`p-8 rounded-2xl border-2 ${
+            isAI
+              ? "bg-red-500/10 border-red-500"
+              : "bg-green-500/10 border-green-500"
+          }`}
+        >
+          <div
+            className={`text-4xl font-black mb-2 ${
+              isAI ? "text-red-500" : "text-green-500"
+            }`}
+          >
             {verdict}
           </div>
           <div className="text-6xl font-black text-text-primary mb-2">
             {score}%
           </div>
           <div className="text-muted">
-            AI Possibility
+            {isAI ? "AI生成" : "人間作"}確信度
           </div>
         </div>
 
