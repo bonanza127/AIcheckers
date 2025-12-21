@@ -636,12 +636,31 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             </h2>
           </div>
 
-          {/* 右: ステータス */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
-            <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
-              {backendOnline === null ? "..." : backendOnline ? "ONLINE" : "OFFLINE"}
-            </span>
+          {/* 右: ステータス + VIP */}
+          <div className="flex items-center gap-4 text-xs">
+            {/* Server Status */}
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
+              <span className="text-muted">Server Status:</span>
+              <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
+                {backendOnline === null ? "..." : backendOnline ? "Online" : "Offline"}
+              </span>
+            </div>
+
+            <span className="text-muted">//</span>
+
+            {/* VIP */}
+            <a
+              href="/vip"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/50 hover:from-amber-500/30 hover:to-yellow-500/30 transition-all group"
+            >
+              <svg className="w-3.5 h-3.5 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+              </svg>
+              <span className="font-bold bg-gradient-to-r from-amber-400 to-yellow-300 bg-clip-text text-transparent group-hover:from-amber-300 group-hover:to-yellow-200">
+                VIP
+              </span>
+            </a>
           </div>
         </div>
       </header>
