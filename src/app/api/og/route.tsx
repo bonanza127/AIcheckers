@@ -54,45 +54,66 @@ export async function GET(request: NextRequest) {
           <div style={{ display: "flex", fontSize: 52, fontWeight: 800, color: "#E6E9EE", letterSpacing: "-0.02em" }}>
             最終判定
           </div>
-          <div style={{ display: "flex", width: 3, height: 36, backgroundColor: "#A78BFA", marginLeft: 24, marginRight: 24, borderRadius: 2 }} />
           <div
             style={{
               display: "flex",
               alignItems: "center",
               fontSize: 28,
-              color: "#E6E9EE",
-              background: "linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(167, 139, 250, 0.2))",
-              padding: "8px 20px",
-              borderRadius: 8,
-              border: "1px solid rgba(139, 92, 246, 0.5)",
+              marginLeft: 20,
             }}
           >
-            <span style={{ display: "flex", color: "#A78BFA", fontWeight: 700 }}>AI</span>
-            <span style={{ display: "flex", marginLeft: 6 }}>チェッカー</span>
+            <span style={{ display: "flex", color: "#6E7681" }}>by</span>
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                marginLeft: 12,
+                color: "#E6E9EE",
+                background: "linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(167, 139, 250, 0.2))",
+                padding: "8px 20px",
+                borderRadius: 8,
+                border: "1px solid rgba(139, 92, 246, 0.5)",
+              }}
+            >
+              <span style={{ display: "flex", color: "#A78BFA", fontWeight: 700 }}>AI</span>
+              <span style={{ display: "flex", marginLeft: 6 }}>チェッカー</span>
+            </span>
           </div>
         </div>
 
-        {/* Info Row - 横一列 */}
+        {/* Info Row 1 - BATCH STATUS (左) + 使用モデル (右) */}
         <div
           style={{
             display: "flex",
-            flexWrap: "wrap",
+            justifyContent: "space-between",
+            fontSize: 24,
+            color: "#8B949E",
+            marginBottom: 16,
+          }}
+        >
+          <span style={{ display: "flex" }}>
+            BATCH STATUS: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>1 / 1</span>
+          </span>
+          <span style={{ display: "flex" }}>
+            使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 8, display: "flex" }}>Moonlight V1.3</span>
+          </span>
+        </div>
+
+        {/* Info Row 2 - PROCESSING TIME (左) + ロジック (右) */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
             fontSize: 24,
             color: "#8B949E",
             marginBottom: 20,
           }}
         >
-          <span style={{ display: "flex", marginRight: 36 }}>
-            BATCH STATUS: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>1 / 1</span>
-          </span>
-          <span style={{ display: "flex", marginRight: 36 }}>
-            使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 8, display: "flex" }}>Moonlight V1.3</span>
-          </span>
-          <span style={{ display: "flex", marginRight: 36 }}>
-            ロジック: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>カスケード方式</span>
-          </span>
           <span style={{ display: "flex" }}>
             PROCESSING TIME: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>{time}s</span>
+          </span>
+          <span style={{ display: "flex" }}>
+            ロジック: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>カスケード方式</span>
           </span>
         </div>
 
