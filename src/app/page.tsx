@@ -615,20 +615,22 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               お問い合わせ
             </a>
           </nav>
-          <div className="flex items-center gap-4 text-sm font-light text-muted hidden sm:block">
-            <span>
-              STATUS: {backendOnline === null ? (
-                <span className="text-gray-400 font-medium">CHECKING...</span>
-              ) : backendOnline ? (
-                <span className="text-success font-medium">ONLINE</span>
-              ) : (
-                <span className="text-danger font-medium">OFFLINE</span>
-              )}
+          <div className="flex items-center gap-3 text-xs text-muted hidden sm:flex">
+            <span className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500" : backendOnline ? "bg-success" : "bg-danger"}`} />
+              {backendOnline === null ? "..." : backendOnline ? "ONLINE" : "OFFLINE"}
             </span>
             {rateLimitRemaining !== null && (
-              <span className="ml-4">
-                残り: <span className={`font-medium ${rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>{rateLimitRemaining}</span>/20枚
-              </span>
+              <>
+                <span className="text-gray-600">|</span>
+                <span className="flex items-center gap-1">
+                  <span className={`font-mono ${rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>
+                    {rateLimitRemaining}
+                  </span>
+                  <span className="text-gray-500">/ 20 tokens</span>
+                  <span className="text-gray-600 text-[10px]">(0時リセット)</span>
+                </span>
+              </>
             )}
           </div>
         </div>
