@@ -74,6 +74,7 @@ export default function Home() {
   const [urlInput, setUrlInput] = useState("");
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
+  const [timeUntilReset, setTimeUntilReset] = useState("--:--:--");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -108,6 +109,28 @@ export default function Home() {
 
     // 10秒ごとにチェック
     const interval = setInterval(checkBackendHealth, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // リセットまでのカウントダウン
+  useEffect(() => {
+    const updateCountdown = () => {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0);
+      const diff = midnight.getTime() - now.getTime();
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      setTimeUntilReset(
+        `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+      );
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -613,26 +636,22 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             </h2>
           </div>
 
-          {/* 中央: ステータス + トークン */}
-          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-muted">
-            <span className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
-              <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
-                {backendOnline === null ? "..." : backendOnline ? "ONLINE" : "OFFLINE"}
-              </span>
+          {/* 中央: トークン残量 */}
+          <div className="absolute left-1/2 transform -translate-x-1/2 hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-gray-700/50">
+            <span className={`font-mono text-lg font-bold ${rateLimitRemaining !== null && rateLimitRemaining <= 5 ? "text-amber-500" : "text-accent"}`}>
+              {rateLimitRemaining ?? "--"}
             </span>
-            <span className="text-gray-600">|</span>
-            <span className="flex items-center gap-1">
-              <span className={`font-mono font-medium ${rateLimitRemaining !== null && rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>
-                {rateLimitRemaining ?? "..."}
-              </span>
-              <span className="text-gray-500">/ 20 tokens</span>
-              <span className="text-gray-600 text-[10px]">(0時)</span>
-            </span>
+            <span className="text-xs text-gray-400">/ 20 tokens</span>
+            <span className="text-[10px] text-gray-500">(リセットまで {timeUntilReset})</span>
           </div>
 
-          {/* 右: 空 */}
-          <div className="w-8" />
+          {/* 右: ステータス */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
+            <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
+              {backendOnline === null ? "..." : backendOnline ? "ONLINE" : "OFFLINE"}
+            </span>
+          </div>
         </div>
       </header>
 
