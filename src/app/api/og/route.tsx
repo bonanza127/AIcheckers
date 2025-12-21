@@ -10,6 +10,11 @@ export async function GET(request: NextRequest) {
   const score = searchParams.get("score") || "98";
   const isAI = verdict.includes("AI");
 
+  // Noto Sans JP フォントを読み込み
+  const notoSansJP = await fetch(
+    new URL("https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.woff2")
+  ).then((res) => res.arrayBuffer());
+
   return new ImageResponse(
     (
       <div
@@ -23,6 +28,7 @@ export async function GET(request: NextRequest) {
           backgroundColor: "#0C1117",
           backgroundImage:
             "radial-gradient(circle at 25% 25%, #1a1f2e 0%, transparent 50%), radial-gradient(circle at 75% 75%, #1a1f2e 0%, transparent 50%)",
+          fontFamily: "Noto Sans JP",
         }}
       >
         {/* Logo/Icon area */}
@@ -137,6 +143,14 @@ export async function GET(request: NextRequest) {
     {
       width: 1200,
       height: 630,
+      fonts: [
+        {
+          name: "Noto Sans JP",
+          data: notoSansJP,
+          style: "normal",
+          weight: 400,
+        },
+      ],
     }
   );
 }
