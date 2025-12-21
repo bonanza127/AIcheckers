@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
 
   const verdict = searchParams.get("verdict") || "AI DETECTED";
   const score = searchParams.get("score") || "98";
+  const trace = searchParams.get("trace") || "";
 
   // 3状態判定: AI / UNKNOWN / HUMAN
   const verdictType = verdict.includes("AI")
@@ -18,13 +19,13 @@ export async function GET(request: NextRequest) {
 
   // カラー定義
   const colors = {
-    ai: { primary: "#EF4444", bg: "rgba(239, 68, 68, 0.2)", bgLight: "rgba(239, 68, 68, 0.1)" },
-    unknown: { primary: "#F59E0B", bg: "rgba(245, 158, 11, 0.2)", bgLight: "rgba(245, 158, 11, 0.1)" },
-    human: { primary: "#10B981", bg: "rgba(16, 185, 129, 0.2)", bgLight: "rgba(16, 185, 129, 0.1)" },
+    ai: { primary: "#EF4444", bg: "rgba(239, 68, 68, 0.15)", glow: "rgba(239, 68, 68, 0.3)" },
+    unknown: { primary: "#F59E0B", bg: "rgba(245, 158, 11, 0.15)", glow: "rgba(245, 158, 11, 0.3)" },
+    human: { primary: "#10B981", bg: "rgba(16, 185, 129, 0.15)", glow: "rgba(16, 185, 129, 0.3)" },
   };
   const color = colors[verdictType];
 
-  const confidenceLabel = verdictType === "ai" ? "AI Generated" : verdictType === "unknown" ? "Uncertain" : "Human Made";
+  const possibilityLabel = verdictType === "ai" ? "AI POSSIBILITY" : verdictType === "unknown" ? "UNCERTAINTY" : "HUMAN POSSIBILITY";
 
   return new ImageResponse(
     (
@@ -34,95 +35,166 @@ export async function GET(request: NextRequest) {
           width: "100%",
           display: "flex",
           flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
           backgroundColor: "#0C1117",
-          backgroundImage:
-            "radial-gradient(circle at 25% 25%, #1a1f2e 0%, transparent 50%), radial-gradient(circle at 75% 75%, #1a1f2e 0%, transparent 50%)",
+          padding: "40px 60px",
+          fontFamily: "sans-serif",
         }}
       >
-        {/* Logo */}
+        {/* Header */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
+            justifyContent: "space-between",
             marginBottom: 30,
           }}
         >
+          {/* Logo */}
           <div
             style={{
-              width: 60,
-              height: 60,
-              borderRadius: 12,
-              background: "linear-gradient(135deg, #A78BFA, #8B5CF6)",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              marginRight: 16,
-              boxShadow: "0 0 40px rgba(139, 92, 246, 0.4)",
-              fontSize: 28,
-              color: "white",
             }}
           >
-            AI
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #A78BFA, #8B5CF6)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 12,
+                fontSize: 22,
+                fontWeight: 700,
+                color: "white",
+              }}
+            >
+              AI
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: "#E6E9EE",
+                display: "flex",
+              }}
+            >
+              AI Checkers
+            </div>
           </div>
+
+          {/* Model Badge */}
           <div
             style={{
-              fontSize: 36,
-              fontWeight: 800,
-              color: "#E6E9EE",
               display: "flex",
+              alignItems: "center",
+              fontSize: 18,
+              color: "#8B949E",
             }}
           >
-            AI Checkers
+            <span style={{ display: "flex" }}>使用モデル: </span>
+            <span style={{ display: "flex", color: "#A78BFA", fontWeight: 600, marginLeft: 6 }}>Moonlight V1.3</span>
           </div>
         </div>
 
-        {/* Result Banner */}
+        {/* Main Panel */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            padding: "40px 80px",
-            borderRadius: 24,
-            background: `linear-gradient(135deg, ${color.bg}, ${color.bgLight})`,
-            border: `3px solid ${color.primary}`,
-            boxShadow: `0 0 60px ${color.bg}`,
+            flex: 1,
+            backgroundColor: "#161B22",
+            borderRadius: 16,
+            border: `2px solid ${color.primary}`,
+            boxShadow: `0 0 40px ${color.glow}`,
+            padding: "30px 40px",
           }}
         >
+          {/* Trace Info (if provided) */}
+          {trace && (
+            <div
+              style={{
+                display: "flex",
+                fontSize: 18,
+                color: "#8B949E",
+                marginBottom: 20,
+              }}
+            >
+              検出された痕跡: {trace}
+            </div>
+          )}
+
+          {/* Progress Section */}
           <div
             style={{
-              fontSize: 64,
-              fontWeight: 900,
-              color: color.primary,
               display: "flex",
-              textAlign: "center",
+              flexDirection: "column",
+              marginBottom: 30,
             }}
           >
-            {verdict}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <span style={{ display: "flex", fontSize: 22, color: color.primary, fontWeight: 600 }}>
+                {possibilityLabel}
+              </span>
+              <span style={{ display: "flex", fontSize: 28, color: "#E6E9EE", fontWeight: 700 }}>
+                {score}%
+              </span>
+            </div>
+            {/* Progress Bar */}
+            <div
+              style={{
+                display: "flex",
+                width: "100%",
+                height: 16,
+                backgroundColor: "#374151",
+                borderRadius: 8,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  width: `${score}%`,
+                  height: "100%",
+                  backgroundColor: color.primary,
+                  borderRadius: 8,
+                  boxShadow: `0 0 12px ${color.primary}`,
+                }}
+              />
+            </div>
           </div>
+
+          {/* Classification */}
           <div
             style={{
-              fontSize: 80,
-              fontWeight: 900,
-              color: "#E6E9EE",
-              marginTop: 10,
               display: "flex",
+              alignItems: "baseline",
+              marginTop: "auto",
             }}
           >
-            {score}%
-          </div>
-          <div
-            style={{
-              fontSize: 24,
-              color: "#8B949E",
-              marginTop: 10,
-              display: "flex",
-            }}
-          >
-            {confidenceLabel} Confidence
+            <span style={{ display: "flex", fontSize: 28, color: "#8B949E", marginRight: 20 }}>
+              CLASSIFICATION:
+            </span>
+            <span
+              style={{
+                display: "flex",
+                fontSize: 72,
+                fontWeight: 900,
+                color: color.primary,
+                textShadow: `0 0 30px ${color.glow}`,
+              }}
+            >
+              {verdict}
+            </span>
           </div>
         </div>
 
@@ -130,9 +202,10 @@ export async function GET(request: NextRequest) {
         <div
           style={{
             display: "flex",
-            marginTop: 40,
-            fontSize: 20,
-            color: "#8B949E",
+            justifyContent: "center",
+            marginTop: 20,
+            fontSize: 18,
+            color: "#6E7681",
           }}
         >
           aicheckers.net - Anime AI Image Detector
