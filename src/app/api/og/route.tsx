@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
 
   const verdict = searchParams.get("verdict") || "AI DETECTED";
   const score = searchParams.get("score") || "98";
-  const trace = searchParams.get("trace") || "";
+  const trace = searchParams.get("trace") || "中程度のAttention集中";
 
   // 3状態判定: AI / UNKNOWN / HUMAN
   const verdictType = verdict.includes("AI")
@@ -19,9 +19,9 @@ export async function GET(request: NextRequest) {
 
   // カラー定義
   const colors = {
-    ai: { primary: "#EF4444", bg: "rgba(239, 68, 68, 0.15)", glow: "rgba(239, 68, 68, 0.3)" },
-    unknown: { primary: "#F59E0B", bg: "rgba(245, 158, 11, 0.15)", glow: "rgba(245, 158, 11, 0.3)" },
-    human: { primary: "#10B981", bg: "rgba(16, 185, 129, 0.15)", glow: "rgba(16, 185, 129, 0.3)" },
+    ai: { primary: "#EF4444", glow: "rgba(239, 68, 68, 0.4)" },
+    unknown: { primary: "#F59E0B", glow: "rgba(245, 158, 11, 0.4)" },
+    human: { primary: "#10B981", glow: "rgba(16, 185, 129, 0.4)" },
   };
   const color = colors[verdictType];
 
@@ -35,167 +35,144 @@ export async function GET(request: NextRequest) {
           width: "100%",
           display: "flex",
           flexDirection: "column",
-          backgroundColor: "#0C1117",
-          padding: "40px 60px",
+          backgroundColor: "#161B22",
+          padding: "40px 50px",
           fontFamily: "sans-serif",
         }}
       >
-        {/* Header */}
+        {/* Header Row - 最終判定 */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            marginBottom: 30,
+            borderBottom: "1px solid rgba(255,255,255,0.1)",
+            paddingBottom: 20,
+            marginBottom: 24,
           }}
         >
+          <div style={{ display: "flex", fontSize: 32, fontWeight: 700, color: "#E6E9EE" }}>
+            最終判定
+          </div>
           {/* Logo */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center" }}>
             <div
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: 10,
+                width: 40,
+                height: 40,
+                borderRadius: 8,
                 background: "linear-gradient(135deg, #A78BFA, #8B5CF6)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                marginRight: 12,
-                fontSize: 22,
+                marginRight: 10,
+                fontSize: 18,
                 fontWeight: 700,
                 color: "white",
               }}
             >
               AI
             </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: "#E6E9EE",
-                display: "flex",
-              }}
-            >
+            <div style={{ display: "flex", fontSize: 22, fontWeight: 600, color: "#E6E9EE" }}>
               AI Checkers
             </div>
           </div>
-
-          {/* Model Badge */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              fontSize: 18,
-              color: "#8B949E",
-            }}
-          >
-            <span style={{ display: "flex" }}>使用モデル: </span>
-            <span style={{ display: "flex", color: "#A78BFA", fontWeight: 600, marginLeft: 6 }}>Moonlight V1.3</span>
-          </div>
         </div>
 
-        {/* Main Panel */}
+        {/* Info Row */}
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
-            flex: 1,
-            backgroundColor: "#161B22",
-            borderRadius: 16,
-            border: `2px solid ${color.primary}`,
-            boxShadow: `0 0 40px ${color.glow}`,
-            padding: "30px 40px",
+            flexWrap: "wrap",
+            gap: 24,
+            fontSize: 16,
+            color: "#8B949E",
+            marginBottom: 20,
           }}
         >
-          {/* Trace Info (if provided) */}
-          {trace && (
-            <div
-              style={{
-                display: "flex",
-                fontSize: 18,
-                color: "#8B949E",
-                marginBottom: 20,
-              }}
-            >
-              検出された痕跡: {trace}
-            </div>
-          )}
+          <span style={{ display: "flex" }}>
+            使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 6, display: "flex" }}>Moonlight V1.3</span>
+          </span>
+          <span style={{ display: "flex" }}>
+            ロジック: <span style={{ color: "#E6E9EE", marginLeft: 6, display: "flex" }}>カスケード方式</span>
+          </span>
+        </div>
 
-          {/* Progress Section */}
+        {/* Trace */}
+        <div
+          style={{
+            display: "flex",
+            fontSize: 18,
+            color: "#8B949E",
+            marginBottom: 28,
+          }}
+        >
+          検出された痕跡: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>{trace}</span>
+        </div>
+
+        {/* Progress Section */}
+        <div style={{ display: "flex", flexDirection: "column", marginBottom: 36 }}>
           <div
             style={{
               display: "flex",
-              flexDirection: "column",
-              marginBottom: 30,
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <span style={{ display: "flex", fontSize: 20, color: color.primary, fontWeight: 600 }}>
+              {possibilityLabel}
+            </span>
+            <span style={{ display: "flex", fontSize: 26, color: "#E6E9EE", fontWeight: 700 }}>
+              {score}%
+            </span>
+          </div>
+          {/* Progress Bar */}
+          <div
+            style={{
+              display: "flex",
+              width: "100%",
+              height: 14,
+              backgroundColor: "#374151",
+              borderRadius: 7,
             }}
           >
             <div
               style={{
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
+                width: `${score}%`,
+                height: "100%",
+                backgroundColor: color.primary,
+                borderRadius: 7,
+                boxShadow: `0 0 10px ${color.primary}`,
               }}
-            >
-              <span style={{ display: "flex", fontSize: 22, color: color.primary, fontWeight: 600 }}>
-                {possibilityLabel}
-              </span>
-              <span style={{ display: "flex", fontSize: 28, color: "#E6E9EE", fontWeight: 700 }}>
-                {score}%
-              </span>
-            </div>
-            {/* Progress Bar */}
-            <div
-              style={{
-                display: "flex",
-                width: "100%",
-                height: 16,
-                backgroundColor: "#374151",
-                borderRadius: 8,
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  width: `${score}%`,
-                  height: "100%",
-                  backgroundColor: color.primary,
-                  borderRadius: 8,
-                  boxShadow: `0 0 12px ${color.primary}`,
-                }}
-              />
-            </div>
+            />
           </div>
+        </div>
 
-          {/* Classification */}
-          <div
+        {/* Classification - Main Focus */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            flex: 1,
+          }}
+        >
+          <span style={{ display: "flex", fontSize: 28, color: "#8B949E", marginRight: 24 }}>
+            CLASSIFICATION:
+          </span>
+          <span
             style={{
               display: "flex",
-              alignItems: "baseline",
-              marginTop: "auto",
+              fontSize: 96,
+              fontWeight: 900,
+              color: color.primary,
+              textShadow: `0 0 40px ${color.glow}`,
+              lineHeight: 1,
             }}
           >
-            <span style={{ display: "flex", fontSize: 28, color: "#8B949E", marginRight: 20 }}>
-              CLASSIFICATION:
-            </span>
-            <span
-              style={{
-                display: "flex",
-                fontSize: 72,
-                fontWeight: 900,
-                color: color.primary,
-                textShadow: `0 0 30px ${color.glow}`,
-              }}
-            >
-              {verdict}
-            </span>
-          </div>
+            {verdict}
+          </span>
         </div>
 
         {/* Footer */}
@@ -203,9 +180,10 @@ export async function GET(request: NextRequest) {
           style={{
             display: "flex",
             justifyContent: "center",
-            marginTop: 20,
-            fontSize: 18,
+            fontSize: 16,
             color: "#6E7681",
+            borderTop: "1px solid rgba(255,255,255,0.1)",
+            paddingTop: 16,
           }}
         >
           aicheckers.net - Anime AI Image Detector
