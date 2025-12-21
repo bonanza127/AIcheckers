@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, Trash2, Cpu, Search, Fingerprint, History, Plus, Eye, EyeOff } from "lucide-react";
+import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
 
 // API URL: 本番環境では api.aicheckers.net を使用
 const getApiUrl = () => {
@@ -626,7 +626,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
         <div className="container mx-auto flex justify-between items-center">
           {/* 左: ロゴ */}
           <div className="flex items-center gap-3">
-            <Fingerprint className="w-8 h-8 text-accent" />
+            <img src="/LOGO.png" alt="AI Checkers" className="w-10 h-10 rounded-lg" />
             <h2 className="text-2xl font-bold tracking-tight">
               AIチェッカー
               <span className="text-sm font-light text-muted">　//　</span>
