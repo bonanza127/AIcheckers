@@ -188,6 +188,18 @@ NovelAI画像収集など、Cloudflare保護サイトからのスクレイピン
 
 ---
 
+## Twitter Bot認証情報
+
+### OAuth 2.0（アプリ識別用）
+- **Client ID**: aWxjRmhtaXExdnRGakJrTjNiWEs6MTpjaQ
+- **Client Secret**: rIxHAY1Wc_Pyr7QJLGFgPRshlGv-XK9VHWdjB0OGOMdOuQUoYe
+
+### OAuth 1.0a（Bot投稿用）
+- **Access Token**: 2002521394035544065-XMkTo3uw4vYRVk2kfe14mfW4LKmqrT
+- **Access Token Secret**: Ucw3IES0xfYPgGx2eYUpjUvPGSJlFR98ErhsvxYghvbTq
+
+---
+
 ## 参考リンク
 - AnimeDL-2M: https://github.com/FlyTweety/AnimeDL2M
 - DINOv3: https://huggingface.co/facebook/dinov3-vitb16-pretrain-lvd1689m

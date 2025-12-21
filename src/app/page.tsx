@@ -527,7 +527,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 #AIイラスト判定 #aicheckers`;
 
     // 動的OGP付きのシェアURL
-    const shareUrl = `https://aicheckers.net/share?verdict=${encodeURIComponent(verdictText)}&score=${Math.round(result.aiScore)}`;
+    const shareUrl = `https://www.aicheckers.net/share?verdict=${encodeURIComponent(verdictText)}&score=${Math.round(result.aiScore)}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
