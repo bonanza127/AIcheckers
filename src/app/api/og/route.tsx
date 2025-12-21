@@ -75,6 +75,8 @@ export async function GET(request: NextRequest) {
                 border: "1px solid rgba(139, 92, 246, 0.5)",
               }}
             >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="https://aicheckers.net/logo-transparent.png" width={36} height={36} alt="" style={{ display: "flex", marginRight: 8 }} />
               <span style={{ display: "flex", color: "#A78BFA", fontWeight: 700 }}>AI</span>
               <span style={{ display: "flex", marginLeft: 6 }}>チェッカー</span>
             </span>

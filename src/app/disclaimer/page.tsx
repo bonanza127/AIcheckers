@@ -12,8 +12,9 @@ export default function Disclaimer() {
       {/* Header */}
       <header className="site-header border-b border-gray-700">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-accent hover:opacity-80">
-            AIチェッカー
+          <Link href="/" className="flex items-center gap-1.5 hover:opacity-80">
+            <img src="/logo-transparent.png" alt="AI Checkers" className="w-10 h-10" />
+            <span className="text-xl font-bold text-accent">AIチェッカー</span>
           </Link>
           <nav className="text-sm text-muted">
             <Link href="/" className="hover:text-accent">← トップへ戻る</Link>
