@@ -73,6 +73,7 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
   const [urlInput, setUrlInput] = useState("");
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+  const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -181,6 +182,12 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: urlInput, model: selectedModel })
       });
+
+      // レート制限ヘッダーを読み取り
+      const remaining = response.headers.get("X-RateLimit-Remaining");
+      if (remaining !== null) {
+        setRateLimitRemaining(parseInt(remaining, 10));
+      }
 
       if (!response.ok) {
         const error = await response.json();
@@ -310,6 +317,12 @@ export default function Home() {
         }),
         scanDelayPromise
       ]);
+
+      // レート制限ヘッダーを読み取り
+      const remaining = response.headers.get("X-RateLimit-Remaining");
+      if (remaining !== null) {
+        setRateLimitRemaining(parseInt(remaining, 10));
+      }
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
@@ -602,13 +615,20 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               お問い合わせ
             </a>
           </nav>
-          <div className="text-sm font-light text-muted hidden sm:block">
-            SYSTEM STATUS: {backendOnline === null ? (
-              <span className="text-gray-400 font-medium">CHECKING...</span>
-            ) : backendOnline ? (
-              <span className="text-success font-medium">ONLINE</span>
-            ) : (
-              <span className="text-danger font-medium">OFFLINE</span>
+          <div className="flex items-center gap-4 text-sm font-light text-muted hidden sm:block">
+            <span>
+              STATUS: {backendOnline === null ? (
+                <span className="text-gray-400 font-medium">CHECKING...</span>
+              ) : backendOnline ? (
+                <span className="text-success font-medium">ONLINE</span>
+              ) : (
+                <span className="text-danger font-medium">OFFLINE</span>
+              )}
+            </span>
+            {rateLimitRemaining !== null && (
+              <span className="ml-4">
+                残り: <span className={`font-medium ${rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>{rateLimitRemaining}</span>/20枚
+              </span>
             )}
           </div>
         </div>

@@ -7,15 +7,20 @@ import io
 import time
 import base64
 import re
+import hashlib
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
 import httpx
+from cachetools import LRUCache
 import torch
 import torch.nn as nn
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import BaseModel
 from transformers import AutoImageProcessor, AutoModel
@@ -34,6 +39,13 @@ device = None
 dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
+
+# キャッシュ: 画像ハッシュ -> 解析結果（最大10,000件、約1MB）
+result_cache: LRUCache = LRUCache(maxsize=10000)
+
+# レート制限: IP -> {日付: カウント}
+daily_counts: dict[str, dict[date, int]] = defaultdict(lambda: defaultdict(int))
+DAILY_LIMIT = 20  # 1日20枚
 
 DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
@@ -107,7 +119,27 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
+
+
+def get_image_hash(image_bytes: bytes) -> str:
+    """画像バイトからSHA256ハッシュを生成"""
+    return hashlib.sha256(image_bytes).hexdigest()
+
+
+def check_rate_limit(ip: str) -> tuple[bool, int]:
+    """レート制限チェック。(許可されているか, 残り回数) を返す"""
+    today = date.today()
+    count = daily_counts[ip][today]
+    remaining = max(0, DAILY_LIMIT - count)
+    return count < DAILY_LIMIT, remaining
+
+
+def increment_rate_limit(ip: str) -> None:
+    """リクエストカウントを増加"""
+    today = date.today()
+    daily_counts[ip][today] += 1
 
 
 @app.get("/")
@@ -371,12 +403,25 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
 @app.post("/analyze")
 async def analyze_image(
+    request: Request,
     file: UploadFile = File(...),
     model: str = Form(default="dinov3")
 ):
     """
     画像を解析してAI生成かどうかを判定（Moonlightのみ）
     """
+    # IPアドレス取得（プロキシ対応）
+    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
+
+    # レート制限チェック
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "1日の上限（20枚）に達しました。明日またお試しください。"},
+            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": "0"}
+        )
+
     # ファイル形式チェック
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image.")
@@ -386,6 +431,19 @@ async def analyze_image(
 
         # 画像読み込み
         contents = await file.read()
+        image_hash = get_image_hash(contents)
+
+        # キャッシュチェック
+        if image_hash in result_cache:
+            cached = result_cache[image_hash]
+            # キャッシュヒット時もレート制限カウント増加
+            increment_rate_limit(ip)
+            _, remaining_after = check_rate_limit(ip)
+            return JSONResponse(
+                content={**cached, "cached": True, "filename": file.filename},
+                headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+            )
+
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
         # Moonlight (DINOv3) で解析
@@ -393,7 +451,7 @@ async def analyze_image(
 
         processing_time = time.time() - start_time
 
-        return {
+        response_data = {
             "is_ai": result["is_ai"],
             "ai_score": result["ai_score"],
             "human_score": result["human_score"],
@@ -406,6 +464,19 @@ async def analyze_image(
             "forensic_logs": result.get("forensic_logs", []),
             "detected_traces": result.get("detected_traces"),
         }
+
+        # キャッシュに保存（filenameを除く）
+        cache_data = {k: v for k, v in response_data.items() if k != "filename"}
+        result_cache[image_hash] = cache_data
+
+        # レート制限カウント増加
+        increment_rate_limit(ip)
+        _, remaining_after = check_rate_limit(ip)
+
+        return JSONResponse(
+            content=response_data,
+            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+        )
 
     except HTTPException:
         raise
@@ -437,11 +508,23 @@ def extract_twitter_image_url(url: str) -> str:
 
 
 @app.post("/analyze-url")
-async def analyze_image_from_url(request: URLAnalyzeRequest):
+async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
     """
     URLから画像を取得して解析（Moonlightのみ）
     """
-    url = request.url.strip()
+    # IPアドレス取得（プロキシ対応）
+    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
+
+    # レート制限チェック
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "1日の上限（20枚）に達しました。明日またお試しください。"},
+            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": "0"}
+        )
+
+    url = body.url.strip()
 
     if not url:
         raise HTTPException(status_code=400, detail="URLが指定されていません")
@@ -478,6 +561,18 @@ async def analyze_image_from_url(request: URLAnalyzeRequest):
 
             contents = response.content
 
+        # キャッシュチェック
+        image_hash = get_image_hash(contents)
+        if image_hash in result_cache:
+            cached = result_cache[image_hash]
+            increment_rate_limit(ip)
+            _, remaining_after = check_rate_limit(ip)
+            filename = url.split("/")[-1].split("?")[0] or "image_from_url"
+            return JSONResponse(
+                content={**cached, "cached": True, "filename": filename, "source_url": body.url},
+                headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+            )
+
         # 画像を開く
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
@@ -489,7 +584,7 @@ async def analyze_image_from_url(request: URLAnalyzeRequest):
         # ファイル名をURLから抽出
         filename = url.split("/")[-1].split("?")[0] or "image_from_url"
 
-        return {
+        response_data = {
             "is_ai": result["is_ai"],
             "ai_score": result["ai_score"],
             "human_score": result["human_score"],
@@ -497,12 +592,25 @@ async def analyze_image_from_url(request: URLAnalyzeRequest):
             "verdict": "AI DETECTED" if result["is_ai"] else "HUMAN CONFIRMED",
             "processing_time": round(processing_time, 3),
             "filename": filename,
-            "source_url": request.url,
+            "source_url": body.url,
             "model_used": result["model_used"],
             "attention_map": result.get("attention_map"),
             "forensic_logs": result.get("forensic_logs", []),
             "detected_traces": result.get("detected_traces"),
         }
+
+        # キャッシュに保存
+        cache_data = {k: v for k, v in response_data.items() if k not in ("filename", "source_url")}
+        result_cache[image_hash] = cache_data
+
+        # レート制限カウント増加
+        increment_rate_limit(ip)
+        _, remaining_after = check_rate_limit(ip)
+
+        return JSONResponse(
+            content=response_data,
+            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+        )
 
     except HTTPException:
         raise

@@ -5,16 +5,25 @@ type Props = {
   searchParams: Promise<{ verdict?: string; score?: string }>;
 };
 
+// 3状態判定ヘルパー
+function getVerdictType(verdict: string): "ai" | "unknown" | "human" {
+  if (verdict.includes("AI")) return "ai";
+  if (verdict.includes("UNKNOWN")) return "unknown";
+  return "human";
+}
+
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const params = await searchParams;
   const verdict = params.verdict || "AI DETECTED";
   const score = params.score || "98";
-  const isAI = verdict.includes("AI");
+  const verdictType = getVerdictType(verdict);
 
   const title = `${verdict} (${score}%) - AI Checkers`;
-  const description = isAI
+  const description = verdictType === "ai"
     ? `この画像はAI生成の可能性が${score}%です。AI Checkersで判定しました。`
-    : `この画像は人間作の可能性が${score}%です。AI Checkersで判定しました。`;
+    : verdictType === "unknown"
+      ? `この画像は判定困難です（確信度${score}%）。AI Checkersで判定しました。`
+      : `この画像は人間作の可能性が${score}%です。AI Checkersで判定しました。`;
 
   const ogImageUrl = `https://www.aicheckers.net/api/og?verdict=${encodeURIComponent(verdict)}&score=${score}`;
 
@@ -48,7 +57,17 @@ export default async function SharePage({ searchParams }: Props) {
   const params = await searchParams;
   const verdict = params.verdict || "AI DETECTED";
   const score = params.score || "98";
-  const isAI = verdict.includes("AI");
+  const verdictType = getVerdictType(verdict);
+
+  // カラー定義
+  const colorClasses = {
+    ai: { bg: "bg-red-500/10", border: "border-red-500", text: "text-red-500" },
+    unknown: { bg: "bg-amber-500/10", border: "border-amber-500", text: "text-amber-500" },
+    human: { bg: "bg-green-500/10", border: "border-green-500", text: "text-green-500" },
+  };
+  const colors = colorClasses[verdictType];
+
+  const confidenceLabel = verdictType === "ai" ? "AI生成" : verdictType === "unknown" ? "判定困難" : "人間作";
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
@@ -71,16 +90,10 @@ export default async function SharePage({ searchParams }: Props) {
 
         {/* Result Card */}
         <div
-          className={`p-8 rounded-2xl border-2 ${
-            isAI
-              ? "bg-red-500/10 border-red-500"
-              : "bg-green-500/10 border-green-500"
-          }`}
+          className={`p-8 rounded-2xl border-2 ${colors.bg} ${colors.border}`}
         >
           <div
-            className={`text-4xl font-black mb-2 ${
-              isAI ? "text-red-500" : "text-green-500"
-            }`}
+            className={`text-4xl font-black mb-2 ${colors.text}`}
           >
             {verdict}
           </div>
@@ -88,7 +101,7 @@ export default async function SharePage({ searchParams }: Props) {
             {score}%
           </div>
           <div className="text-muted">
-            {isAI ? "AI生成" : "人間作"}確信度
+            {confidenceLabel}確信度
           </div>
         </div>
 

@@ -8,7 +8,23 @@ export async function GET(request: NextRequest) {
 
   const verdict = searchParams.get("verdict") || "AI DETECTED";
   const score = searchParams.get("score") || "98";
-  const isAI = verdict.includes("AI");
+
+  // 3状態判定: AI / UNKNOWN / HUMAN
+  const verdictType = verdict.includes("AI")
+    ? "ai"
+    : verdict.includes("UNKNOWN")
+      ? "unknown"
+      : "human";
+
+  // カラー定義
+  const colors = {
+    ai: { primary: "#EF4444", bg: "rgba(239, 68, 68, 0.2)", bgLight: "rgba(239, 68, 68, 0.1)" },
+    unknown: { primary: "#F59E0B", bg: "rgba(245, 158, 11, 0.2)", bgLight: "rgba(245, 158, 11, 0.1)" },
+    human: { primary: "#10B981", bg: "rgba(16, 185, 129, 0.2)", bgLight: "rgba(16, 185, 129, 0.1)" },
+  };
+  const color = colors[verdictType];
+
+  const confidenceLabel = verdictType === "ai" ? "AI Generated" : verdictType === "unknown" ? "Uncertain" : "Human Made";
 
   return new ImageResponse(
     (
@@ -71,18 +87,16 @@ export async function GET(request: NextRequest) {
             alignItems: "center",
             padding: "40px 80px",
             borderRadius: 24,
-            background: isAI
-              ? "linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.1))"
-              : "linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1))",
-            border: `3px solid ${isAI ? "#EF4444" : "#10B981"}`,
-            boxShadow: `0 0 60px ${isAI ? "rgba(239, 68, 68, 0.3)" : "rgba(16, 185, 129, 0.3)"}`,
+            background: `linear-gradient(135deg, ${color.bg}, ${color.bgLight})`,
+            border: `3px solid ${color.primary}`,
+            boxShadow: `0 0 60px ${color.bg}`,
           }}
         >
           <div
             style={{
               fontSize: 64,
               fontWeight: 900,
-              color: isAI ? "#EF4444" : "#10B981",
+              color: color.primary,
               display: "flex",
               textAlign: "center",
             }}
@@ -108,7 +122,7 @@ export async function GET(request: NextRequest) {
               display: "flex",
             }}
           >
-            {isAI ? "AI Generated" : "Human Made"} Confidence
+            {confidenceLabel} Confidence
           </div>
         </div>
 
