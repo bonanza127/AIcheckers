@@ -14,24 +14,6 @@ const getApiUrl = () => {
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 };
 
-// 画像をサムネイルにリサイズ（localStorage節約用）
-const createThumbnail = (base64: string, maxSize: number = 64): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const scale = Math.min(maxSize / img.width, maxSize / img.height);
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
-    };
-    img.onerror = () => resolve(base64); // エラー時は元画像
-    img.src = base64;
-  });
-};
-
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
 type LogEntry = {
@@ -84,21 +66,7 @@ export default function Home() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
-  const [history, setHistory] = useState<HistoryItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('aicheckers-history');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          return parsed.map((item: HistoryItem & { timestamp: string }) => ({
-            ...item,
-            timestamp: new Date(item.timestamp)
-          }));
-        } catch { return []; }
-      }
-    }
-    return [];
-  });
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
@@ -137,13 +105,6 @@ export default function Home() {
     const interval = setInterval(checkBackendHealth, 10000);
     return () => clearInterval(interval);
   }, []);
-
-  // 履歴をlocalStorageに保存
-  useEffect(() => {
-    if (history.length > 0) {
-      localStorage.setItem('aicheckers-history', JSON.stringify(history));
-    }
-  }, [history]);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "info") => {
     setLogs(prev => [...prev, { message, type }]);
@@ -261,20 +222,19 @@ export default function Home() {
         data.forensic_logs.forEach((log: string) => addLog(`  ${log}`, "detail"));
       }
 
-      // 履歴に追加（サムネイル化してlocalStorage節約）
-      const previewFull = data.attention_map ? `data:image/png;base64,${data.attention_map}` : "";
-      const thumbnail = previewFull ? await createThumbnail(previewFull) : "";
+      // 履歴に追加（メモリのみ、元画像保持）
       const historyItem: HistoryItem = {
         id: `url-${Date.now()}`,
         name: data.filename || "URL Image",
-        preview: thumbnail,
+        preview: data.attention_map ? `data:image/png;base64,${data.attention_map}` : "",
         isAI: data.is_ai,
         score: data.ai_score,
         aiScore: data.ai_score,
+        attentionMap: data.attention_map,
         artifacts: data.detected_traces,
         timestamp: new Date()
       };
-      setHistory(prev => [historyItem, ...prev].slice(0, 50));
+      setHistory(prev => [historyItem, ...prev].slice(0, 100));
 
       setUrlInput("");
       addLog(`URL解析完了: ${data.processing_time.toFixed(3)}秒`, "result");
@@ -436,19 +396,18 @@ export default function Home() {
       attentionMap
     });
 
-    // Add to history（サムネイル化してlocalStorage節約）
-    createThumbnail(imageUrl).then(thumbnail => {
-      setHistory(prev => [{
-        id: `history-${Date.now()}`,
-        name: file.name,
-        preview: thumbnail,
-        isAI,
-        score: isAI ? aiScore : humanScore,
-        aiScore,
-        artifacts,
-        timestamp: new Date()
-      }, ...prev].slice(0, 50));
-    });
+    // Add to history（メモリのみ、元画像保持）
+    setHistory(prev => [{
+      id: `history-${Date.now()}`,
+      name: file.name,
+      preview: imageUrl,
+      isAI,
+      score: isAI ? aiScore : humanScore,
+      aiScore,
+      attentionMap,
+      artifacts,
+      timestamp: new Date()
+    }, ...prev].slice(0, 100));
 
     // Remove from queue after scan complete
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
