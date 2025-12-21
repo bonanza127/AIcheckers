@@ -14,6 +14,24 @@ const getApiUrl = () => {
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 };
 
+// 画像をサムネイルにリサイズ（localStorage節約用）
+const createThumbnail = (base64: string, maxSize: number = 64): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(maxSize / img.width, maxSize / img.height);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => resolve(base64); // エラー時は元画像
+    img.src = base64;
+  });
+};
+
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
 type LogEntry = {
@@ -243,19 +261,20 @@ export default function Home() {
         data.forensic_logs.forEach((log: string) => addLog(`  ${log}`, "detail"));
       }
 
-      // 履歴に追加（プレビュー画像はattention_mapから）
+      // 履歴に追加（サムネイル化してlocalStorage節約）
+      const previewFull = data.attention_map ? `data:image/png;base64,${data.attention_map}` : "";
+      const thumbnail = previewFull ? await createThumbnail(previewFull) : "";
       const historyItem: HistoryItem = {
         id: `url-${Date.now()}`,
         name: data.filename || "URL Image",
-        preview: data.attention_map ? `data:image/png;base64,${data.attention_map}` : "",
+        preview: thumbnail,
         isAI: data.is_ai,
         score: data.ai_score,
         aiScore: data.ai_score,
-        attentionMap: data.attention_map,
         artifacts: data.detected_traces,
         timestamp: new Date()
       };
-      setHistory(prev => [historyItem, ...prev].slice(0, 100));
+      setHistory(prev => [historyItem, ...prev].slice(0, 50));
 
       setUrlInput("");
       addLog(`URL解析完了: ${data.processing_time.toFixed(3)}秒`, "result");
@@ -417,18 +436,19 @@ export default function Home() {
       attentionMap
     });
 
-    // Add to history
-    setHistory(prev => [{
-      id: `history-${Date.now()}`,
-      name: file.name,
-      preview: imageUrl,
-      isAI,
-      score: isAI ? aiScore : humanScore,
-      aiScore,
-      attentionMap,
-      artifacts, // detected_traces も保存
-      timestamp: new Date()
-    }, ...prev].slice(0, 100)); // Keep last 100 items
+    // Add to history（サムネイル化してlocalStorage節約）
+    createThumbnail(imageUrl).then(thumbnail => {
+      setHistory(prev => [{
+        id: `history-${Date.now()}`,
+        name: file.name,
+        preview: thumbnail,
+        isAI,
+        score: isAI ? aiScore : humanScore,
+        aiScore,
+        artifacts,
+        timestamp: new Date()
+      }, ...prev].slice(0, 50));
+    });
 
     // Remove from queue after scan complete
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
