@@ -16,7 +16,7 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     ? `この画像はAI生成の可能性が${score}%です。AI Checkersで判定しました。`
     : `この画像は人間作の可能性が${score}%です。AI Checkersで判定しました。`;
 
-  const ogImageUrl = `https://aicheckers.net/api/og?verdict=${encodeURIComponent(verdict)}&score=${score}`;
+  const ogImageUrl = `https://www.aicheckers.net/api/og?verdict=${encodeURIComponent(verdict)}&score=${score}`;
 
   return {
     title,
