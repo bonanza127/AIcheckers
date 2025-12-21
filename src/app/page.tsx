@@ -932,24 +932,20 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             )}
 
             {/* Buttons */}
-            <div className="flex flex-col gap-2">
-              {/* トークン残量表示 */}
-              <div className="flex items-center justify-center gap-2 text-xs text-muted">
-                <span className={`font-mono font-medium ${rateLimitRemaining !== null && rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>
-                  {rateLimitRemaining ?? "--"}/20
-                </span>
-                <span className="text-gray-500">tokens</span>
-                <span className="text-gray-600">(リセット {timeUntilReset})</span>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={startBatchScan}
-                  disabled={!canExecute}
-                  className="flex-grow primary-button flex items-center justify-center gap-2"
-                >
+            <div className="flex gap-3">
+              <button
+                onClick={startBatchScan}
+                disabled={!canExecute}
+                className="flex-grow primary-button flex items-center justify-center gap-3"
+              >
+                <span className="flex items-center gap-2">
                   <Search className="w-4 h-4" />
                   スキャン開始
-                </button>
+                </span>
+                <span className="text-xs opacity-60 font-normal">
+                  — {rateLimitRemaining ?? "--"}/20画像（リセットまで:{timeUntilReset}）
+                </span>
+              </button>
               <button
                 onClick={handleTrashClick}
                 disabled={isScanning}
@@ -958,7 +954,6 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               >
                 <Trash2 className="w-5 h-5" />
               </button>
-              </div>
             </div>
           </div>
         </div>
