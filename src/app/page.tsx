@@ -636,15 +636,6 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             </h2>
           </div>
 
-          {/* 中央: トークン残量 */}
-          <div className="absolute left-1/2 transform -translate-x-1/2 hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-gray-700/50">
-            <span className={`font-mono text-lg font-bold ${rateLimitRemaining !== null && rateLimitRemaining <= 5 ? "text-amber-500" : "text-accent"}`}>
-              {rateLimitRemaining ?? "--"}
-            </span>
-            <span className="text-xs text-gray-400">/ 20 tokens</span>
-            <span className="text-[10px] text-gray-500">(リセットまで {timeUntilReset})</span>
-          </div>
-
           {/* 右: ステータス */}
           <div className="flex items-center gap-1.5 text-xs">
             <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
@@ -941,15 +932,24 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             )}
 
             {/* Buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={startBatchScan}
-                disabled={!canExecute}
-                className="flex-grow primary-button flex items-center justify-center gap-2"
-              >
-                <Search className="w-4 h-4" />
-                スキャン開始
-              </button>
+            <div className="flex flex-col gap-2">
+              {/* トークン残量表示 */}
+              <div className="flex items-center justify-center gap-2 text-xs text-muted">
+                <span className={`font-mono font-medium ${rateLimitRemaining !== null && rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>
+                  {rateLimitRemaining ?? "--"}/20
+                </span>
+                <span className="text-gray-500">tokens</span>
+                <span className="text-gray-600">(リセット {timeUntilReset})</span>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={startBatchScan}
+                  disabled={!canExecute}
+                  className="flex-grow primary-button flex items-center justify-center gap-2"
+                >
+                  <Search className="w-4 h-4" />
+                  スキャン開始
+                </button>
               <button
                 onClick={handleTrashClick}
                 disabled={isScanning}
@@ -958,6 +958,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               >
                 <Trash2 className="w-5 h-5" />
               </button>
+              </div>
             </div>
           </div>
         </div>
