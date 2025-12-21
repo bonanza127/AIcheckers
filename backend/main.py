@@ -46,6 +46,7 @@ result_cache: LRUCache = LRUCache(maxsize=10000)
 # レート制限: IP -> {日付: カウント}
 daily_counts: dict[str, dict[date, int]] = defaultdict(lambda: defaultdict(int))
 DAILY_LIMIT = 20  # 1日20枚
+RATE_LIMIT_ENABLED = False  # True: 有効, False: 無効
 
 DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
@@ -130,6 +131,8 @@ def get_image_hash(image_bytes: bytes) -> str:
 
 def check_rate_limit(ip: str) -> tuple[bool, int]:
     """レート制限チェック。(許可されているか, 残り回数) を返す"""
+    if not RATE_LIMIT_ENABLED:
+        return True, DAILY_LIMIT  # 無効時は常に許可
     today = date.today()
     count = daily_counts[ip][today]
     remaining = max(0, DAILY_LIMIT - count)
@@ -138,6 +141,8 @@ def check_rate_limit(ip: str) -> tuple[bool, int]:
 
 def increment_rate_limit(ip: str) -> None:
     """リクエストカウントを増加"""
+    if not RATE_LIMIT_ENABLED:
+        return  # 無効時はカウントしない
     today = date.today()
     daily_counts[ip][today] += 1
 

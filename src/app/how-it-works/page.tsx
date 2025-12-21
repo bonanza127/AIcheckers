@@ -34,7 +34,7 @@ export default function HowItWorks() {
             生成AIの急速な発展により、AIの判別が非常に難しくなっています。
           </p>
           <p className="text-muted leading-relaxed mt-3">
-            AIそのものの賛否はともかくとして、AI生成画像を自作と偽ってAI禁止のプラットフォームへ投稿したり、不正にマネタイズする行為は明確に非難されるべきです。
+            AIそのものの是非はともかく、AI生成画像を自作と偽ってプラットフォームに投稿したり、不正にマネタイズするような行為は対策されるべきでしょう。
           </p>
           <p className="text-muted leading-relaxed mt-3">
             海外にもAIチェッカーの類いはありますが、その多くはDeepfakeを念頭にした実写画像・動画が対象のものがほとんどで、アニメイラストをきちんと判別できるようなものは見当たりませんでした。
@@ -169,7 +169,7 @@ export default function HowItWorks() {
             <p className="text-foreground font-medium">推定無罪の原則</p>
             <p className="text-muted text-sm mt-2">
               人間の作品がAIと誤判定されることを防ぐため、本サービスでは<span className="text-foreground">確信度が高い場合のみAI判定</span>を下すよう設計しています。
-              しかしそれでも、100%の精度を保証することはできませんので、<span className="text-accent font-bold">あくまでも判断材料の一つとして</span>本ツールをご活用いただければ幸いです。
+              しかし、それでも100%の精度を保証することはできませんので、<span className="text-accent font-bold">あくまでも判断材料の一つとして</span>本ツールをご活用いただければ幸いです。
             </p>
           </div>
         </section>

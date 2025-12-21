@@ -940,7 +940,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               >
                 <Search className="w-4 h-4" />
                 <span>スキャン開始</span>
-                <span className="font-normal">- 残り{rateLimitRemaining ?? "--"}/20</span>
+                <span className="font-normal">- 残り{rateLimitRemaining ?? "--"}/20枚</span>
                 <span className="text-xs opacity-70 font-normal">(午前0時にリセット)</span>
               </button>
               <button

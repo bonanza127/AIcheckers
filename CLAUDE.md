@@ -145,6 +145,16 @@ python scripts/train_from_embeddings.py
 - DINOv3はgatedモデル（Metaの承認必要）
 - Token: 環境変数 `HF_TOKEN` で管理
 
+### レート制限
+- `backend/main.py` 49行目: `RATE_LIMIT_ENABLED = True/False`
+- 現在: **無効**（開発中）
+- 有効時: 1日20枚/IP、午前0時リセット
+- 変更後: `systemctl --user restart aicheckers-backend`
+
+### 画像キャッシュ
+- SHA256ハッシュでLRU 10,000件（同一画像のGPU処理スキップ）
+- メモリ内のみ（再起動でクリア）
+
 ---
 
 ## 連絡先・メール
