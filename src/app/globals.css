@@ -200,9 +200,7 @@ body {
 }
 
 .primary-button:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .danger-button {

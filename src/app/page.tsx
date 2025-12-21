@@ -936,15 +936,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               <button
                 onClick={startBatchScan}
                 disabled={!canExecute}
-                className="flex-grow primary-button flex items-center justify-center gap-3"
+                className="flex-grow primary-button flex items-center justify-center gap-2"
               >
-                <span className="flex items-center gap-2">
-                  <Search className="w-4 h-4" />
-                  スキャン開始
-                </span>
-                <span className="text-xs opacity-60 font-normal">
-                  — {rateLimitRemaining ?? "--"}/20画像（リセットまで:{timeUntilReset}）
-                </span>
+                <Search className="w-4 h-4" />
+                <span>スキャン開始</span>
+                <span className="font-normal">残り{rateLimitRemaining ?? "--"}/20画像</span>
+                <span className="text-xs opacity-60 font-normal">（リセットは{timeUntilReset}）</span>
               </button>
               <button
                 onClick={handleTrashClick}
