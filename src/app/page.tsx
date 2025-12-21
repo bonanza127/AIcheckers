@@ -91,6 +91,10 @@ export default function Home() {
           const data = await response.json();
           // Moonlight (status: "healthy") がオンラインならOK
           setBackendOnline(data.status === "healthy");
+          // 残りトークン数を取得
+          if (data.rate_limit?.remaining !== undefined) {
+            setRateLimitRemaining(data.rate_limit.remaining);
+          }
         } else {
           setBackendOnline(false);
         }
@@ -597,6 +601,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       {/* Header */}
       <header className="site-header sticky top-0 z-40 p-4">
         <div className="container mx-auto flex justify-between items-center">
+          {/* 左: ロゴ */}
           <div className="flex items-center gap-3">
             <Fingerprint className="w-8 h-8 text-accent" />
             <h2 className="text-2xl font-bold tracking-tight">
@@ -607,32 +612,27 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               </a>
             </h2>
           </div>
-          <nav className="hidden md:flex items-center gap-1">
-            <a href="/disclaimer" className="px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-white/5 rounded transition-all border border-transparent hover:border-gray-700">
-              免責事項
-            </a>
-            <a href="mailto:contact@aicheckers.net" className="px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-white/5 rounded transition-all border border-transparent hover:border-gray-700">
-              お問い合わせ
-            </a>
-          </nav>
-          <div className="flex items-center gap-3 text-xs text-muted hidden sm:flex">
+
+          {/* 中央: ステータス + トークン */}
+          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-muted">
             <span className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500" : backendOnline ? "bg-success" : "bg-danger"}`} />
-              {backendOnline === null ? "..." : backendOnline ? "ONLINE" : "OFFLINE"}
+              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
+              <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
+                {backendOnline === null ? "..." : backendOnline ? "ONLINE" : "OFFLINE"}
+              </span>
             </span>
-            {rateLimitRemaining !== null && (
-              <>
-                <span className="text-gray-600">|</span>
-                <span className="flex items-center gap-1">
-                  <span className={`font-mono ${rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>
-                    {rateLimitRemaining}
-                  </span>
-                  <span className="text-gray-500">/ 20 tokens</span>
-                  <span className="text-gray-600 text-[10px]">(0時リセット)</span>
-                </span>
-              </>
-            )}
+            <span className="text-gray-600">|</span>
+            <span className="flex items-center gap-1">
+              <span className={`font-mono font-medium ${rateLimitRemaining !== null && rateLimitRemaining <= 5 ? "text-amber-500" : "text-text-primary"}`}>
+                {rateLimitRemaining ?? "..."}
+              </span>
+              <span className="text-gray-500">/ 20 tokens</span>
+              <span className="text-gray-600 text-[10px]">(0時)</span>
+            </span>
           </div>
+
+          {/* 右: 空 */}
+          <div className="w-8" />
         </div>
       </header>
 

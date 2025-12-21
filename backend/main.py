@@ -151,12 +151,20 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(request: Request):
+    # IPアドレス取得
+    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
+    _, remaining = check_rate_limit(ip)
+
     return {
         "status": "healthy" if dinov3_model is not None and dinov3_classifier is not None else "unhealthy",
         "model": "Moonlight",
         "device": str(device) if device else None,
-        "cuda_available": torch.cuda.is_available()
+        "cuda_available": torch.cuda.is_available(),
+        "rate_limit": {
+            "remaining": remaining,
+            "limit": DAILY_LIMIT
+        }
     }
 
 
