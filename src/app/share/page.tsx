@@ -2,7 +2,10 @@ import { Metadata } from "next";
 import Link from "next/link";
 
 type Props = {
-  searchParams: Promise<{ verdict?: string; score?: string; time?: string; trace?: string }>;
+  searchParams: Promise<{
+    verdict?: string; score?: string; time?: string; trace?: string;
+    v?: string; s?: string; t?: string;  // 短縮版
+  }>;
 };
 
 // 3状態判定ヘルパー
@@ -12,11 +15,20 @@ function getVerdictType(verdict: string): "ai" | "unknown" | "human" {
   return "human";
 }
 
+// 短縮コードからverdictに変換
+function expandVerdict(v: string): string {
+  if (v === "ai") return "AI DETECTED";
+  if (v === "u") return "UNKNOWN";
+  if (v === "h") return "HUMAN CONFIRMED";
+  return v;
+}
+
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const params = await searchParams;
-  const verdict = params.verdict || "AI DETECTED";
-  const score = params.score || "98";
-  const time = params.time || "0.00";
+  // 短縮パラメータ優先、なければ通常パラメータ
+  const verdict = params.v ? expandVerdict(params.v) : (params.verdict || "AI DETECTED");
+  const score = params.s || params.score || "98";
+  const time = params.t || params.time || "0.00";
   const trace = params.trace || "";
   const verdictType = getVerdictType(verdict);
 
@@ -63,8 +75,8 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 
 export default async function SharePage({ searchParams }: Props) {
   const params = await searchParams;
-  const verdict = params.verdict || "AI DETECTED";
-  const score = params.score || "98";
+  const verdict = params.v ? expandVerdict(params.v) : (params.verdict || "AI DETECTED");
+  const score = params.s || params.score || "98";
   const verdictType = getVerdictType(verdict);
 
   // カラー定義

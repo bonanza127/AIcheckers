@@ -545,14 +545,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
 #AIイラスト判定 #aicheckers`;
 
-    // 動的OGP付きのシェアURL
-    const shareParams = new URLSearchParams({
-      verdict: verdictText,
-      score: Math.round(result.aiScore).toString(),
-      time: elapsedTime.toFixed(2),
-      trace: result.artifacts || "",
-    });
-    const shareUrl = `https://www.aicheckers.net/share?${shareParams.toString()}`;
+    // 動的OGP付きのシェアURL（短縮のためtraceは省略）
+    const shareUrl = `https://aicheckers.net/share?v=${verdictText === "AI DETECTED" ? "ai" : verdictText === "UNKNOWN" ? "u" : "h"}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
