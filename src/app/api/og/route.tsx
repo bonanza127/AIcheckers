@@ -45,16 +45,16 @@ export async function GET(request: NextRequest) {
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            borderBottom: "1px solid rgba(255,255,255,0.1)",
+            alignItems: "baseline",
+            borderBottom: "1px solid rgba(255,255,255,0.15)",
             paddingBottom: 20,
-            marginBottom: 16,
+            marginBottom: 20,
           }}
         >
-          <div style={{ display: "flex", fontSize: 32, fontWeight: 700, color: "#E6E9EE" }}>
+          <div style={{ display: "flex", fontSize: 42, fontWeight: 700, color: "#E6E9EE" }}>
             最終判定
           </div>
-          <div style={{ display: "flex", fontSize: 24, color: "#6E7681", marginLeft: 16 }}>
+          <div style={{ display: "flex", fontSize: 32, color: "#A78BFA", fontWeight: 600, marginLeft: 20 }}>
             by AIチェッカー
           </div>
         </div>
@@ -64,22 +64,22 @@ export async function GET(request: NextRequest) {
           style={{
             display: "flex",
             flexWrap: "wrap",
-            fontSize: 16,
+            fontSize: 22,
             color: "#8B949E",
-            marginBottom: 24,
+            marginBottom: 20,
           }}
         >
-          <span style={{ display: "flex", marginRight: 24 }}>
-            BATCH STATUS: <span style={{ color: "#E6E9EE", marginLeft: 6, display: "flex" }}>1 / 1</span>
+          <span style={{ display: "flex", marginRight: 32 }}>
+            BATCH STATUS: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>1 / 1</span>
           </span>
-          <span style={{ display: "flex", marginRight: 24 }}>
-            使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 6, display: "flex" }}>Moonlight V1.3</span>
+          <span style={{ display: "flex", marginRight: 32 }}>
+            使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 8, display: "flex" }}>Moonlight V1.3</span>
           </span>
-          <span style={{ display: "flex", marginRight: 24 }}>
-            ロジック: <span style={{ color: "#E6E9EE", marginLeft: 6, display: "flex" }}>カスケード方式</span>
+          <span style={{ display: "flex", marginRight: 32 }}>
+            ロジック: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>カスケード方式</span>
           </span>
           <span style={{ display: "flex" }}>
-            PROCESSING TIME: <span style={{ color: "#E6E9EE", marginLeft: 6, display: "flex" }}>{time}s</span>
+            PROCESSING TIME: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>{time}s</span>
           </span>
         </div>
 
@@ -87,12 +87,12 @@ export async function GET(request: NextRequest) {
         <div
           style={{
             display: "flex",
-            fontSize: 18,
+            fontSize: 24,
             color: "#8B949E",
-            marginBottom: 28,
+            marginBottom: 24,
           }}
         >
-          検出された痕跡: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>{trace}</span>
+          検出された痕跡: <span style={{ color: "#E6E9EE", marginLeft: 10, display: "flex" }}>{trace}</span>
         </div>
 
         {/* Progress Section */}
