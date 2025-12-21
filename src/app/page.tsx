@@ -626,7 +626,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
         <div className="container mx-auto flex justify-between items-center">
           {/* 左: ロゴ */}
           <div className="flex items-center gap-3">
-            <img src="/LOGO.png" alt="AI Checkers" className="w-10 h-10 rounded-lg" />
+            <img src="/logo.png" alt="AI Checkers" className="w-12 h-12" />
             <h2 className="text-2xl font-bold tracking-tight">
               AIチェッカー
               <span className="text-sm font-light text-muted">　//　</span>
