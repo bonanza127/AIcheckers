@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const verdict = searchParams.get("verdict") || "AI DETECTED";
   const score = searchParams.get("score") || "98";
   const trace = searchParams.get("trace") || "中程度のAttention集中";
+  const time = searchParams.get("time") || "0.00";
 
   // 3状態判定: AI / UNKNOWN / HUMAN
   const verdictType = verdict.includes("AI")
@@ -40,61 +41,45 @@ export async function GET(request: NextRequest) {
           fontFamily: "sans-serif",
         }}
       >
-        {/* Header Row - 最終判定 */}
+        {/* Header Row - 最終判定 by AIチェッカー */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
             borderBottom: "1px solid rgba(255,255,255,0.1)",
             paddingBottom: 20,
-            marginBottom: 24,
+            marginBottom: 16,
           }}
         >
           <div style={{ display: "flex", fontSize: 32, fontWeight: 700, color: "#E6E9EE" }}>
             最終判定
           </div>
-          {/* Logo */}
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 8,
-                background: "linear-gradient(135deg, #A78BFA, #8B5CF6)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginRight: 10,
-                fontSize: 18,
-                fontWeight: 700,
-                color: "white",
-              }}
-            >
-              AI
-            </div>
-            <div style={{ display: "flex", fontSize: 22, fontWeight: 600, color: "#E6E9EE" }}>
-              AI Checkers
-            </div>
+          <div style={{ display: "flex", fontSize: 24, color: "#6E7681", marginLeft: 16 }}>
+            by AIチェッカー
           </div>
         </div>
 
-        {/* Info Row */}
+        {/* Info Row - 横一列 */}
         <div
           style={{
             display: "flex",
             flexWrap: "wrap",
-            gap: 24,
             fontSize: 16,
             color: "#8B949E",
-            marginBottom: 20,
+            marginBottom: 24,
           }}
         >
-          <span style={{ display: "flex" }}>
+          <span style={{ display: "flex", marginRight: 24 }}>
+            BATCH STATUS: <span style={{ color: "#E6E9EE", marginLeft: 6, display: "flex" }}>1 / 1</span>
+          </span>
+          <span style={{ display: "flex", marginRight: 24 }}>
             使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 6, display: "flex" }}>Moonlight V1.3</span>
           </span>
-          <span style={{ display: "flex" }}>
+          <span style={{ display: "flex", marginRight: 24 }}>
             ロジック: <span style={{ color: "#E6E9EE", marginLeft: 6, display: "flex" }}>カスケード方式</span>
+          </span>
+          <span style={{ display: "flex" }}>
+            PROCESSING TIME: <span style={{ color: "#E6E9EE", marginLeft: 6, display: "flex" }}>{time}s</span>
           </span>
         </div>
 

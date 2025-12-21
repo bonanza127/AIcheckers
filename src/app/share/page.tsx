@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 
 type Props = {
-  searchParams: Promise<{ verdict?: string; score?: string }>;
+  searchParams: Promise<{ verdict?: string; score?: string; time?: string; trace?: string }>;
 };
 
 // 3状態判定ヘルパー
@@ -16,6 +16,8 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const params = await searchParams;
   const verdict = params.verdict || "AI DETECTED";
   const score = params.score || "98";
+  const time = params.time || "0.00";
+  const trace = params.trace || "";
   const verdictType = getVerdictType(verdict);
 
   const title = `${verdict} (${score}%) - AI Checkers`;
@@ -25,7 +27,13 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
       ? `この画像は判定困難です（確信度${score}%）。AI Checkersで判定しました。`
       : `この画像は人間作の可能性が${score}%です。AI Checkersで判定しました。`;
 
-  const ogImageUrl = `https://www.aicheckers.net/api/og?verdict=${encodeURIComponent(verdict)}&score=${score}`;
+  const ogParams = new URLSearchParams({
+    verdict,
+    score,
+    time,
+    ...(trace && { trace }),
+  });
+  const ogImageUrl = `https://www.aicheckers.net/api/og?${ogParams.toString()}`;
 
   return {
     title,
