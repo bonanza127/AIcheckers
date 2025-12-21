@@ -10,11 +10,6 @@ export async function GET(request: NextRequest) {
   const score = searchParams.get("score") || "98";
   const isAI = verdict.includes("AI");
 
-  // Noto Sans JP フォントを読み込み
-  const notoSansJP = await fetch(
-    new URL("https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.woff2")
-  ).then((res) => res.arrayBuffer());
-
   return new ImageResponse(
     (
       <div
@@ -28,10 +23,9 @@ export async function GET(request: NextRequest) {
           backgroundColor: "#0C1117",
           backgroundImage:
             "radial-gradient(circle at 25% 25%, #1a1f2e 0%, transparent 50%), radial-gradient(circle at 75% 75%, #1a1f2e 0%, transparent 50%)",
-          fontFamily: "Noto Sans JP",
         }}
       >
-        {/* Logo/Icon area */}
+        {/* Logo */}
         <div
           style={{
             display: "flex",
@@ -51,28 +45,18 @@ export async function GET(request: NextRequest) {
               justifyContent: "center",
               marginRight: 16,
               boxShadow: "0 0 40px rgba(139, 92, 246, 0.4)",
+              fontSize: 28,
+              color: "white",
             }}
           >
-            <svg
-              width="36"
-              height="36"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
+            AI
           </div>
           <div
             style={{
               fontSize: 36,
               fontWeight: 800,
               color: "#E6E9EE",
-              letterSpacing: -1,
+              display: "flex",
             }}
           >
             AI Checkers
@@ -99,9 +83,8 @@ export async function GET(request: NextRequest) {
               fontSize: 64,
               fontWeight: 900,
               color: isAI ? "#EF4444" : "#10B981",
+              display: "flex",
               textAlign: "center",
-              letterSpacing: 2,
-              textShadow: `0 0 30px ${isAI ? "rgba(239, 68, 68, 0.5)" : "rgba(16, 185, 129, 0.5)"}`,
             }}
           >
             {verdict}
@@ -112,6 +95,7 @@ export async function GET(request: NextRequest) {
               fontWeight: 900,
               color: "#E6E9EE",
               marginTop: 10,
+              display: "flex",
             }}
           >
             {score}%
@@ -121,9 +105,10 @@ export async function GET(request: NextRequest) {
               fontSize: 24,
               color: "#8B949E",
               marginTop: 10,
+              display: "flex",
             }}
           >
-            {isAI ? "AI生成" : "人間作"}確信度
+            {isAI ? "AI Generated" : "Human Made"} Confidence
           </div>
         </div>
 
@@ -136,21 +121,13 @@ export async function GET(request: NextRequest) {
             color: "#8B949E",
           }}
         >
-          aicheckers.net - 二次元特化AIイラスト判定ツール
+          aicheckers.net - Anime AI Image Detector
         </div>
       </div>
     ),
     {
       width: 1200,
       height: 630,
-      fonts: [
-        {
-          name: "Noto Sans JP",
-          data: notoSansJP,
-          style: "normal",
-          weight: 400,
-        },
-      ],
     }
   );
 }
