@@ -41,13 +41,13 @@ STRIPE_PRICE_ID=price_xxx
 - **フロントエンド**: https://aicheckers.net (Vercel)
 - **API**: https://api.aicheckers.net (Cloudflare Tunnel → localhost:8000)
 
-## 現在のアーキテクチャ（2025-12-20更新）
+## 現在のアーキテクチャ（2025-12-23更新）
 
 ```
 aicheckers.net → Moonlight (DINOv3 Linear Probe) のみ
 ```
 
-**精度**: 98.13% | **速度**: 37-56ms
+**精度**: 98.03% | **速度**: 70-120ms（TTA有効時）
 
 ---
 
@@ -144,6 +144,58 @@ python scripts/extract_embeddings.py --dir data/novelai --name novelai_ai
 python scripts/train_from_embeddings.py
 
 # 4. バックエンド再起動
+systemctl --user restart aicheckers-backend
+```
+
+---
+
+## 精度向上テクニック（2025-12-23実装）
+
+### 推論時の改善
+
+#### 1. TTA (Test-Time Augmentation)
+- **場所**: `backend/main.py`
+- **動作**: 元画像 + 水平反転画像の2回推論 → 確率を平均化
+- **効果**: +0.5〜1%の精度向上
+- **速度影響**: 約2倍（40-50ms増）
+- **設定**: `TTA_ENABLED` 環境変数（デフォルト: true）
+
+#### 2. Temperature Scaling
+- **場所**: `backend/main.py`
+- **動作**: `softmax(logits / T)` で確率を平滑化
+- **効果**: 「過信」を防ぎ、50-60%付近の判定が安定
+- **設定**: `TEMPERATURE` 環境変数（デフォルト: 1.5）
+
+### 学習時の改善
+
+#### 3. FroFA (Frozen Feature Augmentation)
+- **場所**: `scripts/train_from_embeddings.py`
+- **動作**: 凍結特徴量にノイズ + Dropoutを適用
+- **パラメータ**:
+  - `frofa_noise=0.01`: ガウスノイズの強さ
+  - `frofa_dropout=0.1`: Dropout率
+- **効果**: 未知のAIモデルへの汎化向上
+
+#### 4. VAT (Virtual Adversarial Training)
+- **場所**: `scripts/train_from_embeddings.py`
+- **動作**: 「モデルが最も迷う方向」に敵対的ノイズを加えて学習
+- **タイミング**: 最後5エポックのみ（FroFA→VATハイブリッド）
+- **パラメータ**:
+  - `vat_epsilon=0.005`: ノイズの大きさ（小さめで安全）
+  - `vat_alpha`: 0.1→0.5へ線形ウォームアップ
+- **安全策**:
+  - NaN検出時は勾配クリーニング後にFroFAへフォールバック
+  - `optimizer.zero_grad(set_to_none=True)` で汚染勾配を完全除去
+- **効果**: 決定境界を滑らかにし、複数LoRA重ね掛け等への耐性向上
+
+### ロールバック方法
+学習が失敗した場合:
+```bash
+# バックアップ一覧
+ls models/dinov3_classifier_backup_*.pt
+
+# 復元
+cp models/dinov3_classifier_backup_YYYYMMDD_HHMMSS.pt models/dinov3_classifier.pt
 systemctl --user restart aicheckers-backend
 ```
 

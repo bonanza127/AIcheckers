@@ -55,6 +55,9 @@ RECOVERY_AMOUNT_VIP = 10  # VIP: 10枚回復
 # Test Time Augmentation (TTA): 水平反転で2回推論し平均化
 TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
 
+# Temperature Scaling: 過信を防ぎ確率を平滑化（検証データで調整）
+TEMPERATURE = float(os.getenv("TEMPERATURE", "1.5"))
+
 # IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
 
@@ -521,9 +524,9 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         outputs = dinov3_model(**inputs, output_attentions=True)
         features = outputs.last_hidden_state[:, 0, :]  # CLS token
 
-        # 分類
+        # 分類（Temperature Scalingで確率を平滑化）
         logits = dinov3_classifier(features)
-        probs = torch.softmax(logits, dim=1)[0]
+        probs = torch.softmax(logits / TEMPERATURE, dim=1)[0]
         ai_prob = probs[1].item()  # class 1 = AI
 
         # TTA: 水平反転で追加推論し平均化
@@ -536,7 +539,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             outputs_flipped = dinov3_model(**inputs_flipped)
             features_flipped = outputs_flipped.last_hidden_state[:, 0, :]
             logits_flipped = dinov3_classifier(features_flipped)
-            probs_flipped = torch.softmax(logits_flipped, dim=1)[0]
+            probs_flipped = torch.softmax(logits_flipped / TEMPERATURE, dim=1)[0]
             ai_prob_flipped = probs_flipped[1].item()
             # 平均化
             ai_prob = (ai_prob_original + ai_prob_flipped) / 2

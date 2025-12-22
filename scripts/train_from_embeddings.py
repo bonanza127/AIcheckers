@@ -69,12 +69,20 @@ def load_embeddings():
     return X, y
 
 
-def train_classifier(X, y, epochs=30, lr=0.001):
-    """Linear Probe分類器を学習（元のアーキテクチャ）"""
+def train_classifier(X, y, epochs=30, lr=0.001, frofa_noise=0.01, frofa_dropout=0.1,
+                     vat_start_epoch=25, vat_epsilon=0.005, vat_alpha_start=0.1, vat_alpha_end=0.5):
+    """Linear Probe分類器を学習（FroFA + VAT Hybrid）
+
+    - Epoch 0〜vat_start_epoch: FroFA（ランダムノイズ）
+    - Epoch vat_start_epoch〜end: VAT（勾配ベース敵対的ノイズ）+ αウォームアップ
+    """
     from torch.utils.data import DataLoader, TensorDataset
+    import torch.nn.functional as F
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nTraining on {device}")
+    print(f"FroFA: noise={frofa_noise}, dropout={frofa_dropout}")
+    print(f"VAT: starts at epoch {vat_start_epoch}, ε={vat_epsilon}, α={vat_alpha_start}→{vat_alpha_end}")
 
     # Shuffle
     perm = np.random.permutation(len(X))
@@ -111,10 +119,73 @@ def train_classifier(X, y, epochs=30, lr=0.001):
         # Training
         model.train()
         train_loss = 0
+        use_vat = epoch >= vat_start_epoch
+
+        # VAT用αのウォームアップ（線形増加）
+        if use_vat:
+            vat_epochs_total = epochs - vat_start_epoch
+            vat_epoch_idx = epoch - vat_start_epoch
+            vat_alpha = vat_alpha_start + (vat_alpha_end - vat_alpha_start) * (vat_epoch_idx / max(vat_epochs_total - 1, 1))
+
         for batch_x, batch_y in train_loader:
             optimizer.zero_grad()
-            logits = model(batch_x)
-            loss = criterion(logits, batch_y)
+
+            if use_vat:
+                # VAT: 勾配ベースの敵対的ノイズ
+                # Step 1: ランダム方向のノイズで勾配を計算
+                d = torch.randn_like(batch_x)
+                d = d / (d.norm(dim=1, keepdim=True) + 1e-8)
+                d.requires_grad = True
+
+                # 摂動を加えた予測
+                logits_perturbed = model(batch_x + d * vat_epsilon)
+                logits_clean = model(batch_x)
+
+                # KLダイバージェンスで「最も不安定な方向」を見つける
+                p_clean = F.softmax(logits_clean.detach(), dim=1)
+                p_perturbed = F.log_softmax(logits_perturbed, dim=1)
+                kl_loss = F.kl_div(p_perturbed, p_clean, reduction='batchmean')
+                kl_loss.backward()
+
+                # NaNチェック
+                if d.grad is None or torch.isnan(d.grad).any():
+                    # フォールバック: FroFAに切り替え
+                    optimizer.zero_grad(set_to_none=True)
+                    batch_x_aug = batch_x + torch.randn_like(batch_x) * frofa_noise
+                    batch_x_aug = F.dropout(batch_x_aug, p=frofa_dropout, training=True)
+                    logits = model(batch_x_aug)
+                    loss = criterion(logits, batch_y)
+                else:
+                    # Step 2: 最悪方向への敵対的ノイズを計算
+                    r_adv = d.grad / (d.grad.norm(dim=1, keepdim=True) + 1e-8) * vat_epsilon
+                    r_adv = r_adv.detach()
+
+                    optimizer.zero_grad(set_to_none=True)
+
+                    # メインロス + VATロス
+                    logits = model(batch_x + r_adv)
+                    main_loss = criterion(logits, batch_y)
+
+                    logits_adv = model(batch_x + r_adv)
+                    p_clean = F.softmax(model(batch_x).detach(), dim=1)
+                    p_adv = F.log_softmax(logits_adv, dim=1)
+                    vat_loss = F.kl_div(p_adv, p_clean, reduction='batchmean')
+
+                    loss = main_loss + vat_alpha * vat_loss
+
+                    # NaNチェック
+                    if torch.isnan(loss):
+                        optimizer.zero_grad(set_to_none=True)
+                        batch_x_aug = batch_x + torch.randn_like(batch_x) * frofa_noise
+                        logits = model(batch_x_aug)
+                        loss = criterion(logits, batch_y)
+            else:
+                # FroFA: 学習時のみ特徴量にノイズとdropoutを適用
+                batch_x_aug = batch_x + torch.randn_like(batch_x) * frofa_noise
+                batch_x_aug = F.dropout(batch_x_aug, p=frofa_dropout, training=True)
+                logits = model(batch_x_aug)
+                loss = criterion(logits, batch_y)
+
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
