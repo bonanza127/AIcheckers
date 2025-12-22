@@ -55,8 +55,23 @@ rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "l
 import os
 import json
 import stripe
+import secrets
+from authlib.integrations.starlette_client import OAuth
+from jose import jwt
+from datetime import timedelta
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import RedirectResponse
 
 FANBOX_SESSID = os.getenv("FANBOXSESSID", "")  # 環境変数から取得
+
+# OAuth設定
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+TWITTER_CLIENT_ID = os.getenv("TWITTER_CLIENT_ID", "")
+TWITTER_CLIENT_SECRET = os.getenv("TWITTER_CLIENT_SECRET", "")
+JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_DAYS = 30
 
 # Stripe設定
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
@@ -68,6 +83,37 @@ stripe.api_key = STRIPE_SECRET_KEY
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://aicheckers.net")
 FANBOX_CREATOR_ID = "aicheckers"  # マスターのFANBOXクリエイターID
 VIP_DATA_PATH = Path("/home/techne/aicheckers/data/vip_users.json")
+USERS_DATA_PATH = Path("/home/techne/aicheckers/data/users.json")
+
+# ユーザーデータ管理
+def load_users() -> dict:
+    if USERS_DATA_PATH.exists():
+        with open(USERS_DATA_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(data: dict):
+    USERS_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(USERS_DATA_PATH, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+def create_jwt_token(user_id: str, email: str) -> str:
+    expire = datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS)
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "exp": expire
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def verify_jwt_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except:
+        return None
+
+users_db: dict = {}  # 起動時にロード
 
 # VIPユーザーリスト（pixiv ID -> VIP情報）
 def load_vip_users() -> dict:
@@ -92,7 +138,11 @@ HF_TOKEN = "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"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """起動時にMoonlight (DINOv3) をロード"""
-    global device, dinov3_model, dinov3_processor, dinov3_classifier, vip_users
+    global device, dinov3_model, dinov3_processor, dinov3_classifier, vip_users, users_db
+
+    # ユーザーデータをロード
+    users_db = load_users()
+    print(f"Loaded {len(users_db)} users")
 
     # VIPユーザーリストをロード
     vip_users = load_vip_users()
@@ -161,6 +211,33 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
+
+# セッションミドルウェア（OAuth用）
+app.add_middleware(SessionMiddleware, secret_key=JWT_SECRET)
+
+# OAuth クライアント設定
+oauth = OAuth()
+
+# Google OAuth
+if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+    oauth.register(
+        name='google',
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={'scope': 'openid email profile'}
+    )
+
+# Twitter/X OAuth 2.0
+if TWITTER_CLIENT_ID and TWITTER_CLIENT_SECRET:
+    oauth.register(
+        name='twitter',
+        client_id=TWITTER_CLIENT_ID,
+        client_secret=TWITTER_CLIENT_SECRET,
+        authorize_url='https://twitter.com/i/oauth2/authorize',
+        access_token_url='https://api.twitter.com/2/oauth2/token',
+        client_kwargs={'scope': 'tweet.read users.read offline.access'}
+    )
 
 
 def get_image_hash(image_bytes: bytes) -> str:
@@ -886,6 +963,148 @@ async def check_vip_email(email: str):
     if email in vip_users:
         return {"is_vip": True, "data": vip_users[email]}
     return {"is_vip": False}
+
+
+# ==================== OAuth認証 ====================
+
+@app.get("/auth/google")
+async def auth_google(request: Request):
+    """Google OAuth開始"""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=501, detail="Google OAuth not configured")
+    redirect_uri = f"{FRONTEND_URL.replace('https://aicheckers.net', 'https://api.aicheckers.net')}/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/google/callback")
+async def auth_google_callback(request: Request):
+    """Google OAuthコールバック"""
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get('userinfo')
+
+        if not user_info:
+            return RedirectResponse(f"{FRONTEND_URL}?auth=error&message=userinfo_failed")
+
+        email = user_info.get('email')
+        name = user_info.get('name', email.split('@')[0])
+        google_id = user_info.get('sub')
+
+        # ユーザー登録/更新
+        global users_db
+        user_id = f"google_{google_id}"
+
+        if user_id not in users_db:
+            users_db[user_id] = {
+                "id": user_id,
+                "email": email,
+                "name": name,
+                "provider": "google",
+                "created_at": datetime.now().isoformat()
+            }
+            save_users(users_db)
+
+        # JWT発行
+        jwt_token = create_jwt_token(user_id, email)
+
+        # VIPステータス確認
+        is_vip = email in vip_users
+
+        return RedirectResponse(
+            f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}"
+        )
+    except Exception as e:
+        print(f"Google OAuth error: {e}")
+        return RedirectResponse(f"{FRONTEND_URL}?auth=error&message=oauth_failed")
+
+
+@app.get("/auth/twitter")
+async def auth_twitter(request: Request):
+    """Twitter/X OAuth開始"""
+    if not TWITTER_CLIENT_ID:
+        raise HTTPException(status_code=501, detail="Twitter OAuth not configured")
+    redirect_uri = f"{FRONTEND_URL.replace('https://aicheckers.net', 'https://api.aicheckers.net')}/auth/twitter/callback"
+    return await oauth.twitter.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/twitter/callback")
+async def auth_twitter_callback(request: Request):
+    """Twitter/X OAuthコールバック"""
+    try:
+        token = await oauth.twitter.authorize_access_token(request)
+
+        # Twitter APIでユーザー情報取得
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://api.twitter.com/2/users/me",
+                headers={"Authorization": f"Bearer {token['access_token']}"},
+                params={"user.fields": "id,name,username"}
+            )
+            if resp.status_code != 200:
+                return RedirectResponse(f"{FRONTEND_URL}?auth=error&message=twitter_api_failed")
+
+            user_data = resp.json().get("data", {})
+
+        twitter_id = user_data.get('id')
+        name = user_data.get('name', user_data.get('username'))
+        username = user_data.get('username')
+
+        # ユーザー登録/更新
+        global users_db
+        user_id = f"twitter_{twitter_id}"
+        email = f"{username}@twitter.local"  # Twitter はメールを提供しない
+
+        if user_id not in users_db:
+            users_db[user_id] = {
+                "id": user_id,
+                "email": email,
+                "name": name,
+                "username": username,
+                "provider": "twitter",
+                "created_at": datetime.now().isoformat()
+            }
+            save_users(users_db)
+
+        # JWT発行
+        jwt_token = create_jwt_token(user_id, email)
+
+        # VIPステータス確認（Twitterユーザーはusernameで確認）
+        is_vip = email in vip_users or f"@{username}" in vip_users
+
+        return RedirectResponse(
+            f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}"
+        )
+    except Exception as e:
+        print(f"Twitter OAuth error: {e}")
+        return RedirectResponse(f"{FRONTEND_URL}?auth=error&message=oauth_failed")
+
+
+@app.get("/auth/me")
+async def auth_me(request: Request):
+    """現在のユーザー情報を取得"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = auth_header.split(" ")[1]
+    payload = verify_jwt_token(token)
+
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user_id = payload.get("sub")
+    email = payload.get("email")
+
+    user = users_db.get(user_id, {})
+    is_vip = email in vip_users
+
+    return {
+        "id": user_id,
+        "email": email,
+        "name": user.get("name", ""),
+        "provider": user.get("provider", ""),
+        "is_vip": is_vip
+    }
 
 
 if __name__ == "__main__":
