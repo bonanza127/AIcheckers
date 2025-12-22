@@ -255,24 +255,24 @@ export default function VipModal({ isOpen, onClose }: VipModalProps) {
                 {/* 新規登録タブ */}
                 {authTab === "register" && (
                   <div className="space-y-4">
-                    {/* ステップインジケーター */}
+                    {/* ステップインジケーター（認証ステップでは1がアクティブ） */}
                     <div className="flex items-center justify-center gap-2 text-xs pb-2">
-                      <div className={`flex items-center gap-1 ${step === "auth" ? "text-amber-400" : "text-muted"}`}>
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${step === "auth" ? "bg-amber-400 text-black" : step === "payment" || step === "complete" ? "bg-success text-white" : "bg-gray-700"}`}>
-                          {step === "payment" || step === "complete" ? "✓" : "1"}
+                      <div className="flex items-center gap-1 text-amber-400">
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-amber-400 text-black">
+                          1
                         </div>
                         <span>アカウント</span>
                       </div>
                       <ArrowRight className="w-3 h-3 text-gray-600" />
-                      <div className={`flex items-center gap-1 ${step === "payment" ? "text-amber-400" : "text-muted"}`}>
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${step === "payment" ? "bg-amber-400 text-black" : step === "complete" ? "bg-success text-white" : "bg-gray-700"}`}>
-                          {step === "complete" ? "✓" : "2"}
+                      <div className="flex items-center gap-1 text-muted">
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-gray-700">
+                          2
                         </div>
                         <span>お支払い</span>
                       </div>
                       <ArrowRight className="w-3 h-3 text-gray-600" />
-                      <div className={`flex items-center gap-1 ${step === "complete" ? "text-amber-400" : "text-muted"}`}>
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${step === "complete" ? "bg-amber-400 text-black" : "bg-gray-700"}`}>
+                      <div className="flex items-center gap-1 text-muted">
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-gray-700">
                           3
                         </div>
                         <span>完了</span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff, CreditCard } from "lucide-react";
+import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
 import VipModal from "@/components/VipModal";
 
 // API URL: 本番環境では api.aicheckers.net を使用
@@ -640,26 +640,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
           {/* 右: VIP + ステータス */}
           <div className="flex items-center gap-4 text-xs">
-            {/* VIP Black Card */}
+            {/* VIP - 控えめなブラックカード */}
             <button
               onClick={() => setIsVipModalOpen(true)}
-              className="group relative flex items-center gap-2 px-4 py-1.5 rounded-md bg-gradient-to-b from-zinc-800 via-zinc-900 to-black border border-zinc-700/50 hover:border-zinc-500/70 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-black/30"
+              className="group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] text-zinc-500 hover:text-zinc-300 transition-all duration-500 border border-zinc-700/50 hover:border-zinc-600 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm"
             >
-              {/* Subtle gold edge highlight */}
-              <div className="absolute inset-0 rounded-md bg-gradient-to-br from-amber-500/5 via-transparent to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-              {/* Card icon */}
-              <CreditCard className="relative z-10 w-4 h-4 text-amber-400/80 group-hover:text-amber-300 transition-colors" />
-
-              {/* VIP text */}
-              <span className="relative z-10 text-xs font-bold tracking-[0.2em] text-zinc-200 group-hover:text-white transition-colors uppercase">
-                VIP
-              </span>
-
-              {/* Premium shine effect */}
-              <div className="absolute inset-0 rounded-md overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-              </div>
+              VIP
             </button>
 
             <span className="text-muted">//</span>
