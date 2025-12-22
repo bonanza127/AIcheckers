@@ -89,7 +89,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  // OAuthコールバック処理
+  // OAuthコールバック処理 & ログイン状態復元
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const authStatus = params.get("auth");
@@ -110,6 +110,28 @@ export default function Home() {
     } else if (authStatus === "error") {
       console.error("OAuth error:", params.get("message"));
       window.history.replaceState({}, "", window.location.pathname);
+    } else {
+      // ページリロード時: localStorageからトークン復元
+      const savedToken = localStorage.getItem("auth_token");
+      if (savedToken) {
+        const apiUrl = getApiUrl();
+        fetch(`${apiUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${savedToken}` }
+        })
+          .then(res => res.ok ? res.json() : Promise.reject())
+          .then(data => {
+            setAuthUser({
+              name: data.name,
+              email: data.email,
+              token: savedToken,
+              isVip: data.is_vip
+            });
+          })
+          .catch(() => {
+            // トークン無効 → 削除
+            localStorage.removeItem("auth_token");
+          });
+      }
     }
   }, []);
 
