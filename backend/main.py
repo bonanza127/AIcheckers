@@ -59,6 +59,8 @@ import os
 import json
 import stripe
 import secrets
+import bcrypt
+import paypalrestsdk
 from authlib.integrations.starlette_client import OAuth
 from jose import jwt
 from datetime import timedelta
@@ -81,6 +83,18 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # 月額300円のPrice ID
 stripe.api_key = STRIPE_SECRET_KEY
+
+# PayPal設定
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
+PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
+PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox")  # sandbox or live
+
+if PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET:
+    paypalrestsdk.configure({
+        "mode": PAYPAL_MODE,
+        "client_id": PAYPAL_CLIENT_ID,
+        "client_secret": PAYPAL_CLIENT_SECRET
+    })
 
 # 本番/開発のURL
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://aicheckers.net")
@@ -269,25 +283,45 @@ def _recover_tokens(ip: str, is_vip: bool = False) -> None:
         data["last_recovery"] = current_hour
 
 
-def check_rate_limit(ip: str, is_vip: bool = False) -> tuple[bool, int, int]:
+def get_rate_limit_key(request: Request) -> tuple[str, bool]:
+    """リクエストからレート制限キーとVIPステータスを取得。
+    ログインユーザーはuser_id、非ログインはIPをキーにする。
+    """
+    # Authorizationヘッダーからユーザー情報を取得
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        payload = verify_jwt_token(token)
+        if payload:
+            user_id = payload.get("sub")
+            email = payload.get("email")
+            is_vip = email in vip_users if email else False
+            return user_id, is_vip
+
+    # 非ログインユーザーはIPをキーにする
+    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
+    return ip, False
+
+
+def check_rate_limit(key: str, is_vip: bool = False) -> tuple[bool, int, int]:
     """レート制限チェック。(許可されているか, 残り回数, 上限) を返す"""
     max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
 
     if not RATE_LIMIT_ENABLED:
         return True, max_tokens, max_tokens  # 無効時は常に許可、上限表示
 
-    _recover_tokens(ip, is_vip)
-    data = rate_limit_data[ip]
+    _recover_tokens(key, is_vip)
+    data = rate_limit_data[key]
     return data["tokens"] > 0, data["tokens"], max_tokens
 
 
-def increment_rate_limit(ip: str, is_vip: bool = False) -> None:
+def increment_rate_limit(key: str, is_vip: bool = False) -> None:
     """トークンを1消費"""
     if not RATE_LIMIT_ENABLED:
         return  # 無効時は消費しない
 
-    _recover_tokens(ip, is_vip)  # まず回復処理
-    data = rate_limit_data[ip]
+    _recover_tokens(key, is_vip)  # まず回復処理
+    data = rate_limit_data[key]
     if data["tokens"] > 0:
         data["tokens"] -= 1
 
@@ -302,9 +336,9 @@ async def root():
 
 @app.get("/health")
 async def health_check(request: Request):
-    # IPアドレス取得
-    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
-    _, remaining, limit = check_rate_limit(ip)
+    # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
+    key, is_vip = get_rate_limit_key(request)
+    _, remaining, limit = check_rate_limit(key, is_vip)
 
     return {
         "status": "healthy" if dinov3_model is not None and dinov3_classifier is not None else "unhealthy",
@@ -568,11 +602,11 @@ async def analyze_image(
     """
     画像を解析してAI生成かどうかを判定（Moonlightのみ）
     """
-    # IPアドレス取得（プロキシ対応）
-    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
+    # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
+    key, is_vip = get_rate_limit_key(request)
 
     # レート制限チェック
-    allowed, remaining, limit = check_rate_limit(ip)
+    allowed, remaining, limit = check_rate_limit(key, is_vip)
     if not allowed:
         return JSONResponse(
             status_code=429,
@@ -595,8 +629,8 @@ async def analyze_image(
         if image_hash in result_cache:
             cached = result_cache[image_hash]
             # キャッシュヒット時もレート制限カウント増加
-            increment_rate_limit(ip)
-            _, remaining_after, limit_after = check_rate_limit(ip)
+            increment_rate_limit(key, is_vip)
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip)
             return JSONResponse(
                 content={**cached, "cached": True, "filename": file.filename},
                 headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
@@ -628,8 +662,8 @@ async def analyze_image(
         result_cache[image_hash] = cache_data
 
         # レート制限カウント増加
-        increment_rate_limit(ip)
-        _, remaining_after, limit_after = check_rate_limit(ip)
+        increment_rate_limit(key, is_vip)
+        _, remaining_after, limit_after = check_rate_limit(key, is_vip)
 
         return JSONResponse(
             content=response_data,
@@ -670,11 +704,11 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
     """
     URLから画像を取得して解析（Moonlightのみ）
     """
-    # IPアドレス取得（プロキシ対応）
-    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
+    # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
+    key, is_vip = get_rate_limit_key(request)
 
     # レート制限チェック
-    allowed, remaining, limit = check_rate_limit(ip)
+    allowed, remaining, limit = check_rate_limit(key, is_vip)
     if not allowed:
         return JSONResponse(
             status_code=429,
@@ -723,8 +757,8 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         image_hash = get_image_hash(contents)
         if image_hash in result_cache:
             cached = result_cache[image_hash]
-            increment_rate_limit(ip)
-            _, remaining_after, limit_after = check_rate_limit(ip)
+            increment_rate_limit(key, is_vip)
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip)
             filename = url.split("/")[-1].split("?")[0] or "image_from_url"
             return JSONResponse(
                 content={**cached, "cached": True, "filename": filename, "source_url": body.url},
@@ -762,8 +796,8 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         result_cache[image_hash] = cache_data
 
         # レート制限カウント増加
-        increment_rate_limit(ip)
-        _, remaining_after, limit_after = check_rate_limit(ip)
+        increment_rate_limit(key, is_vip)
+        _, remaining_after, limit_after = check_rate_limit(key, is_vip)
 
         return JSONResponse(
             content=response_data,
@@ -875,16 +909,9 @@ async def create_checkout_session(body: CreateCheckoutRequest):
         raise HTTPException(status_code=400, detail="メールアドレスを入力してください")
 
     try:
-        # PayPay/PayPalの場合もStripe経由で処理
-        payment_method_types = ["card"]  # デフォルト: クレカ
-        if body.payment_method == "paypay":
-            payment_method_types = ["card"]  # PayPayはStripe経由でカード決済として処理
-        elif body.payment_method == "paypal":
-            payment_method_types = ["paypal"]  # PayPalはStripe PayPalを使用
-
-        # Checkout Session作成
+        # Stripe Checkout Session作成（クレカのみ）
         session = stripe.checkout.Session.create(
-            payment_method_types=payment_method_types,
+            payment_method_types=["card"],
             mode="subscription",  # 月額課金
             line_items=[{
                 "price": STRIPE_PRICE_ID,
@@ -1113,6 +1140,187 @@ async def auth_me(request: Request):
         "provider": user.get("provider", ""),
         "is_vip": is_vip
     }
+
+
+# ==================== メール/パスワード認証 ====================
+
+class EmailRegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+
+
+class EmailLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode(), hashed.encode())
+
+
+def is_valid_email(email: str) -> bool:
+    """簡易メールアドレスバリデーション"""
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+@app.post("/auth/register")
+async def auth_register(body: EmailRegisterRequest):
+    """メール/パスワードで新規登録"""
+    global users_db
+
+    email = body.email.strip().lower()
+    password = body.password
+    name = body.name.strip() or email.split("@")[0]
+
+    if not email or not is_valid_email(email):
+        raise HTTPException(status_code=400, detail="有効なメールアドレスを入力してください")
+
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="パスワードは8文字以上で入力してください")
+
+    # 既存ユーザーチェック
+    user_id = f"email_{email}"
+    if user_id in users_db:
+        raise HTTPException(status_code=400, detail="このメールアドレスは既に登録されています")
+
+    # ユーザー登録
+    users_db[user_id] = {
+        "id": user_id,
+        "email": email,
+        "name": name,
+        "password_hash": hash_password(password),
+        "provider": "email",
+        "created_at": datetime.now().isoformat()
+    }
+    save_users(users_db)
+
+    # JWT発行
+    jwt_token = create_jwt_token(user_id, email)
+    is_vip = email in vip_users
+
+    return {
+        "status": "success",
+        "token": jwt_token,
+        "name": name,
+        "email": email,
+        "is_vip": is_vip
+    }
+
+
+@app.post("/auth/login")
+async def auth_login(body: EmailLoginRequest):
+    """メール/パスワードでログイン"""
+    email = body.email.strip().lower()
+    password = body.password
+
+    if not email:
+        raise HTTPException(status_code=400, detail="メールアドレスを入力してください")
+
+    user_id = f"email_{email}"
+    user = users_db.get(user_id)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="メールアドレスまたはパスワードが正しくありません")
+
+    if not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="このアカウントはソーシャルログインで登録されています")
+
+    if not verify_password(password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="メールアドレスまたはパスワードが正しくありません")
+
+    # JWT発行
+    jwt_token = create_jwt_token(user_id, email)
+    is_vip = email in vip_users
+
+    return {
+        "status": "success",
+        "token": jwt_token,
+        "name": user.get("name", ""),
+        "email": email,
+        "is_vip": is_vip
+    }
+
+
+# ==================== PayPal決済 ====================
+
+@app.post("/create-paypal-payment")
+async def create_paypal_payment(body: CreateCheckoutRequest):
+    """PayPal決済を作成"""
+    if not PAYPAL_CLIENT_ID or not PAYPAL_CLIENT_SECRET:
+        raise HTTPException(status_code=501, detail="PayPal is not configured")
+
+    email = body.email.strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="メールアドレスを入力してください")
+
+    try:
+        payment = paypalrestsdk.Payment({
+            "intent": "sale",
+            "payer": {"payment_method": "paypal"},
+            "redirect_urls": {
+                "return_url": f"{FRONTEND_URL}?paypal=success&email={email}",
+                "cancel_url": f"{FRONTEND_URL}?paypal=cancelled"
+            },
+            "transactions": [{
+                "amount": {
+                    "total": "300",
+                    "currency": "JPY"
+                },
+                "description": "AIチェッカー VIP会員（1ヶ月）"
+            }]
+        })
+
+        if payment.create():
+            # 承認URLを取得
+            for link in payment.links:
+                if link.rel == "approval_url":
+                    return {
+                        "checkout_url": link.href,
+                        "payment_id": payment.id
+                    }
+            raise HTTPException(status_code=500, detail="PayPal approval URL not found")
+        else:
+            print(f"PayPal error: {payment.error}")
+            raise HTTPException(status_code=500, detail=f"PayPal決済の作成に失敗しました: {payment.error}")
+
+    except Exception as e:
+        print(f"PayPal error: {e}")
+        raise HTTPException(status_code=500, detail="PayPal決済の作成に失敗しました")
+
+
+@app.get("/paypal-execute")
+async def paypal_execute(paymentId: str, PayerID: str, email: str = ""):
+    """PayPal決済を実行（ユーザーが承認後にリダイレクトされる）"""
+    try:
+        payment = paypalrestsdk.Payment.find(paymentId)
+
+        if payment.execute({"payer_id": PayerID}):
+            # 決済成功 → VIP付与
+            if email:
+                global vip_users
+                vip_users[email] = {
+                    "registered_at": datetime.now().isoformat(),
+                    "source": "paypal",
+                    "payment_id": paymentId
+                }
+                save_vip_users(vip_users)
+                print(f"VIP granted via PayPal: {email}")
+
+            return RedirectResponse(f"{FRONTEND_URL}?vip=success&method=paypal")
+        else:
+            print(f"PayPal execute error: {payment.error}")
+            return RedirectResponse(f"{FRONTEND_URL}?vip=error&message=payment_failed")
+
+    except Exception as e:
+        print(f"PayPal execute error: {e}")
+        return RedirectResponse(f"{FRONTEND_URL}?vip=error&message=payment_failed")
 
 
 if __name__ == "__main__":

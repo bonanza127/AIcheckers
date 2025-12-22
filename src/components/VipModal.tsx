@@ -60,28 +60,50 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
 
   if (!isOpen) return null;
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsProcessing(true);
 
     if (!email.trim()) {
       setError("メールアドレスを入力してください");
+      setIsProcessing(false);
       return;
     }
     if (password.length < 8) {
       setError("パスワードは8文字以上で入力してください");
+      setIsProcessing(false);
       return;
     }
     if (password !== passwordConfirm) {
       setError("パスワードが一致しません");
+      setIsProcessing(false);
       return;
     }
 
-    // TODO: 実際の登録処理（認証システム実装後）
-    // 今はメールアドレスを保存してお支払いへ
-    setUserName(email.split("@")[0]);
-    setUserEmail(email);
-    setStep("payment");
+    try {
+      const response = await fetch(`${API_BASE}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name: email.split("@")[0] }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "登録に失敗しました");
+      }
+
+      // トークン保存
+      localStorage.setItem("auth_token", data.token);
+      setUserName(data.name);
+      setUserEmail(data.email);
+      setStep("payment");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "登録に失敗しました");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleOAuthRegister = (provider: string) => {
@@ -90,19 +112,46 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
     window.location.href = `${API_BASE}${endpoint}`;
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsProcessing(true);
 
     if (!loginEmail.trim()) {
       setError("メールアドレスを入力してください");
+      setIsProcessing(false);
       return;
     }
 
-    // TODO: 実際のログイン処理（認証システム実装後）
-    setUserName(loginEmail.split("@")[0]);
-    setUserEmail(loginEmail);
-    setStep("payment");
+    try {
+      const response = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "ログインに失敗しました");
+      }
+
+      // トークン保存
+      localStorage.setItem("auth_token", data.token);
+      setUserName(data.name);
+      setUserEmail(data.email);
+
+      if (data.is_vip) {
+        // VIPならページリロードしてステータス反映
+        window.location.reload();
+      } else {
+        setStep("payment");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ログインに失敗しました");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleOAuthLogin = (provider: string) => {
@@ -121,7 +170,17 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE}/create-checkout-session`, {
+      let endpoint = "/create-checkout-session";
+      if (method === "paypal") {
+        endpoint = "/create-paypal-payment";
+      } else if (method === "paypay") {
+        // PayPayは法人契約が必要なため、現在準備中
+        setError("PayPay決済は現在準備中です");
+        setIsProcessing(false);
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -137,7 +196,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
 
       const data = await response.json();
 
-      // Stripe Checkoutページを新しいウィンドウで開く
+      // 決済ページを新しいウィンドウで開く
       if (data.checkout_url) {
         window.open(data.checkout_url, "_blank", "width=500,height=700");
       }
