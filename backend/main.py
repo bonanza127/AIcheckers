@@ -10,7 +10,7 @@ import re
 import hashlib
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -43,10 +43,34 @@ dinov3_classifier = None
 # キャッシュ: 画像ハッシュ -> 解析結果（最大10,000件、約1MB）
 result_cache: LRUCache = LRUCache(maxsize=10000)
 
-# レート制限: IP -> {日付: カウント}
-daily_counts: dict[str, dict[date, int]] = defaultdict(lambda: defaultdict(int))
-DAILY_LIMIT = 20  # 1日20枚
-RATE_LIMIT_ENABLED = False  # True: 有効, False: 無効
+# レート制限: 1時間刻みで1枚回復、上限24枚
+RATE_LIMIT_ENABLED = False  # True: 有効, False: 無効（開発中はFalse）
+MAX_TOKENS = 24  # 上限24枚
+RECOVERY_INTERVAL_HOURS = 1  # 1時間ごとに1枚回復
+
+# IP -> {"tokens": int, "last_recovery": datetime}
+rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
+
+# FANBOX VIP連携
+import os
+import json
+FANBOX_SESSID = os.getenv("FANBOXSESSID", "")  # 環境変数から取得
+FANBOX_CREATOR_ID = "aicheckers"  # マスターのFANBOXクリエイターID
+VIP_DATA_PATH = Path("/home/techne/aicheckers/data/vip_users.json")
+
+# VIPユーザーリスト（pixiv ID -> VIP情報）
+def load_vip_users() -> dict:
+    if VIP_DATA_PATH.exists():
+        with open(VIP_DATA_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_vip_users(data: dict):
+    VIP_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(VIP_DATA_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+vip_users: dict = {}  # 起動時にロード
 
 DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
@@ -57,7 +81,11 @@ HF_TOKEN = "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"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """起動時にMoonlight (DINOv3) をロード"""
-    global device, dinov3_model, dinov3_processor, dinov3_classifier
+    global device, dinov3_model, dinov3_processor, dinov3_classifier, vip_users
+
+    # VIPユーザーリストをロード
+    vip_users = load_vip_users()
+    print(f"Loaded {len(vip_users)} VIP users")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -129,22 +157,43 @@ def get_image_hash(image_bytes: bytes) -> str:
     return hashlib.sha256(image_bytes).hexdigest()
 
 
+def _recover_tokens(ip: str) -> None:
+    """経過時間に基づいてトークンを回復（毎時0分刻み）"""
+    data = rate_limit_data[ip]
+    now = datetime.now()
+    last_recovery = data["last_recovery"]
+
+    # 最終回復時刻から現在までに経過した「時の境界」の数を計算
+    # 例: 5:30に使用 → 6:00, 7:00 で2枚回復
+    last_hour = last_recovery.replace(minute=0, second=0, microsecond=0)
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+    if current_hour > last_hour:
+        hours_passed = int((current_hour - last_hour).total_seconds() // 3600)
+        tokens_to_recover = hours_passed
+        data["tokens"] = min(MAX_TOKENS, data["tokens"] + tokens_to_recover)
+        data["last_recovery"] = current_hour
+
+
 def check_rate_limit(ip: str) -> tuple[bool, int]:
     """レート制限チェック。(許可されているか, 残り回数) を返す"""
     if not RATE_LIMIT_ENABLED:
-        return True, DAILY_LIMIT  # 無効時は常に許可
-    today = date.today()
-    count = daily_counts[ip][today]
-    remaining = max(0, DAILY_LIMIT - count)
-    return count < DAILY_LIMIT, remaining
+        return True, MAX_TOKENS  # 無効時は常に許可、上限表示
+
+    _recover_tokens(ip)
+    data = rate_limit_data[ip]
+    return data["tokens"] > 0, data["tokens"]
 
 
 def increment_rate_limit(ip: str) -> None:
-    """リクエストカウントを増加"""
+    """トークンを1消費"""
     if not RATE_LIMIT_ENABLED:
-        return  # 無効時はカウントしない
-    today = date.today()
-    daily_counts[ip][today] += 1
+        return  # 無効時は消費しない
+
+    _recover_tokens(ip)  # まず回復処理
+    data = rate_limit_data[ip]
+    if data["tokens"] > 0:
+        data["tokens"] -= 1
 
 
 @app.get("/")
@@ -168,7 +217,7 @@ async def health_check(request: Request):
         "cuda_available": torch.cuda.is_available(),
         "rate_limit": {
             "remaining": remaining,
-            "limit": DAILY_LIMIT
+            "limit": MAX_TOKENS
         }
     }
 
@@ -629,6 +678,87 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"URL解析失敗: {str(e)}")
+
+
+# ==================== FANBOX VIP連携 ====================
+
+class VerifyFanboxRequest(BaseModel):
+    pixiv_id: str
+
+
+async def fetch_fanbox_supporters() -> set[str]:
+    """FANBOXダッシュボードから支援者のpixiv IDリストを取得"""
+    if not FANBOX_SESSID:
+        print("Warning: FANBOXSESSID not set")
+        return set()
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # FANBOXの支援者一覧API（非公式）
+            response = await client.get(
+                f"https://api.fanbox.cc/relationship.listFans?status=supporter",
+                headers={
+                    "Accept": "application/json",
+                    "Origin": "https://www.fanbox.cc",
+                    "Referer": "https://www.fanbox.cc/",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                },
+                cookies={"FANBOXSESSID": FANBOX_SESSID},
+                timeout=10.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                # レスポンス構造に応じてpixiv IDを抽出
+                supporters = set()
+                for fan in data.get("body", []):
+                    pixiv_id = fan.get("user", {}).get("userId") or fan.get("userId")
+                    if pixiv_id:
+                        supporters.add(str(pixiv_id))
+                print(f"Fetched {len(supporters)} supporters from FANBOX")
+                return supporters
+            else:
+                print(f"FANBOX API error: {response.status_code}")
+                return set()
+    except Exception as e:
+        print(f"FANBOX fetch error: {e}")
+        return set()
+
+
+@app.post("/verify-fanbox")
+async def verify_fanbox(body: VerifyFanboxRequest):
+    """FANBOXの支援状況を確認してVIP付与"""
+    global vip_users
+
+    pixiv_id = body.pixiv_id.strip()
+    if not pixiv_id:
+        raise HTTPException(status_code=400, detail="pixiv IDを入力してください")
+
+    # 既にVIPの場合
+    if pixiv_id in vip_users:
+        return {"status": "already_vip", "message": "既にVIP会員です"}
+
+    # FANBOXから支援者リストを取得
+    supporters = await fetch_fanbox_supporters()
+
+    if pixiv_id in supporters:
+        # VIP付与
+        vip_users[pixiv_id] = {
+            "registered_at": datetime.now().isoformat(),
+            "source": "fanbox"
+        }
+        save_vip_users(vip_users)
+        return {"status": "success", "message": "VIP会員として登録されました"}
+    else:
+        return {"status": "not_found", "message": "FANBOXでの支援が確認できませんでした"}
+
+
+@app.get("/check-vip/{pixiv_id}")
+async def check_vip(pixiv_id: str):
+    """VIPステータスを確認"""
+    if pixiv_id in vip_users:
+        return {"is_vip": True, "data": vip_users[pixiv_id]}
+    return {"is_vip": False}
 
 
 if __name__ == "__main__":

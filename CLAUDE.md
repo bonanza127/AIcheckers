@@ -1,9 +1,19 @@
 # AIcheckers - AI Anime Image Detector
 
-## 次回TODO: VIPポップアップ化
-- VIPを別ページ→ポップアップ（モーダル）に変更
-- 上部: 新規登録 + 特典（スキャン20→500枚/日、最新モデル、月額300円）
-- 下部: 既存VIPログイン
+## 次回TODO: VIP機能の方針決定
+
+### 現状
+- VIPモーダル実装済み（FANBOX連携 + 直接支援のUI）
+- FANBOX連携: pixiv OAuthが非公開のため、毎回pixiv ID手動入力が必要（UX悪い）
+- 直接支援: Stripe実装が必要だが、OAuth（Google/Twitter）でスムーズにログイン可能
+
+### 方針候補
+1. **直接支援のみ**: FANBOX連携を削除し、Stripe + OAuthで実装
+2. **両方残す**: FANBOXは既存支援者向けとして残し、メインは直接支援
+
+### 次のアクション
+- 方針決定後、不要な方を削除
+- 直接支援を実装する場合: Stripe決済 + Google/Twitter OAuth設定
 
 ---
 
@@ -153,10 +163,17 @@ python scripts/train_from_embeddings.py
 - Token: 環境変数 `HF_TOKEN` で管理
 
 ### レート制限
-- `backend/main.py` 49行目: `RATE_LIMIT_ENABLED = True/False`
+- `backend/main.py` 47行目: `RATE_LIMIT_ENABLED = True/False`
 - 現在: **無効**（開発中）
-- 有効時: 1日20枚/IP、午前0時リセット
+- 有効時: 上限24枚、1時間刻みで1枚回復
 - 変更後: `systemctl --user restart aicheckers-backend`
+
+### FANBOX VIP連携
+- **フロー**: ユーザーがFANBOXで支援 → pixiv ID入力 → 同期確認 → VIP付与
+- **VIPデータ**: `data/vip_users.json`
+- **環境変数**: `FANBOXSESSID` にクリエイターのFANBOXセッションCookieを設定
+- **取得方法**: ブラウザでFANBOXにログイン → DevTools → Application → Cookies → `FANBOXSESSID`
+- **API**: `/verify-fanbox` (POST), `/check-vip/{pixiv_id}` (GET)
 
 ### 画像キャッシュ
 - SHA256ハッシュでLRU 10,000件（同一画像のGPU処理スキップ）

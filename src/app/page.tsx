@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
+import VipModal from "@/components/VipModal";
 
 // API URL: 本番環境では api.aicheckers.net を使用
 const getApiUrl = () => {
@@ -75,6 +76,7 @@ export default function Home() {
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
   const [timeUntilReset, setTimeUntilReset] = useState("--:--:--");
+  const [isVipModalOpen, setIsVipModalOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -650,17 +652,15 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             <span className="text-muted">//</span>
 
             {/* VIP */}
-            <a
-              href="/vip"
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/50 hover:from-amber-500/30 hover:to-yellow-500/30 transition-all group"
+            <button
+              onClick={() => setIsVipModalOpen(true)}
+              className="relative px-4 py-1 rounded bg-gradient-to-br from-amber-900/80 via-yellow-800/60 to-amber-900/80 border border-amber-600/40 hover:border-amber-500/60 transition-all duration-300 shadow-sm hover:shadow-md hover:shadow-amber-900/20 group overflow-hidden"
             >
-              <svg className="w-3.5 h-3.5 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-              </svg>
-              <span className="font-bold bg-gradient-to-r from-amber-400 to-yellow-300 bg-clip-text text-transparent group-hover:from-amber-300 group-hover:to-yellow-200">
+              <span className="relative z-10 text-xs font-semibold tracking-widest bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-200 bg-clip-text text-transparent uppercase">
                 VIP
               </span>
-            </a>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-400/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+            </button>
           </div>
         </div>
       </header>
@@ -959,8 +959,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               >
                 <Search className="w-4 h-4" />
                 <span>スキャン開始</span>
-                <span className="font-normal">- 残り{rateLimitRemaining ?? "--"}/20枚</span>
-                <span className="text-xs opacity-70 font-normal">(午前0時にリセット)</span>
+                <span className="font-normal">- 残り{rateLimitRemaining ?? "--"}/24枚</span>
+                <span className="text-xs opacity-70 font-normal">(1時間刻みで1枚回復)</span>
               </button>
               <button
                 onClick={handleTrashClick}
@@ -981,6 +981,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
           <p><a href="/disclaimer" className="hover:underline">免責事項</a> | &copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="hover:underline">お問い合わせ</a></p>
         </div>
       </footer>
+
+      {/* VIP Modal */}
+      <VipModal isOpen={isVipModalOpen} onClose={() => setIsVipModalOpen(false)} />
     </div>
   );
 }
