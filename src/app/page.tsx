@@ -52,6 +52,13 @@ type HistoryItem = {
   timestamp: Date;
 };
 
+type AuthUser = {
+  name: string;
+  email: string;
+  token: string;
+  isVip: boolean;
+};
+
 export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -77,9 +84,34 @@ export default function Home() {
   const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
   const [timeUntilReset, setTimeUntilReset] = useState("--:--:--");
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // OAuthコールバック処理
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authStatus = params.get("auth");
+
+    if (authStatus === "success") {
+      const token = params.get("token");
+      const name = params.get("name");
+      const email = params.get("email");
+      const isVip = params.get("is_vip") === "true";
+
+      if (token && name && email) {
+        setAuthUser({ name, email, token, isVip });
+        localStorage.setItem("auth_token", token);
+        setIsVipModalOpen(true); // VIPモーダルを開いて決済へ
+      }
+      // URLパラメータをクリア
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (authStatus === "error") {
+      console.error("OAuth error:", params.get("message"));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   // バックエンドの接続状態を監視
   useEffect(() => {
@@ -980,7 +1012,11 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       </footer>
 
       {/* VIP Modal */}
-      <VipModal isOpen={isVipModalOpen} onClose={() => setIsVipModalOpen(false)} />
+      <VipModal
+        isOpen={isVipModalOpen}
+        onClose={() => setIsVipModalOpen(false)}
+        authUser={authUser}
+      />
     </div>
   );
 }

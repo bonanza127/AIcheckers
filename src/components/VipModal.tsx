@@ -1,22 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, CreditCard, UserPlus, LogIn, ArrowRight, CheckCircle, Loader2 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.aicheckers.net";
 
+type AuthUser = {
+  name: string;
+  email: string;
+  token: string;
+  isVip: boolean;
+};
+
 type VipModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  authUser?: AuthUser | null;
 };
 
 type ModalStep = "auth" | "payment" | "complete";
 
-export default function VipModal({ isOpen, onClose }: VipModalProps) {
+export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
   const [step, setStep] = useState<ModalStep>("auth");
 
   // タブ切り替え（新規登録 / ログイン）
   const [authTab, setAuthTab] = useState<"register" | "login">("register");
+
+  // OAuth認証済みの場合、自動的にpaymentステップへ
+  useEffect(() => {
+    if (authUser && isOpen) {
+      setUserName(authUser.name);
+      setUserEmail(authUser.email);
+      setStep("payment");
+    }
+  }, [authUser, isOpen]);
 
   // 新規登録用
   const [email, setEmail] = useState("");
@@ -62,8 +79,9 @@ export default function VipModal({ isOpen, onClose }: VipModalProps) {
   };
 
   const handleOAuthRegister = (provider: string) => {
-    // TODO: OAuth登録処理（認証システム実装後）
-    alert(`${provider}での登録機能は準備中です`);
+    // OAuthリダイレクト
+    const endpoint = provider === "Google" ? "/auth/google" : "/auth/twitter";
+    window.location.href = `${API_BASE}${endpoint}`;
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -82,8 +100,9 @@ export default function VipModal({ isOpen, onClose }: VipModalProps) {
   };
 
   const handleOAuthLogin = (provider: string) => {
-    // TODO: OAuthログイン処理（認証システム実装後）
-    alert(`${provider}でのログイン機能は準備中です`);
+    // OAuthリダイレクト（登録と同じエンドポイント）
+    const endpoint = provider === "Google" ? "/auth/google" : "/auth/twitter";
+    window.location.href = `${API_BASE}${endpoint}`;
   };
 
   const handlePayment = async (method: "stripe" | "paypal" | "paypay") => {
