@@ -694,10 +694,14 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
           {/* 右: VIP + ステータス */}
           <div className="flex items-center gap-4 text-xs">
-            {/* VIP - 控えめなブラックカード */}
+            {/* VIP - 控えめなブラックカード（ログイン時は紫の光） */}
             <button
               onClick={() => setIsVipModalOpen(true)}
-              className="group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] text-zinc-500 hover:text-zinc-300 transition-all duration-500 border border-zinc-700/50 hover:border-zinc-600 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm"
+              className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${
+                authUser
+                  ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+                  : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
+              }`}
             >
               VIP
             </button>
