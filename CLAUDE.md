@@ -1,19 +1,36 @@
 # AIcheckers - AI Anime Image Detector
 
-## 次回TODO: VIP機能の方針決定
+## 次回TODO: VIP機能実装
 
-### 現状
-- VIPモーダル実装済み（FANBOX連携 + 直接支援のUI）
-- FANBOX連携: pixiv OAuthが非公開のため、毎回pixiv ID手動入力が必要（UX悪い）
-- 直接支援: Stripe実装が必要だが、OAuth（Google/Twitter）でスムーズにログイン可能
+### 実装状況
 
-### 方針候補
-1. **直接支援のみ**: FANBOX連携を削除し、Stripe + OAuthで実装
-2. **両方残す**: FANBOXは既存支援者向けとして残し、メインは直接支援
+| 優先度 | タスク | 状態 |
+|--------|--------|------|
+| 高 | VIPモーダルUI | ✅ 完了 |
+| 高 | Stripe Checkoutバックエンド | ✅ 完了 |
+| 高 | Stripeダッシュボード設定 | 未 |
+| - | └ 商品/価格（¥300/月）作成 | 未 |
+| - | └ Webhook URL設定 | 未 |
+| - | └ 環境変数設定 | 未 |
+| 高 | `pip install stripe` (バックエンド) | 未 |
+| 中 | OAuth認証実装 | 未 |
+| - | └ Google OAuth | 未 |
+| - | └ Twitter/X OAuth | 未 |
+| 中 | メール/パスワード認証 | 未 |
+| 低 | FANBOX連携削除（不要になったため） | 未 |
+
+### 環境変数（要設定）
+
+```bash
+STRIPE_SECRET_KEY=sk_live_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+STRIPE_PRICE_ID=price_xxx
+```
 
 ### 次のアクション
-- 方針決定後、不要な方を削除
-- 直接支援を実装する場合: Stripe決済 + Google/Twitter OAuth設定
+1. Stripeダッシュボードで商品作成 → 環境変数取得
+2. バックエンドにstripeパッケージインストール
+3. OAuth認証の実装（Google, Twitter/X）
 
 ---
 
