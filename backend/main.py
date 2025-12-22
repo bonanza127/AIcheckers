@@ -4,6 +4,7 @@ Moonlight (DINOv3 Linear Probe) のみ使用
 """
 
 import io
+import os
 import time
 import base64
 import re
@@ -44,18 +45,20 @@ dinov3_classifier = None
 result_cache: LRUCache = LRUCache(maxsize=10000)
 
 # レート制限: 1時間刻みで回復
-RATE_LIMIT_ENABLED = False  # True: 有効, False: 無効（開発中はFalse）
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"  # 本番: true（デフォルト）
 MAX_TOKENS = 24  # 通常ユーザー: 上限24枚
 MAX_TOKENS_VIP = 240  # VIPユーザー: 上限240枚
 RECOVERY_INTERVAL_HOURS = 1  # 1時間ごとに回復
 RECOVERY_AMOUNT = 1  # 通常: 1枚回復
 RECOVERY_AMOUNT_VIP = 10  # VIP: 10枚回復
 
+# Test Time Augmentation (TTA): 水平反転で2回推論し平均化
+TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
+
 # IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
 
 # FANBOX VIP連携
-import os
 import json
 import stripe
 import secrets
@@ -214,19 +217,22 @@ app = FastAPI(
 )
 
 # CORS設定（フロントエンドからのアクセス許可）
+DEBUG = os.getenv("DEBUG", "true").lower() == "true"  # ローカル開発用にデフォルトtrue
+CORS_ORIGINS = [
+    "https://aicheckers.net",
+    "https://www.aicheckers.net",
+]
+if DEBUG:
+    CORS_ORIGINS.extend(["http://localhost:3000", "http://localhost:3001"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://aicheckers.net",
-        "https://www.aicheckers.net",
-        "https://aicheckers.vercel.app",
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"],
+    max_age=3600,
 )
 
 # セッションミドルウェア（OAuth用）
@@ -520,6 +526,23 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         probs = torch.softmax(logits, dim=1)[0]
         ai_prob = probs[1].item()  # class 1 = AI
 
+        # TTA: 水平反転で追加推論し平均化
+        tta_log = None
+        if TTA_ENABLED:
+            ai_prob_original = ai_prob
+            image_flipped = image.transpose(Image.FLIP_LEFT_RIGHT)
+            inputs_flipped = dinov3_processor(images=image_flipped, return_tensors="pt")
+            inputs_flipped = {k: v.to(device) for k, v in inputs_flipped.items()}
+            outputs_flipped = dinov3_model(**inputs_flipped)
+            features_flipped = outputs_flipped.last_hidden_state[:, 0, :]
+            logits_flipped = dinov3_classifier(features_flipped)
+            probs_flipped = torch.softmax(logits_flipped, dim=1)[0]
+            ai_prob_flipped = probs_flipped[1].item()
+            # 平均化
+            ai_prob = (ai_prob_original + ai_prob_flipped) / 2
+            # TTAログ生成
+            tta_log = f"TTA検証: 元画像 {ai_prob_original*100:.1f}% ↔ 反転画像 {ai_prob_flipped*100:.1f}% → 統合値 {ai_prob*100:.1f}%"
+
     # Attention Map生成 + フォレンジック分析
     attention_heatmap = None
     attention_map_raw = None
@@ -577,6 +600,10 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
     # フォレンジック分析ログ生成
     forensic_logs, detected_traces = generate_forensic_analysis(attention_map_raw, features, ai_prob, head_attentions)
+
+    # TTAログを先頭に追加
+    if tta_log:
+        forensic_logs.insert(0, tta_log)
 
     ai_score = ai_prob * 100
     human_score = 100 - ai_score
@@ -1261,11 +1288,16 @@ async def create_paypal_payment(body: CreateCheckoutRequest):
         raise HTTPException(status_code=400, detail="メールアドレスを入力してください")
 
     try:
+        # APIのベースURLを取得（PayPal executeエンドポイント用）
+        from urllib.parse import quote
+        api_base = FRONTEND_URL.replace('https://aicheckers.net', 'https://api.aicheckers.net').replace('https://www.aicheckers.net', 'https://api.aicheckers.net')
+
         payment = paypalrestsdk.Payment({
             "intent": "sale",
             "payer": {"payment_method": "paypal"},
             "redirect_urls": {
-                "return_url": f"{FRONTEND_URL}?paypal=success&email={email}",
+                # PayPal承認後、/paypal-executeを経由して決済を完了する
+                "return_url": f"{api_base}/paypal-execute?email={quote(email)}",
                 "cancel_url": f"{FRONTEND_URL}?paypal=cancelled"
             },
             "transactions": [{
