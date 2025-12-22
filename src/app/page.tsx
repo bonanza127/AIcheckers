@@ -90,10 +90,53 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  // OAuthコールバック処理 & ログイン状態復元
+  // OAuthコールバック処理 & ログイン状態復元 & VIP決済結果処理
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const authStatus = params.get("auth");
+    const vipStatus = params.get("vip");
+
+    // VIP決済成功/キャンセル処理
+    if (vipStatus === "success") {
+      // VIP決済成功 → ユーザー情報を再取得してVIPステータスを更新
+      const savedToken = localStorage.getItem("auth_token");
+      if (savedToken) {
+        const apiUrl = getApiUrl();
+        fetch(`${apiUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${savedToken}` }
+        })
+          .then(res => res.ok ? res.json() : Promise.reject())
+          .then(data => {
+            setAuthUser({
+              name: data.name,
+              email: data.email,
+              token: savedToken,
+              isVip: data.is_vip
+            });
+            // 成功ログを追加
+            setLogs(prev => [...prev, {
+              type: "system" as const,
+              message: "🎉 VIP登録が完了しました！ありがとうございます。"
+            }]);
+          })
+          .catch(() => {
+            console.error("Failed to fetch user info after VIP payment");
+          })
+          .finally(() => setIsAuthLoading(false));
+      } else {
+        // トークンがない場合もローディングを解除
+        setIsAuthLoading(false);
+      }
+      // URLパラメータをクリア
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    } else if (vipStatus === "cancelled" || vipStatus === "error") {
+      // 決済キャンセルまたはエラー
+      console.log("VIP payment cancelled or failed:", params.get("message"));
+      window.history.replaceState({}, "", window.location.pathname);
+      setIsAuthLoading(false);
+      return;
+    }
 
     if (authStatus === "success") {
       const token = params.get("token");
