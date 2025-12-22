@@ -398,10 +398,11 @@ export default function Home() {
       reader.readAsDataURL(file);
     });
 
+    // 結果クリアと画像更新を同時に行い、一瞬の表示ずれを防ぐ
+    setResult(null);
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
     setPhase("scanning");
-    setResult(null);
 
     // ファイルサイズを取得
     const fileSizeKB = (file.size / 1024).toFixed(1);
@@ -439,6 +440,7 @@ export default function Home() {
     let processingTime: number;
     let artifacts: string;
     let attentionMap: string | undefined;
+    let rateLimitError = false;
 
     try {
       const apiUrl = getApiUrl();
@@ -457,6 +459,10 @@ export default function Home() {
       }
 
       if (!response.ok) {
+        if (response.status === 429) {
+          const errorData = await response.json().catch(() => ({ detail: "レート制限に達しました" }));
+          throw new Error(`RATE_LIMITED:${errorData.detail || "レート制限に達しました"}`);
+        }
         throw new Error(`API error: ${response.status}`);
       }
 
@@ -511,24 +517,39 @@ export default function Home() {
 
     } catch (error) {
       await scanDelayPromise; // エラー時も演出時間を確保
-      addLog(`ERROR: API接続失敗 - ${error}`, "error");
-      // フォールバック: ダミー値
-      aiScore = 50;
-      humanScore = 50;
-      isAI = false;
-      processingTime = (Date.now() - fileStartTime) / 1000;
-      artifacts = "API接続エラー";
-      attentionMap = undefined;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (errorMessage.startsWith("RATE_LIMITED:")) {
+        // レート制限エラー
+        const detail = errorMessage.replace("RATE_LIMITED:", "");
+        addLog(`ERROR: ${detail}`, "error");
+        rateLimitError = true;
+        aiScore = 0;
+        humanScore = 0;
+        isAI = false;
+        processingTime = (Date.now() - fileStartTime) / 1000;
+        artifacts = detail;
+        attentionMap = undefined;
+      } else {
+        // その他のエラー
+        addLog(`ERROR: API接続失敗 - ${error}`, "error");
+        aiScore = 50;
+        humanScore = 50;
+        isAI = false;
+        processingTime = (Date.now() - fileStartTime) / 1000;
+        artifacts = "API接続エラー";
+        attentionMap = undefined;
+      }
     }
 
-    // キューのステータス更新（3段階）
-    const queueStatus = aiScore >= 80 ? "ai" as const : aiScore >= 50 ? "unknown" as const : "human" as const;
+    // キューのステータス更新（3段階 + レート制限）
+    const queueStatus = rateLimitError ? "unknown" as const : aiScore >= 80 ? "ai" as const : aiScore >= 50 ? "unknown" as const : "human" as const;
     setQueue(prev => prev.map(item =>
       item.id === queueItemId ? { ...item, status: queueStatus } : item
     ));
 
-    // verdict も3段階
-    const verdict = aiScore >= 80 ? "AI DETECTED" : aiScore >= 50 ? "UNKNOWN" : "HUMAN CONFIRMED";
+    // verdict も3段階 + レート制限
+    const verdict = rateLimitError ? "RATE LIMITED" : aiScore >= 80 ? "AI DETECTED" : aiScore >= 50 ? "UNKNOWN" : "HUMAN CONFIRMED";
 
     setResult({
       isAI,
@@ -558,12 +579,14 @@ export default function Home() {
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
 
     setPhase("complete");
-    const logMessage = aiScore >= 80
-      ? `最終判定: AI生成の可能性が高い (${aiScore}%)`
-      : aiScore >= 50
-        ? `最終判定: 判定困難 (${aiScore}%)`
-        : `最終判定: 人間による創作物 (${aiScore}%)`;
-    addLog(logMessage, "result");
+    const logMessage = rateLimitError
+      ? "エラー: レート制限に達しました"
+      : aiScore >= 80
+        ? `最終判定: AI生成の可能性が高い (${aiScore}%)`
+        : aiScore >= 50
+          ? `最終判定: 判定困難 (${aiScore}%)`
+          : `最終判定: 人間による創作物 (${aiScore}%)`;
+    addLog(logMessage, rateLimitError ? "error" : "result");
   };
 
   const startBatchScan = async () => {
@@ -680,6 +703,10 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       };
     }
     if (result) {
+      // レート制限エラーの場合
+      if (result.verdict === "RATE LIMITED") {
+        return { text: result.verdict, className: "verdict-unknown" };
+      }
       // 3段階の判定表示
       if (result.aiScore >= 80) {
         return { text: result.verdict, className: "verdict-ai" };

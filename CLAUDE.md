@@ -47,7 +47,7 @@ STRIPE_PRICE_ID=price_xxx
 aicheckers.net → Moonlight (DINOv3 Linear Probe) のみ
 ```
 
-**精度**: 98.03% | **速度**: 70-120ms（TTA有効時）
+**精度**: 98.10% | **速度**: 70-120ms（TTA有効時）
 
 ---
 
@@ -168,25 +168,27 @@ systemctl --user restart aicheckers-backend
 
 ### 学習時の改善
 
-#### 3. FroFA (Frozen Feature Augmentation)
-- **場所**: `scripts/train_from_embeddings.py`
-- **動作**: 凍結特徴量にノイズ + Dropoutを適用
-- **パラメータ**:
-  - `frofa_noise=0.01`: ガウスノイズの強さ
-  - `frofa_dropout=0.1`: Dropout率
-- **効果**: 未知のAIモデルへの汎化向上
-
-#### 4. VAT (Virtual Adversarial Training)
+#### 3. VAT (Virtual Adversarial Training)
 - **場所**: `scripts/train_from_embeddings.py`
 - **動作**: 「モデルが最も迷う方向」に敵対的ノイズを加えて学習
-- **タイミング**: 最後5エポックのみ（FroFA→VATハイブリッド）
+- **タイミング**: 全エポック（epoch 0から適用）
 - **パラメータ**:
-  - `vat_epsilon=0.005`: ノイズの大きさ（小さめで安全）
-  - `vat_alpha`: 0.1→0.5へ線形ウォームアップ
+  - `vat_epsilon=0.005`: ノイズの大きさ
+  - `vat_alpha`: 0.05→0.3へ線形ウォームアップ（30エポック）
 - **安全策**:
-  - NaN検出時は勾配クリーニング後にFroFAへフォールバック
+  - NaN検出時は `optimizer.step()` 前にスキップ
   - `optimizer.zero_grad(set_to_none=True)` で汚染勾配を完全除去
 - **効果**: 決定境界を滑らかにし、複数LoRA重ね掛け等への耐性向上
+
+#### 4. Entropy Minimization
+- **場所**: `scripts/train_from_embeddings.py`
+- **動作**: 予測の不確実性（エントロピー）を最小化
+- **タイミング**: 中盤から投入（epoch 15〜）
+- **パラメータ**:
+  - `entropy_start_epoch=15`: 開始エポック
+  - `entropy_alpha`: 0.0→0.1へ線形ウォームアップ
+- **正規化**: `log(C)` で割って0.0〜1.0の範囲に（クラス数非依存）
+- **効果**: 決定境界付近の曖昧な予測を減らし、自信を持った判定を促進
 
 ### ロールバック方法
 学習が失敗した場合:
