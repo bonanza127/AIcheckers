@@ -54,7 +54,18 @@ rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "l
 # FANBOX VIP連携
 import os
 import json
+import stripe
+
 FANBOX_SESSID = os.getenv("FANBOXSESSID", "")  # 環境変数から取得
+
+# Stripe設定
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # 月額300円のPrice ID
+stripe.api_key = STRIPE_SECRET_KEY
+
+# 本番/開発のURL
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://aicheckers.net")
 FANBOX_CREATOR_ID = "aicheckers"  # マスターのFANBOXクリエイターID
 VIP_DATA_PATH = Path("/home/techne/aicheckers/data/vip_users.json")
 
@@ -758,6 +769,122 @@ async def check_vip(pixiv_id: str):
     """VIPステータスを確認"""
     if pixiv_id in vip_users:
         return {"is_vip": True, "data": vip_users[pixiv_id]}
+    return {"is_vip": False}
+
+
+# ==================== Stripe決済 ====================
+
+class CreateCheckoutRequest(BaseModel):
+    email: str
+    payment_method: str = "stripe"  # stripe, paypal, paypay
+
+
+@app.post("/create-checkout-session")
+async def create_checkout_session(body: CreateCheckoutRequest):
+    """Stripe Checkout Sessionを作成"""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    email = body.email.strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="メールアドレスを入力してください")
+
+    try:
+        # PayPay/PayPalの場合もStripe経由で処理
+        payment_method_types = ["card"]  # デフォルト: クレカ
+        if body.payment_method == "paypay":
+            payment_method_types = ["card"]  # PayPayはStripe経由でカード決済として処理
+        elif body.payment_method == "paypal":
+            payment_method_types = ["paypal"]  # PayPalはStripe PayPalを使用
+
+        # Checkout Session作成
+        session = stripe.checkout.Session.create(
+            payment_method_types=payment_method_types,
+            mode="subscription",  # 月額課金
+            line_items=[{
+                "price": STRIPE_PRICE_ID,
+                "quantity": 1,
+            }],
+            customer_email=email,
+            success_url=f"{FRONTEND_URL}?vip=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{FRONTEND_URL}?vip=cancelled",
+            metadata={
+                "email": email,
+                "payment_method": body.payment_method,
+            },
+        )
+
+        return {
+            "checkout_url": session.url,
+            "session_id": session.id,
+        }
+
+    except stripe.error.StripeError as e:
+        print(f"Stripe error: {e}")
+        raise HTTPException(status_code=500, detail=f"決済セッションの作成に失敗しました: {str(e)}")
+    except Exception as e:
+        print(f"Checkout session error: {e}")
+        raise HTTPException(status_code=500, detail="決済セッションの作成に失敗しました")
+
+
+@app.post("/stripe-webhook")
+async def stripe_webhook(request: Request):
+    """Stripe Webhookを受信"""
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # イベント処理
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        email = session.get("customer_email") or session.get("metadata", {}).get("email")
+        customer_id = session.get("customer")
+        subscription_id = session.get("subscription")
+
+        if email:
+            # VIP付与（メールアドレスをキーとして保存）
+            global vip_users
+            vip_users[email] = {
+                "registered_at": datetime.now().isoformat(),
+                "source": "stripe",
+                "customer_id": customer_id,
+                "subscription_id": subscription_id,
+            }
+            save_vip_users(vip_users)
+            print(f"VIP granted to: {email}")
+
+    elif event["type"] == "customer.subscription.deleted":
+        # サブスク解約時
+        subscription = event["data"]["object"]
+        customer_id = subscription.get("customer")
+
+        # customer_idでVIPを検索して削除
+        for email, data in list(vip_users.items()):
+            if data.get("customer_id") == customer_id:
+                del vip_users[email]
+                save_vip_users(vip_users)
+                print(f"VIP revoked from: {email}")
+                break
+
+    return {"status": "ok"}
+
+
+@app.get("/check-vip-email/{email}")
+async def check_vip_email(email: str):
+    """メールアドレスでVIPステータスを確認"""
+    if email in vip_users:
+        return {"is_vip": True, "data": vip_users[email]}
     return {"is_vip": False}
 
 

@@ -1,83 +1,143 @@
 "use client";
 
 import { useState } from "react";
-import { X, ExternalLink, RefreshCw, Check, AlertCircle } from "lucide-react";
+import { X, CreditCard, UserPlus, LogIn, ArrowRight, CheckCircle, Loader2 } from "lucide-react";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.aicheckers.net";
 
 type VipModalProps = {
   isOpen: boolean;
   onClose: () => void;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.aicheckers.net";
+type ModalStep = "auth" | "payment" | "complete";
 
 export default function VipModal({ isOpen, onClose }: VipModalProps) {
-  const [pixivId, setPixivId] = useState("");
-  const [verifyStatus, setVerifyStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [verifyMessage, setVerifyMessage] = useState("");
+  const [step, setStep] = useState<ModalStep>("auth");
 
-  // 直接支援用
+  // タブ切り替え（新規登録 / ログイン）
+  const [authTab, setAuthTab] = useState<"register" | "login">("register");
+
+  // 新規登録用
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
 
   // ログイン用
-  const [loginId, setLoginId] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+
+  // ユーザー情報（ログイン後）
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+
+  // ローディング状態
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState("");
 
   if (!isOpen) return null;
 
-  const handleFanboxClick = () => {
-    window.open("https://www.fanbox.cc/@aicheckers", "_blank");
-  };
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
 
-  const handleVerify = async () => {
-    if (!pixivId.trim()) {
-      setVerifyStatus("error");
-      setVerifyMessage("pixiv IDを入力してください");
+    if (!email.trim()) {
+      setError("メールアドレスを入力してください");
+      return;
+    }
+    if (password.length < 8) {
+      setError("パスワードは8文字以上で入力してください");
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setError("パスワードが一致しません");
       return;
     }
 
-    setVerifyStatus("loading");
-    setVerifyMessage("");
-
-    try {
-      const response = await fetch(`${API_BASE}/verify-fanbox`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pixiv_id: pixivId.trim() }),
-      });
-
-      const data = await response.json();
-
-      if (data.status === "success" || data.status === "already_vip") {
-        setVerifyStatus("success");
-        setVerifyMessage(data.message);
-        localStorage.setItem("vip_pixiv_id", pixivId.trim());
-      } else {
-        setVerifyStatus("error");
-        setVerifyMessage(data.message || "確認できませんでした");
-      }
-    } catch {
-      setVerifyStatus("error");
-      setVerifyMessage("通信エラーが発生しました");
-    }
-  };
-
-  const handleDirectRegister = (e: React.FormEvent) => {
-    e.preventDefault();
-    alert("登録機能は準備中です");
+    // TODO: 実際の登録処理（認証システム実装後）
+    // 今はメールアドレスを保存してお支払いへ
+    setUserName(email.split("@")[0]);
+    setUserEmail(email);
+    setStep("payment");
   };
 
   const handleOAuthRegister = (provider: string) => {
+    // TODO: OAuth登録処理（認証システム実装後）
     alert(`${provider}での登録機能は準備中です`);
   };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    alert("ログイン機能は準備中です");
+    setError("");
+
+    if (!loginEmail.trim()) {
+      setError("メールアドレスを入力してください");
+      return;
+    }
+
+    // TODO: 実際のログイン処理（認証システム実装後）
+    setUserName(loginEmail.split("@")[0]);
+    setUserEmail(loginEmail);
+    setStep("payment");
   };
 
   const handleOAuthLogin = (provider: string) => {
+    // TODO: OAuthログイン処理（認証システム実装後）
     alert(`${provider}でのログイン機能は準備中です`);
+  };
+
+  const handlePayment = async (method: "stripe" | "paypal" | "paypay") => {
+    if (!userEmail) {
+      setError("メールアドレスが設定されていません");
+      return;
+    }
+
+    setIsProcessing(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE}/create-checkout-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: userEmail,
+          payment_method: method,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "決済セッションの作成に失敗しました");
+      }
+
+      const data = await response.json();
+
+      // Stripe Checkoutページを新しいウィンドウで開く
+      if (data.checkout_url) {
+        window.open(data.checkout_url, "_blank", "width=500,height=700");
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "エラーが発生しました");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleClose = () => {
+    // モーダルを閉じる時にリセット
+    setStep("auth");
+    setAuthTab("register");
+    setEmail("");
+    setPassword("");
+    setPasswordConfirm("");
+    setLoginEmail("");
+    setLoginPassword("");
+    setUserName("");
+    setUserEmail("");
+    setError("");
+    setIsProcessing(false);
+    onClose();
   };
 
   return (
@@ -85,14 +145,14 @@ export default function VipModal({ isOpen, onClose }: VipModalProps) {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-card-bg border border-gray-700 rounded-2xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-card-bg border border-gray-700 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         {/* Close button */}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-4 right-4 p-1 text-muted hover:text-white transition-colors z-10"
         >
           <X className="w-5 h-5" />
@@ -155,206 +215,337 @@ export default function VipModal({ isOpen, onClose }: VipModalProps) {
             </div>
           </div>
 
-          {/* 登録方法: 左右2カラム */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+          {/* STEP 1: 認証 + お支払い方法プレビュー */}
+          {step === "auth" && (
+            <>
+              {/* エラー表示 */}
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg">
+                  {error}
+                </div>
+              )}
 
-            {/* 左: FANBOX連携 */}
-            <div className="space-y-3 p-4 bg-deep-bg rounded-lg border border-gray-700 flex flex-col">
-              <h3 className="font-bold text-sm flex items-center gap-2 text-amber-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-                </svg>
-                pixiv FANBOXで支援
-              </h3>
-              {/* Step 1 */}
-              <div className="flex items-center gap-2 text-sm text-muted">
-                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">1</span>
-                <span>FANBOXで支援プランに加入</span>
-              </div>
-              <button
-                onClick={handleFanboxClick}
-                className="w-full py-2.5 rounded-lg bg-[#F5A623] hover:bg-[#E09620] transition-colors flex items-center justify-center gap-2"
-              >
-                <span className="font-bold text-black text-sm">FANBOXページを開く</span>
-                <ExternalLink className="w-4 h-4 text-black" />
-              </button>
+              <div className="space-y-4 p-4 bg-deep-bg rounded-lg border border-gray-700">
+                {/* タブ */}
+                <div className="flex border-b border-gray-600">
+                  <button
+                    onClick={() => setAuthTab("register")}
+                    className={`flex-1 py-2 text-sm font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                      authTab === "register"
+                        ? "border-amber-400 text-amber-400"
+                        : "border-transparent text-muted hover:text-white"
+                    }`}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    新規登録
+                  </button>
+                  <button
+                    onClick={() => setAuthTab("login")}
+                    className={`flex-1 py-2 text-sm font-bold flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                      authTab === "login"
+                        ? "border-amber-400 text-amber-400"
+                        : "border-transparent text-muted hover:text-white"
+                    }`}
+                  >
+                    <LogIn className="w-4 h-4" />
+                    ログイン
+                  </button>
+                </div>
 
-              {/* Step 2 */}
-              <div className="flex items-center gap-2 text-sm text-muted">
-                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">2</span>
-                <span>pixiv IDを入力してVIPステータスを取得</span>
+                {/* 新規登録タブ */}
+                {authTab === "register" && (
+                  <div className="space-y-4">
+                    {/* ステップインジケーター */}
+                    <div className="flex items-center justify-center gap-2 text-xs pb-2">
+                      <div className={`flex items-center gap-1 ${step === "auth" ? "text-amber-400" : "text-muted"}`}>
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${step === "auth" ? "bg-amber-400 text-black" : step === "payment" || step === "complete" ? "bg-success text-white" : "bg-gray-700"}`}>
+                          {step === "payment" || step === "complete" ? "✓" : "1"}
+                        </div>
+                        <span>アカウント</span>
+                      </div>
+                      <ArrowRight className="w-3 h-3 text-gray-600" />
+                      <div className={`flex items-center gap-1 ${step === "payment" ? "text-amber-400" : "text-muted"}`}>
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${step === "payment" ? "bg-amber-400 text-black" : step === "complete" ? "bg-success text-white" : "bg-gray-700"}`}>
+                          {step === "complete" ? "✓" : "2"}
+                        </div>
+                        <span>お支払い</span>
+                      </div>
+                      <ArrowRight className="w-3 h-3 text-gray-600" />
+                      <div className={`flex items-center gap-1 ${step === "complete" ? "text-amber-400" : "text-muted"}`}>
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${step === "complete" ? "bg-amber-400 text-black" : "bg-gray-700"}`}>
+                          3
+                        </div>
+                        <span>完了</span>
+                      </div>
+                    </div>
+
+                    {/* OAuth登録ボタン */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleOAuthRegister("Google")}
+                        className="flex-1 py-2.5 rounded-lg bg-white hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-5 h-5" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        <span className="text-sm font-bold text-gray-700">Googleで登録</span>
+                      </button>
+                      <button
+                        onClick={() => handleOAuthRegister("Twitter")}
+                        className="flex-1 py-2.5 rounded-lg bg-black hover:bg-gray-900 transition-colors flex items-center justify-center gap-2 border border-gray-600"
+                      >
+                        <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                        <span className="text-sm font-bold text-white">Xで登録</span>
+                      </button>
+                    </div>
+
+                    {/* 区切り線 */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 border-t border-gray-600" />
+                      <span className="text-xs text-muted">またはメールで登録</span>
+                      <div className="flex-1 border-t border-gray-600" />
+                    </div>
+
+                    {/* メール登録フォーム */}
+                    <form onSubmit={handleRegister} className="space-y-3">
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="メールアドレス"
+                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                      />
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="パスワード（8文字以上）"
+                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                      />
+                      <input
+                        type="password"
+                        value={passwordConfirm}
+                        onChange={(e) => setPasswordConfirm(e.target.value)}
+                        placeholder="パスワード（確認）"
+                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                      />
+                      <button
+                        type="submit"
+                        className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 transition-all flex items-center justify-center gap-2"
+                      >
+                        登録してお支払いへ
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </form>
+
+                    {/* お支払い方法一覧（グレーアウト） */}
+                    <div className="pt-4 border-t border-gray-700">
+                      <h4 className="font-bold text-sm flex items-center gap-2 text-muted mb-1">
+                        <CreditCard className="w-4 h-4" />
+                        お支払い方法一覧
+                      </h4>
+                      <p className="text-xs text-muted mb-3">
+                        外部サービスを使用しているため、サーバーに決済情報が残ることはありません
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2 opacity-50">
+                        <div className="flex-1 py-2 px-3 rounded-lg bg-gradient-to-b from-zinc-800 to-black border border-zinc-700 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                          <CreditCard className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-xs text-gray-400">Stripe(クレジットカード)</span>
+                        </div>
+                        <div className="flex-1 py-2 px-3 rounded-lg bg-[#003087]/50 border border-[#003087]/30 flex items-center justify-center cursor-not-allowed">
+                          <span className="text-xs text-gray-400 font-bold">PayPal</span>
+                        </div>
+                        <div className="flex-1 py-2 px-3 rounded-lg bg-[#FF0033]/30 border border-[#FF0033]/30 flex items-center justify-center cursor-not-allowed">
+                          <span className="text-xs text-gray-400 font-bold">PayPay</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ログインタブ */}
+                {authTab === "login" && (
+                  <div className="space-y-4">
+                    {/* OAuthログインボタン */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleOAuthLogin("Google")}
+                        className="flex-1 py-2.5 rounded-lg bg-white hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-5 h-5" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        <span className="text-sm font-bold text-gray-700">Googleでログイン</span>
+                      </button>
+                      <button
+                        onClick={() => handleOAuthLogin("Twitter")}
+                        className="flex-1 py-2.5 rounded-lg bg-black hover:bg-gray-900 transition-colors flex items-center justify-center gap-2 border border-gray-600"
+                      >
+                        <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                        <span className="text-sm font-bold text-white">Xでログイン</span>
+                      </button>
+                    </div>
+
+                    {/* 区切り線 */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 border-t border-gray-600" />
+                      <span className="text-xs text-muted">またはメールでログイン</span>
+                      <div className="flex-1 border-t border-gray-600" />
+                    </div>
+
+                    {/* メールログインフォーム */}
+                    <form onSubmit={handleLogin} className="space-y-3">
+                      <input
+                        type="email"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        placeholder="メールアドレス"
+                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                      />
+                      <input
+                        type="password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        placeholder="パスワード"
+                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                      />
+                      <button
+                        type="submit"
+                        className="w-full py-3 rounded-lg font-bold border border-amber-500 text-amber-400 hover:bg-amber-500/10 transition-all flex items-center justify-center gap-2"
+                      >
+                        ログイン
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </form>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={pixivId}
-                  onChange={(e) => setPixivId(e.target.value)}
-                  placeholder="pixiv ID"
-                  className="w-1/2 px-3 py-2 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors text-sm"
-                />
-                <button
-                  onClick={handleVerify}
-                  disabled={verifyStatus === "loading"}
-                  className="px-4 py-2 rounded-lg font-bold bg-amber-500 hover:bg-amber-400 text-black transition-all text-sm flex items-center gap-2 disabled:opacity-50"
-                >
-                  {verifyStatus === "loading" ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                  同期
-                </button>
+            </>
+          )}
+
+          {/* STEP 2: お支払い */}
+          {step === "payment" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle className="w-4 h-4 text-success" />
+                <span className="text-muted">ようこそ、</span>
+                <span className="text-amber-400 font-medium">{userName}</span>
+                <span className="text-muted">さん</span>
               </div>
-              <p className="text-xs text-muted pl-7 mt-auto">
-                ※ IDはpixiv.net/users/<span className="text-amber-400">数字</span>の数字部分
+
+              <p className="text-sm text-muted">
+                お支払い方法を選択してください。安全な決済サービスを利用しています。
               </p>
 
-              {verifyStatus === "success" && (
-                <div className="flex items-center gap-2 text-success text-sm bg-success/10 p-2.5 rounded-lg">
-                  <Check className="w-4 h-4" />
-                  {verifyMessage}
+              {/* エラー表示 */}
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg">
+                  {error}
                 </div>
               )}
-              {verifyStatus === "error" && (
-                <div className="flex items-center gap-2 text-danger text-sm bg-danger/10 p-2.5 rounded-lg">
-                  <AlertCircle className="w-4 h-4" />
-                  {verifyMessage}
+
+              {/* 決済方法ボタン */}
+              <div className="grid grid-cols-1 gap-3">
+                {/* クレジットカード（Stripe） */}
+                <button
+                  onClick={() => handlePayment("stripe")}
+                  disabled={isProcessing}
+                  className="group relative w-full py-4 px-5 rounded-xl bg-gradient-to-b from-zinc-800 via-zinc-900 to-black border border-zinc-700 hover:border-zinc-500 transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="w-12 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-md flex items-center justify-center">
+                    <CreditCard className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-bold text-white">クレジットカード</div>
+                    <div className="text-xs text-muted">Visa / Mastercard / AMEX / JCB</div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted">Powered by</span>
+                    <span className="text-sm font-bold text-[#6772E5]">stripe</span>
+                  </div>
+                </button>
+
+                {/* PayPal */}
+                <button
+                  onClick={() => handlePayment("paypal")}
+                  disabled={isProcessing}
+                  className="group w-full py-4 px-5 rounded-xl bg-[#003087] hover:bg-[#001F5C] border border-[#003087] transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="w-12 h-8 flex items-center justify-center">
+                    <svg className="h-6" viewBox="0 0 100 26" fill="white">
+                      <path d="M12.3 5.2h-6c-.4 0-.8.3-.9.7L3 20.6c-.1.3.2.6.5.6h2.9c.4 0 .8-.3.9-.7l.6-3.8c.1-.4.4-.7.9-.7h2c4.1 0 6.5-2 7.1-5.9.3-1.7 0-3-1-4-.9-.9-2.6-1.4-4.6-1.4zm.7 5.8c-.3 2.3-2 2.3-3.6 2.3h-.9l.7-4.2c0-.2.2-.4.4-.4h.4c1.1 0 2.1 0 2.7.6.3.4.4 1 .3 1.7z"/>
+                      <path d="M35.2 10.9h-2.9c-.2 0-.4.2-.4.4l-.1.8-.2-.3c-.6-.9-2-1.2-3.4-1.2-3.2 0-5.9 2.4-6.4 5.8-.3 1.7.1 3.3 1.1 4.4.9 1 2.2 1.4 3.8 1.4 2.7 0 4.1-1.7 4.1-1.7l-.1.8c-.1.3.2.6.5.6h2.6c.4 0 .8-.3.9-.7l1.5-9.7c.1-.3-.2-.6-.5-.6zm-4.1 5.6c-.3 1.6-1.5 2.7-3.2 2.7-.8 0-1.5-.3-1.9-.7-.4-.5-.5-1.2-.4-2 .2-1.6 1.5-2.7 3.1-2.7.8 0 1.5.3 1.9.8.4.4.6 1.1.5 1.9z"/>
+                      <path d="M55.6 10.9h-2.9c-.3 0-.5.1-.6.3l-3.6 5.3-1.5-5.1c-.1-.3-.4-.5-.8-.5h-2.8c-.4 0-.6.4-.5.7l2.9 8.4-2.7 3.8c-.3.4 0 .9.5.9h2.9c.3 0 .5-.1.6-.3l8.6-12.5c.2-.4-.1-.9-.6-.9z"/>
+                    </svg>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-bold text-white">PayPal</div>
+                    <div className="text-xs text-blue-200">PayPalアカウントで簡単決済</div>
+                  </div>
+                </button>
+
+                {/* PayPay */}
+                <button
+                  onClick={() => handlePayment("paypay")}
+                  disabled={isProcessing}
+                  className="group w-full py-4 px-5 rounded-xl bg-[#FF0033] hover:bg-[#E0002E] border border-[#FF0033] transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="w-12 h-8 flex items-center justify-center">
+                    <span className="text-white font-extrabold text-lg tracking-tight">Pay</span>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-bold text-white">PayPay</div>
+                    <div className="text-xs text-red-200">PayPayアプリで支払い</div>
+                  </div>
+                  <div className="bg-white/20 rounded px-2 py-0.5">
+                    <span className="text-xs font-bold text-white">人気</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* ローディング表示 */}
+              {isProcessing && (
+                <div className="flex items-center justify-center gap-2 text-amber-400">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">決済ページを準備中...</span>
                 </div>
               )}
+
+              <p className="text-xs text-muted text-center">
+                決済は安全なStripe / PayPalを通じて処理されます
+              </p>
             </div>
+          )}
 
-            {/* 右: 直接支援 */}
-            <div className="space-y-3 p-4 bg-deep-bg rounded-lg border border-gray-700">
-              <h3 className="font-bold text-sm text-amber-400">直接支援して登録</h3>
-              <form onSubmit={handleDirectRegister} className="space-y-2">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="メールアドレス"
-                  className="w-full px-3 py-2 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors text-sm"
-                />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="パスワード"
-                  className="w-full px-3 py-2 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors text-sm"
-                />
-                <button
-                  type="submit"
-                  className="w-full py-2.5 rounded-lg font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 transition-all text-sm"
-                >
-                  登録して支払いへ
-                </button>
-              </form>
-
-              {/* OAuth連携ボタン */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleOAuthRegister("Google")}
-                  className="flex-1 py-2 rounded-lg bg-white hover:bg-gray-100 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  <span className="text-xs font-bold text-gray-700">Google</span>
-                </button>
-                <button
-                  onClick={() => handleOAuthRegister("Twitter")}
-                  className="flex-1 py-2 rounded-lg bg-black hover:bg-gray-900 transition-colors flex items-center justify-center gap-1.5 border border-gray-600"
-                >
-                  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                  </svg>
-                  <span className="text-xs font-bold text-white">X</span>
-                </button>
-                <button
-                  onClick={() => handleOAuthRegister("PayPal")}
-                  className="flex-1 py-2 rounded-lg bg-[#0070BA] hover:bg-[#005C99] transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 0 0-.607-.541c1.27 4.93-1.066 7.627-6.14 7.627H12.28a1.284 1.284 0 0 0-1.268 1.086l-1.02 6.477-.293 1.86a.642.642 0 0 0 .634.74h3.698c.456 0 .846-.334.918-.786l.038-.194.726-4.614.047-.254a.924.924 0 0 1 .913-.786h.58c3.74 0 6.67-1.52 7.525-5.92.357-1.84.172-3.372-.774-4.452a3.75 3.75 0 0 0-.937-.723z"/>
-                  </svg>
-                  <span className="text-xs font-bold text-white">PayPal</span>
-                </button>
+          {/* STEP 3: 完了 */}
+          {step === "complete" && (
+            <div className="text-center space-y-4 py-4">
+              <div className="w-16 h-16 bg-success/20 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle className="w-10 h-10 text-success" />
               </div>
+              <h3 className="text-xl font-bold text-white">VIP登録完了！</h3>
+              <p className="text-muted">
+                ご登録ありがとうございます。<br />
+                VIP特典がすぐにご利用いただけます。
+              </p>
+              <button
+                onClick={handleClose}
+                className="px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 transition-all"
+              >
+                閉じる
+              </button>
             </div>
-          </div>
-
-          {/* 既存VIPログイン */}
-          <div className="border-t border-gray-700 pt-4">
-            <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-muted">
-              <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-              </svg>
-              既にVIP会員の方
-            </h3>
-            <form onSubmit={handleLogin} className="space-y-3">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={loginId}
-                  onChange={(e) => setLoginId(e.target.value)}
-                  placeholder="メールアドレス or pixiv ID"
-                  className="flex-1 px-3 py-2 rounded-lg bg-deep-bg border border-gray-700 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors text-sm"
-                />
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="パスワード"
-                  className="flex-1 px-3 py-2 rounded-lg bg-deep-bg border border-gray-700 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors text-sm"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg font-bold border border-amber-500 text-amber-400 hover:bg-amber-500/10 transition-all text-sm"
-                >
-                  ログイン
-                </button>
-              </div>
-
-              {/* OAuthログインボタン */}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleOAuthLogin("Google")}
-                  className="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 transition-colors flex items-center justify-center gap-1 border border-gray-600"
-                >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  <span className="text-xs text-gray-400">Google</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOAuthLogin("Twitter")}
-                  className="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 transition-colors flex items-center justify-center gap-1 border border-gray-600"
-                >
-                  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                  </svg>
-                  <span className="text-xs text-gray-400">X</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOAuthLogin("pixiv")}
-                  className="flex-1 py-1.5 rounded bg-gray-800 hover:bg-gray-700 transition-colors flex items-center justify-center gap-1 border border-gray-600"
-                >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#0096FA">
-                    <path d="M4.935 0A4.924 4.924 0 0 0 0 4.935v14.13A4.924 4.924 0 0 0 4.935 24h14.13A4.924 4.924 0 0 0 24 19.065V4.935A4.924 4.924 0 0 0 19.065 0zm7.81 4.547c2.181 0 4.058.676 5.399 1.847a6.118 6.118 0 0 1 2.116 4.66c.005 1.854-.88 3.476-2.257 4.563-1.375 1.092-3.225 1.697-5.258 1.697-2.314 0-4.46-.842-4.46-.842v2.718c.397.116 1.048.365.635.365H5.456c-.41 0-.064-.249.384-.365V7.682c0-.235-.173-.413-.173-.413h3.544s.173.178.173.413v.563s2.001-.698 3.361-.698zm.062 1.349c-1.479-.004-2.722.494-3.606 1.425-.886.935-1.327 2.155-1.327 3.556 0 1.397.441 2.518 1.327 3.416.882.899 2.127 1.37 3.606 1.365 1.483-.004 2.724-.466 3.606-1.365.886-.898 1.327-2.019 1.327-3.416 0-1.401-.441-2.621-1.327-3.556-.882-.931-2.123-1.429-3.606-1.425z"/>
-                  </svg>
-                  <span className="text-xs text-gray-400">pixiv</span>
-                </button>
-              </div>
-            </form>
-          </div>
+          )}
         </div>
       </div>
     </div>

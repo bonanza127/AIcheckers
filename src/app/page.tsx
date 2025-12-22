@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
+import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff, CreditCard } from "lucide-react";
 import VipModal from "@/components/VipModal";
 
 // API URL: 本番環境では api.aicheckers.net を使用
@@ -638,8 +638,32 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             </h2>
           </div>
 
-          {/* 右: ステータス + VIP */}
+          {/* 右: VIP + ステータス */}
           <div className="flex items-center gap-4 text-xs">
+            {/* VIP Black Card */}
+            <button
+              onClick={() => setIsVipModalOpen(true)}
+              className="group relative flex items-center gap-2 px-4 py-1.5 rounded-md bg-gradient-to-b from-zinc-800 via-zinc-900 to-black border border-zinc-700/50 hover:border-zinc-500/70 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-black/30"
+            >
+              {/* Subtle gold edge highlight */}
+              <div className="absolute inset-0 rounded-md bg-gradient-to-br from-amber-500/5 via-transparent to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+              {/* Card icon */}
+              <CreditCard className="relative z-10 w-4 h-4 text-amber-400/80 group-hover:text-amber-300 transition-colors" />
+
+              {/* VIP text */}
+              <span className="relative z-10 text-xs font-bold tracking-[0.2em] text-zinc-200 group-hover:text-white transition-colors uppercase">
+                VIP
+              </span>
+
+              {/* Premium shine effect */}
+              <div className="absolute inset-0 rounded-md overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+              </div>
+            </button>
+
+            <span className="text-muted">//</span>
+
             {/* Server Status */}
             <div className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
@@ -648,19 +672,6 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 {backendOnline === null ? "..." : backendOnline ? "Online" : "Offline"}
               </span>
             </div>
-
-            <span className="text-muted">//</span>
-
-            {/* VIP */}
-            <button
-              onClick={() => setIsVipModalOpen(true)}
-              className="relative px-4 py-1 rounded bg-gradient-to-br from-amber-900/80 via-yellow-800/60 to-amber-900/80 border border-amber-600/40 hover:border-amber-500/60 transition-all duration-300 shadow-sm hover:shadow-md hover:shadow-amber-900/20 group overflow-hidden"
-            >
-              <span className="relative z-10 text-xs font-semibold tracking-widest bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-200 bg-clip-text text-transparent uppercase">
-                VIP
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-400/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-            </button>
           </div>
         </div>
       </header>

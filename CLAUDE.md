@@ -179,6 +179,12 @@ python scripts/train_from_embeddings.py
 - SHA256ハッシュでLRU 10,000件（同一画像のGPU処理スキップ）
 - メモリ内のみ（再起動でクリア）
 
+### コード検索ツール
+- **mgrep**: セマンティック検索（自然言語クエリ対応）
+- 使い方: `mgrep "検索クエリ"` をBashで実行
+- 例: `mgrep "where is VIP modal handled"`
+- morpho（morph-mcp）はレート制限があるため、mgrepを優先使用
+
 ---
 
 ## 連絡先・メール
