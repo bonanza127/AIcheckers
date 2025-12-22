@@ -698,8 +698,17 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             </h2>
           </div>
 
-          {/* 右: VIP + ステータス */}
+          {/* 右: ステータス + VIP */}
           <div className="flex items-center gap-4 text-xs">
+            {/* Server Status */}
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
+              <span className="text-muted">Server Status:</span>
+              <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
+                {backendOnline === null ? "..." : backendOnline ? "Online" : "Offline"}
+              </span>
+            </div>
+
             {/* VIP - 控えめなブラックカード（ログイン時は紫の光） */}
             <button
               onClick={() => setIsVipModalOpen(true)}
@@ -714,17 +723,6 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             >
               {isAuthLoading ? "..." : "VIP"}
             </button>
-
-            <span className="text-muted">//</span>
-
-            {/* Server Status */}
-            <div className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
-              <span className="text-muted">Server Status:</span>
-              <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
-                {backendOnline === null ? "..." : backendOnline ? "Online" : "Offline"}
-              </span>
-            </div>
           </div>
         </div>
       </header>
