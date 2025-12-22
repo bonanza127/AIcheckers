@@ -85,6 +85,7 @@ export default function Home() {
   const [timeUntilReset, setTimeUntilReset] = useState("--:--:--");
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true); // 認証状態確認中
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -107,9 +108,11 @@ export default function Home() {
       }
       // URLパラメータをクリア
       window.history.replaceState({}, "", window.location.pathname);
+      setIsAuthLoading(false);
     } else if (authStatus === "error") {
       console.error("OAuth error:", params.get("message"));
       window.history.replaceState({}, "", window.location.pathname);
+      setIsAuthLoading(false);
     } else {
       // ページリロード時: localStorageからトークン復元
       const savedToken = localStorage.getItem("auth_token");
@@ -130,7 +133,10 @@ export default function Home() {
           .catch(() => {
             // トークン無効 → 削除
             localStorage.removeItem("auth_token");
-          });
+          })
+          .finally(() => setIsAuthLoading(false));
+      } else {
+        setIsAuthLoading(false);
       }
     }
   }, []);
@@ -697,13 +703,16 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             {/* VIP - 控えめなブラックカード（ログイン時は紫の光） */}
             <button
               onClick={() => setIsVipModalOpen(true)}
+              disabled={isAuthLoading}
               className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${
-                authUser
-                  ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-                  : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
+                isAuthLoading
+                  ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
+                  : authUser
+                    ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+                    : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
               }`}
             >
-              VIP
+              {isAuthLoading ? "..." : "VIP"}
             </button>
 
             <span className="text-muted">//</span>
@@ -1014,8 +1023,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               >
                 <Search className="w-4 h-4" />
                 <span>スキャン開始</span>
-                <span className="font-normal">- 残り{rateLimitRemaining ?? "--"}/24枚</span>
-                <span className="text-xs opacity-70 font-normal">(1時間刻みで1枚回復)</span>
+                <span className="font-normal">
+                  - 残り{rateLimitRemaining ?? "--"}/{authUser?.isVip ? "240" : "24"}枚
+                </span>
+                <span className="text-xs opacity-70 font-normal">
+                  (1時間刻みで{authUser?.isVip ? "10" : "1"}枚回復)
+                </span>
               </button>
               <button
                 onClick={handleTrashClick}
