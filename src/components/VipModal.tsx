@@ -18,7 +18,7 @@ type VipModalProps = {
   authUser?: AuthUser | null;
 };
 
-type ModalStep = "auth" | "payment" | "complete";
+type ModalStep = "auth" | "payment" | "complete" | "status";
 
 export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
   const [step, setStep] = useState<ModalStep>("auth");
@@ -26,12 +26,18 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
   // タブ切り替え（新規登録 / ログイン）
   const [authTab, setAuthTab] = useState<"register" | "login">("register");
 
-  // OAuth認証済みの場合、自動的にpaymentステップへ
+  // 認証状態に応じてステップを設定
   useEffect(() => {
     if (authUser && isOpen) {
       setUserName(authUser.name);
       setUserEmail(authUser.email);
-      setStep("payment");
+      if (authUser.isVip) {
+        setStep("status"); // VIPならステータス表示
+      } else {
+        setStep("payment"); // 非VIPなら決済へ
+      }
+    } else if (isOpen && !authUser) {
+      setStep("auth"); // 未ログインなら認証へ
     }
   }, [authUser, isOpen]);
 
@@ -203,7 +209,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                   <span className="font-medium text-sm">スキャン回数アップ</span>
                   <div className="text-muted text-xs">
                     <span className="line-through">24枚/日</span>
-                    <span className="text-amber-400 font-bold ml-1">→ 500枚/日</span>
+                    <span className="text-amber-400 font-bold ml-1">→ 240枚/日</span>
                   </div>
                 </div>
               </div>
@@ -563,6 +569,67 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
               >
                 閉じる
               </button>
+            </div>
+          )}
+
+          {/* VIPステータス表示 */}
+          {step === "status" && authUser && (
+            <div className="space-y-6">
+              {/* ユーザー情報 */}
+              <div className="bg-gradient-to-br from-amber-500/10 to-yellow-500/10 rounded-lg p-4 border border-amber-500/30">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-yellow-300 flex items-center justify-center text-black font-bold text-xl">
+                    {authUser.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-bold text-white">{authUser.name}</p>
+                    <p className="text-sm text-muted">{authUser.email}</p>
+                  </div>
+                  <div className="ml-auto px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-xs font-bold">
+                    VIP
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted">スキャン上限</p>
+                    <p className="font-bold text-amber-400">240枚/日</p>
+                  </div>
+                  <div>
+                    <p className="text-muted">回復レート</p>
+                    <p className="font-bold text-amber-400">10枚/時間</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* VIP特典一覧 */}
+              <div className="space-y-2">
+                <p className="text-sm font-bold text-muted">有効な特典</p>
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-2 py-1 rounded bg-success/20 text-success text-xs">✓ スキャン240枚/日</span>
+                  <span className="px-2 py-1 rounded bg-success/20 text-success text-xs">✓ 最新モデル先行利用</span>
+                  <span className="px-2 py-1 rounded bg-success/20 text-success text-xs">✓ 広告非表示</span>
+                </div>
+              </div>
+
+              {/* ログアウトボタン */}
+              <div className="pt-4 border-t border-gray-700 flex justify-between items-center">
+                <button
+                  onClick={() => {
+                    localStorage.removeItem("auth_token");
+                    window.location.reload();
+                  }}
+                  className="text-sm text-muted hover:text-red-400 transition-colors"
+                >
+                  ログアウト
+                </button>
+                <button
+                  onClick={handleClose}
+                  className="px-4 py-2 rounded-lg font-bold bg-gray-700 hover:bg-gray-600 text-white transition-all"
+                >
+                  閉じる
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -43,10 +43,13 @@ dinov3_classifier = None
 # キャッシュ: 画像ハッシュ -> 解析結果（最大10,000件、約1MB）
 result_cache: LRUCache = LRUCache(maxsize=10000)
 
-# レート制限: 1時間刻みで1枚回復、上限24枚
+# レート制限: 1時間刻みで回復
 RATE_LIMIT_ENABLED = False  # True: 有効, False: 無効（開発中はFalse）
-MAX_TOKENS = 24  # 上限24枚
-RECOVERY_INTERVAL_HOURS = 1  # 1時間ごとに1枚回復
+MAX_TOKENS = 24  # 通常ユーザー: 上限24枚
+MAX_TOKENS_VIP = 240  # VIPユーザー: 上限240枚
+RECOVERY_INTERVAL_HOURS = 1  # 1時間ごとに回復
+RECOVERY_AMOUNT = 1  # 通常: 1枚回復
+RECOVERY_AMOUNT_VIP = 10  # VIP: 10枚回復
 
 # IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
@@ -245,40 +248,45 @@ def get_image_hash(image_bytes: bytes) -> str:
     return hashlib.sha256(image_bytes).hexdigest()
 
 
-def _recover_tokens(ip: str) -> None:
+def _recover_tokens(ip: str, is_vip: bool = False) -> None:
     """経過時間に基づいてトークンを回復（毎時0分刻み）"""
     data = rate_limit_data[ip]
     now = datetime.now()
     last_recovery = data["last_recovery"]
 
+    max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
+    recovery_amount = RECOVERY_AMOUNT_VIP if is_vip else RECOVERY_AMOUNT
+
     # 最終回復時刻から現在までに経過した「時の境界」の数を計算
-    # 例: 5:30に使用 → 6:00, 7:00 で2枚回復
+    # 例: 5:30に使用 → 6:00, 7:00 で2回復
     last_hour = last_recovery.replace(minute=0, second=0, microsecond=0)
     current_hour = now.replace(minute=0, second=0, microsecond=0)
 
     if current_hour > last_hour:
         hours_passed = int((current_hour - last_hour).total_seconds() // 3600)
-        tokens_to_recover = hours_passed
-        data["tokens"] = min(MAX_TOKENS, data["tokens"] + tokens_to_recover)
+        tokens_to_recover = hours_passed * recovery_amount
+        data["tokens"] = min(max_tokens, data["tokens"] + tokens_to_recover)
         data["last_recovery"] = current_hour
 
 
-def check_rate_limit(ip: str) -> tuple[bool, int]:
-    """レート制限チェック。(許可されているか, 残り回数) を返す"""
+def check_rate_limit(ip: str, is_vip: bool = False) -> tuple[bool, int, int]:
+    """レート制限チェック。(許可されているか, 残り回数, 上限) を返す"""
+    max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
+
     if not RATE_LIMIT_ENABLED:
-        return True, MAX_TOKENS  # 無効時は常に許可、上限表示
+        return True, max_tokens, max_tokens  # 無効時は常に許可、上限表示
 
-    _recover_tokens(ip)
+    _recover_tokens(ip, is_vip)
     data = rate_limit_data[ip]
-    return data["tokens"] > 0, data["tokens"]
+    return data["tokens"] > 0, data["tokens"], max_tokens
 
 
-def increment_rate_limit(ip: str) -> None:
+def increment_rate_limit(ip: str, is_vip: bool = False) -> None:
     """トークンを1消費"""
     if not RATE_LIMIT_ENABLED:
         return  # 無効時は消費しない
 
-    _recover_tokens(ip)  # まず回復処理
+    _recover_tokens(ip, is_vip)  # まず回復処理
     data = rate_limit_data[ip]
     if data["tokens"] > 0:
         data["tokens"] -= 1
@@ -296,7 +304,7 @@ async def root():
 async def health_check(request: Request):
     # IPアドレス取得
     ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
-    _, remaining = check_rate_limit(ip)
+    _, remaining, limit = check_rate_limit(ip)
 
     return {
         "status": "healthy" if dinov3_model is not None and dinov3_classifier is not None else "unhealthy",
@@ -305,7 +313,7 @@ async def health_check(request: Request):
         "cuda_available": torch.cuda.is_available(),
         "rate_limit": {
             "remaining": remaining,
-            "limit": MAX_TOKENS
+            "limit": limit
         }
     }
 
@@ -564,12 +572,12 @@ async def analyze_image(
     ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
 
     # レート制限チェック
-    allowed, remaining = check_rate_limit(ip)
+    allowed, remaining, limit = check_rate_limit(ip)
     if not allowed:
         return JSONResponse(
             status_code=429,
-            content={"detail": "1日の上限（20枚）に達しました。明日またお試しください。"},
-            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": "0"}
+            content={"detail": f"上限（{limit}枚）に達しました。1時間ごとに回復します。"},
+            headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
         )
 
     # ファイル形式チェック
@@ -588,10 +596,10 @@ async def analyze_image(
             cached = result_cache[image_hash]
             # キャッシュヒット時もレート制限カウント増加
             increment_rate_limit(ip)
-            _, remaining_after = check_rate_limit(ip)
+            _, remaining_after, limit_after = check_rate_limit(ip)
             return JSONResponse(
                 content={**cached, "cached": True, "filename": file.filename},
-                headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+                headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
             )
 
         image = Image.open(io.BytesIO(contents)).convert("RGB")
@@ -621,11 +629,11 @@ async def analyze_image(
 
         # レート制限カウント増加
         increment_rate_limit(ip)
-        _, remaining_after = check_rate_limit(ip)
+        _, remaining_after, limit_after = check_rate_limit(ip)
 
         return JSONResponse(
             content=response_data,
-            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+            headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
         )
 
     except HTTPException:
@@ -666,12 +674,12 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
     ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
 
     # レート制限チェック
-    allowed, remaining = check_rate_limit(ip)
+    allowed, remaining, limit = check_rate_limit(ip)
     if not allowed:
         return JSONResponse(
             status_code=429,
-            content={"detail": "1日の上限（20枚）に達しました。明日またお試しください。"},
-            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": "0"}
+            content={"detail": f"上限（{limit}枚）に達しました。1時間ごとに回復します。"},
+            headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
         )
 
     url = body.url.strip()
@@ -716,11 +724,11 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         if image_hash in result_cache:
             cached = result_cache[image_hash]
             increment_rate_limit(ip)
-            _, remaining_after = check_rate_limit(ip)
+            _, remaining_after, limit_after = check_rate_limit(ip)
             filename = url.split("/")[-1].split("?")[0] or "image_from_url"
             return JSONResponse(
                 content={**cached, "cached": True, "filename": filename, "source_url": body.url},
-                headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+                headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
             )
 
         # 画像を開く
@@ -755,11 +763,11 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
 
         # レート制限カウント増加
         increment_rate_limit(ip)
-        _, remaining_after = check_rate_limit(ip)
+        _, remaining_after, limit_after = check_rate_limit(ip)
 
         return JSONResponse(
             content=response_data,
-            headers={"X-RateLimit-Limit": str(DAILY_LIMIT), "X-RateLimit-Remaining": str(remaining_after)}
+            headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
         )
 
     except HTTPException:
