@@ -126,20 +126,20 @@ export default function HowItWorks() {
           <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">対応AIモデル</h2>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">SDXL</p>
-              <p className="text-success text-sm mt-1">攻略完了</p>
+              <p className="font-bold text-foreground">SDXL <span className="text-accent font-normal">(98.30%)</span></p>
+              <p className="text-success text-sm mt-1">ほぼ対策済</p>
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">Illustrious</p>
+              <p className="font-bold text-foreground">Illustrious <span className="text-accent font-normal">(97.80%)</span></p>
               <p className="text-success text-sm mt-1">派生版含め高頻度で検出</p>
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">Pony Diffusion</p>
+              <p className="font-bold text-foreground">Pony Diffusion <span className="text-accent font-normal">(99.10%)</span></p>
               <p className="text-success text-sm mt-1">現在メインのv6まで高頻度で検出</p>
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">NovelAI</p>
-              <p className="text-yellow-400 text-sm mt-1">やや弱い？（7.5割程度）対応強化中</p>
+              <p className="font-bold text-foreground">NovelAI <span className="text-accent font-normal">(67.50%)</span></p>
+              <p className="text-yellow-400 text-sm mt-1">やや弱い。v4.5対応強化中</p>
             </div>
           </div>
         </section>
@@ -162,7 +162,7 @@ export default function HowItWorks() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-gray-500 mt-1">•</span>
-              <span>大幅に改変された独自モデルを使用した画像</span>
+              <span>複数のLoRAを重ね合わせた画像</span>
             </li>
           </ul>
 
