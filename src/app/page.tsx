@@ -402,11 +402,12 @@ export default function Home() {
       reader.readAsDataURL(file);
     });
 
-    // 結果クリアと画像更新を同時に行い、一瞬の表示ずれを防ぐ
-    setResult(null);
+    // phaseを最初に変更してチラつきを防ぐ
+    setPhase("scanning");
+    // バッチ処理中は前の結果を維持（次の結果で上書きされる）
+    // setResult(null); // コメントアウト：結果のチラつき防止
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
-    setPhase("scanning");
 
     // ファイルサイズを取得
     const fileSizeKB = (file.size / 1024).toFixed(1);
@@ -445,6 +446,7 @@ export default function Home() {
     let artifacts: string;
     let attentionMap: string | undefined;
     let rateLimitError = false;
+    let backendVerdict: string | undefined;
 
     try {
       const apiUrl = getApiUrl();
@@ -482,6 +484,7 @@ export default function Home() {
       isAI = aiScore >= 80; // 80%以上でAI判定
       processingTime = data.processing_time;
       attentionMap = data.attention_map; // Attention Mapを取得
+      backendVerdict = data.verdict; // バックエンドのverdictを取得
 
       // detected_tracesがあればそれを優先、なければforensic_logsから生成
       const detectedTraces: string = data.detected_traces || "";
@@ -557,8 +560,9 @@ export default function Home() {
       item.id === queueItemId ? { ...item, status: queueStatus } : item
     ));
 
-    // verdict 5段階 + レート制限
+    // verdict: バックエンドのverdictを優先、なければフロントエンドで計算
     const verdict = rateLimitError ? "RATE LIMITED"
+      : backendVerdict ? backendVerdict  // バックエンドのverdictを優先使用
       : aiScore >= 80 ? "AI DETECTED"
       : aiScore >= 60 ? "HIGH ALERT"
       : aiScore >= 40 ? "UNKNOWN"
@@ -688,7 +692,7 @@ export default function Home() {
     const verdictText = result.aiScore >= 80 ? "AI DETECTED"
       : result.aiScore >= 60 ? "HIGH ALERT"
       : result.aiScore >= 40 ? "UNKNOWN"
-      : result.aiScore >= 20 ? "LOW RISK"
+      : result.aiScore >= 20 ? "MINOR CAUTION"
       : "HUMAN CONFIRMED";
 
     const verdictEmoji = result.aiScore >= 80 ? "🤖"
@@ -731,7 +735,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
   };
 
   const getVerdictDisplay = () => {
-    if (phase === "scanning") {
+    // スキャン中でも、バッチ処理で前の結果があれば表示継続
+    if (phase === "scanning" && !result) {
       return {
         text: "PROCESSING...",
         className: "verdict-loading"
@@ -784,7 +789,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       verdict: item.aiScore >= 80 ? "AI DETECTED"
         : item.aiScore >= 60 ? "HIGH ALERT"
         : item.aiScore >= 40 ? "UNKNOWN"
-        : item.aiScore >= 20 ? "LOW RISK"
+        : item.aiScore >= 20 ? "MINOR CAUTION"
         : "HUMAN CONFIRMED",
       confidence: item.score,
       processingTime: 0,
