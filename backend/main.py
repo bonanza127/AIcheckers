@@ -302,22 +302,18 @@ def get_rate_limit_key(request: Request) -> tuple[str, bool, bool]:
     """
     # Authorizationヘッダーからユーザー情報を取得
     auth_header = request.headers.get("Authorization", "")
-    print(f"[DEBUG] auth_header: {auth_header[:50] if auth_header else 'None'}...")
     if auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
         payload = verify_jwt_token(token)
-        print(f"[DEBUG] payload: {payload}")
         if payload:
             user_id = payload.get("sub")
             email = payload.get("email")
             is_vip = email in vip_users if email else False
             is_admin = email in ADMIN_EMAILS if email else False
-            print(f"[DEBUG] email={email}, is_admin={is_admin}, ADMIN_EMAILS={ADMIN_EMAILS}")
             return user_id, is_vip, is_admin
 
     # 非ログインユーザーはIPをキーにする
     ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
-    print(f"[DEBUG] No auth, using IP: {ip}")
     return ip, False, False
 
 
