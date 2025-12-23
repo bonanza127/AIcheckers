@@ -32,10 +32,10 @@ def load_model():
 
 def extract_embeddings(image_dir: Path, model, processor, device, batch_size=32):
     """ディレクトリ内の全画像からembeddingを抽出"""
-    # 画像ファイル一覧
+    # 画像ファイル一覧（再帰的に検索）
     extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-    image_files = [f for f in image_dir.iterdir()
-                   if f.suffix.lower() in extensions]
+    image_files = [f for f in image_dir.rglob("*")
+                   if f.is_file() and f.suffix.lower() in extensions]
 
     print(f"Found {len(image_files)} images in {image_dir}")
 

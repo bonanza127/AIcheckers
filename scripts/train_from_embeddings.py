@@ -19,6 +19,7 @@ AI_CATEGORIES = [
     "other_ai",
     "flux1d_ai",
     "novelai_ai",
+    "pixai_ai",
 ]
 
 # Realカテゴリ（0=Real）

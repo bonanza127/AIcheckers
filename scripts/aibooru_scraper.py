@@ -106,6 +106,7 @@ def scrape_novelai(
     delay_max: float = DEFAULT_DELAY_MAX,
     rating: str = "g,s",
     skip: int = 1,  # N個おきに取得（1=全部、10=10個飛ばし）
+    min_score: int = 0,  # 最低スコア（0=フィルターなし）
 ):
     """NovelAI画像をスクレイピング"""
 
@@ -118,6 +119,7 @@ def scrape_novelai(
     print(f"[INFO] Target: {max_images} images")
     print(f"[INFO] Delay: {delay_min}-{delay_max} seconds")
     print(f"[INFO] Rating filter: {rating}")
+    print(f"[INFO] Min score: {min_score}" if min_score > 0 else "[INFO] Score filter: disabled")
     print(f"[INFO] Skip: every {skip} posts (diversity mode)")
     print(f"[INFO] Using curl_cffi with Chrome impersonation")
     print()
@@ -149,7 +151,10 @@ def scrape_novelai(
 
                 # タグ構築（単一ratingのみサポート、複数は最初の1つを使用）
                 first_rating = rating.split(",")[0] if rating else "s"
-                posts = get_posts(session, f"novelai rating:{first_rating}", page=page, limit=20)
+                tags = f"novelai rating:{first_rating}"
+                if min_score > 0:
+                    tags += f" score:>={min_score}"
+                posts = get_posts(session, tags, page=page, limit=20)
 
                 if not posts:
                     errors_in_a_row += 1
@@ -218,6 +223,7 @@ def main():
     parser.add_argument("--delay-max", type=float, default=DEFAULT_DELAY_MAX, help="Maximum delay")
     parser.add_argument("--rating", default="g,s", help="Rating filter (g,s,q,e)")
     parser.add_argument("--skip", type=int, default=1, help="Take every Nth post (1=all, 10=every 10th)")
+    parser.add_argument("--score", type=int, default=0, help="Minimum score filter (0=disabled, 20=recommended)")
 
     args = parser.parse_args()
 
@@ -229,6 +235,7 @@ def main():
         delay_max=args.delay_max,
         rating=args.rating,
         skip=args.skip,
+        min_score=args.score,
     )
 
 

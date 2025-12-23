@@ -557,8 +557,13 @@ export default function Home() {
       item.id === queueItemId ? { ...item, status: queueStatus } : item
     ));
 
-    // verdict も3段階 + レート制限
-    const verdict = rateLimitError ? "RATE LIMITED" : aiScore >= 80 ? "AI DETECTED" : aiScore >= 50 ? "UNKNOWN" : "HUMAN CONFIRMED";
+    // verdict 5段階 + レート制限
+    const verdict = rateLimitError ? "RATE LIMITED"
+      : aiScore >= 80 ? "AI DETECTED"
+      : aiScore >= 60 ? "HIGH ALERT"
+      : aiScore >= 40 ? "UNKNOWN"
+      : aiScore >= 20 ? "MINOR CAUTION"
+      : "HUMAN CONFIRMED";
 
     setResult({
       isAI,
@@ -680,17 +685,17 @@ export default function Home() {
   const shareToX = () => {
     if (!result) return;
 
-    const verdictText = result.aiScore >= 80
-      ? "AI DETECTED"
-      : result.aiScore >= 50
-        ? "UNKNOWN"
-        : "HUMAN CONFIRMED";
+    const verdictText = result.aiScore >= 80 ? "AI DETECTED"
+      : result.aiScore >= 60 ? "HIGH ALERT"
+      : result.aiScore >= 40 ? "UNKNOWN"
+      : result.aiScore >= 20 ? "LOW RISK"
+      : "HUMAN CONFIRMED";
 
-    const verdictEmoji = result.aiScore >= 80
-      ? "🤖"
-      : result.aiScore >= 50
-        ? "❓"
-        : "✅";
+    const verdictEmoji = result.aiScore >= 80 ? "🤖"
+      : result.aiScore >= 60 ? "⚠️"
+      : result.aiScore >= 40 ? "❓"
+      : result.aiScore >= 20 ? "🔵"
+      : "✅";
 
     const text = `【AI判定結果】
 ${verdictEmoji} ${verdictText}
@@ -699,7 +704,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 #AIイラスト判定 #aicheckers`;
 
     // 動的OGP付きのシェアURL（短縮のためtraceは省略）
-    const shareUrl = `https://aicheckers.net/share?v=${verdictText === "AI DETECTED" ? "ai" : verdictText === "UNKNOWN" ? "u" : "h"}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}`;
+    const vParam = verdictText === "AI DETECTED" ? "ai"
+      : verdictText === "HIGH ALERT" ? "ha"
+      : verdictText === "UNKNOWN" ? "u"
+      : verdictText === "MINOR CAUTION" ? "mc"
+      : "h";
+    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
@@ -732,11 +742,15 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       if (result.verdict === "RATE LIMITED") {
         return { text: result.verdict, className: "verdict-unknown" };
       }
-      // 3段階の判定表示
+      // 5段階の判定表示
       if (result.aiScore >= 80) {
         return { text: result.verdict, className: "verdict-ai" };
-      } else if (result.aiScore >= 50) {
+      } else if (result.aiScore >= 60) {
+        return { text: result.verdict, className: "verdict-high-alert" };
+      } else if (result.aiScore >= 40) {
         return { text: result.verdict, className: "verdict-unknown" };
+      } else if (result.aiScore >= 20) {
+        return { text: result.verdict, className: "verdict-low-risk" };
       } else {
         return { text: result.verdict, className: "verdict-human" };
       }
@@ -767,7 +781,11 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       isAI: item.isAI,
       aiScore: item.aiScore,
       humanScore: 100 - item.aiScore,
-      verdict: item.aiScore >= 80 ? "AI DETECTED" : item.aiScore >= 50 ? "UNKNOWN" : "HUMAN CONFIRMED",
+      verdict: item.aiScore >= 80 ? "AI DETECTED"
+        : item.aiScore >= 60 ? "HIGH ALERT"
+        : item.aiScore >= 40 ? "UNKNOWN"
+        : item.aiScore >= 20 ? "LOW RISK"
+        : "HUMAN CONFIRMED",
       confidence: item.score,
       processingTime: 0,
       artifacts: item.artifacts || fallbackArtifacts,
@@ -938,7 +956,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     AI POSSIBILITY
                   </span>
                   <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
-                    (result?.aiScore ?? 0) >= 50 ? "text-gray-400" : "text-success"
+                    (result?.aiScore ?? 0) >= 60 ? "text-yellow-500" :
+                    (result?.aiScore ?? 0) >= 40 ? "text-gray-400" :
+                    (result?.aiScore ?? 0) >= 20 ? "text-blue-400" : "text-success"
                     }`}>
                     {result?.aiScore ?? 0}%
                   </span>
@@ -946,7 +966,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <div className="progress-bar-bg">
                   <div
                     className={`progress-bar-fill ${(result?.aiScore ?? 0) >= 80 ? "ai" :
-                      (result?.aiScore ?? 0) >= 50 ? "unknown" : "human"
+                      (result?.aiScore ?? 0) >= 60 ? "high-alert" :
+                      (result?.aiScore ?? 0) >= 40 ? "unknown" :
+                      (result?.aiScore ?? 0) >= 20 ? "low-risk" : "human"
                       }`}
                     style={{ width: `${result?.aiScore ?? 0}%` }}
                   />

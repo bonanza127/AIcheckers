@@ -264,12 +264,20 @@ body {
   background-color: var(--danger);
 }
 
-.progress-bar-fill.human {
-  background-color: var(--success);
+.progress-bar-fill.high-alert {
+  background-color: #F59E0B;
 }
 
 .progress-bar-fill.unknown {
-  background-color: #F59E0B;
+  background-color: #9CA3AF;
+}
+
+.progress-bar-fill.low-risk {
+  background-color: #60A5FA;
+}
+
+.progress-bar-fill.human {
+  background-color: var(--success);
 }
 
 /* ============================================
@@ -361,12 +369,20 @@ body {
   color: var(--danger);
 }
 
-.verdict-human {
-  color: var(--success);
+.verdict-high-alert {
+  color: #F59E0B; /* 黄色 */
 }
 
 .verdict-unknown {
-  color: #F59E0B;
+  color: #9CA3AF; /* グレー */
+}
+
+.verdict-low-risk {
+  color: #60A5FA; /* 水色 */
+}
+
+.verdict-human {
+  color: var(--success);
 }
 
 .verdict-loading {
