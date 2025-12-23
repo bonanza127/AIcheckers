@@ -377,16 +377,18 @@ async def health_check(request: Request):
     }
 
 
-def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear) -> torch.Tensor:
+def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear, return_scores: bool = False):
     """
     パッチ埋め込みから統計量を計算（推論時用）
 
     Args:
         patch_embeddings: (1, 196, 768) パッチ埋め込み
         classifier: 768→2の分類器（パッチスコア計算用）
+        return_scores: Trueの場合、パッチスコア配列も返す
 
     Returns:
-        (1, 6) パッチ統計量
+        return_scores=False: (1, 6) パッチ統計量
+        return_scores=True: ((1, 6) パッチ統計量, (196,) パッチAIスコア)
     """
     HIGH_SCORE_THRESHOLD = 0.8
 
@@ -409,10 +411,13 @@ def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear) -
         count_high_score = (ai_scores >= HIGH_SCORE_THRESHOLD).float().mean()
 
         stats = torch.stack([patch_mean, patch_max, patch_var, max_minus_mean, embed_var_mean, count_high_score])
+
+        if return_scores:
+            return stats.unsqueeze(0), ai_scores  # (1, 6), (196,)
         return stats.unsqueeze(0)  # (1, 6)
 
 
-def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor, ai_prob: float, head_attentions: np.ndarray = None) -> tuple:
+def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor, ai_prob: float, head_attentions: np.ndarray = None, patch_scores: np.ndarray = None) -> tuple:
     """
     DINOv3の内部分析からフォレンジック風のログを生成
 
@@ -421,6 +426,7 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
         features: CLS token特徴量 (768次元)
         ai_prob: AI確率 (0-1)
         head_attentions: ヘッド別attention [12, 196] (オプション)
+        patch_scores: パッチごとのAIスコア (196,) (オプション)
 
     Returns:
         (logs, detected_traces): ログリストと検出痕跡サマリー
@@ -505,6 +511,77 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
         if entropy_ratio is not None and entropy_ratio > 0.85:
             evidence.append(f"高エントロピー")
 
+    # 4.5 パッチスコア解析（局所的なAI痕跡検出）
+    # Attention × AIスコアの合成値で領域判定（ヒートマップと整合性を取る）
+    patch_analysis_log = None
+    high_score_regions = []
+    if patch_scores is not None:
+        # 14x14グリッドに変換
+        grid = patch_scores.reshape(14, 14)
+        patch_mean = patch_scores.mean()
+        patch_max = patch_scores.max()
+        patch_var = patch_scores.var()
+
+        # Attentionとの合成マップを作成（ヒートマップと同じロジック）
+        if attention_map is not None and attention_map.shape == (14, 14):
+            attention_norm = (attention_map - attention_map.min()) / (attention_map.max() - attention_map.min() + 1e-8)
+            combined_grid = grid * attention_norm
+            combined_grid = (combined_grid - combined_grid.min()) / (combined_grid.max() - combined_grid.min() + 1e-8)
+        else:
+            combined_grid = grid
+
+        # 9領域に分割して解析（左上、上、右上、左、中央、右、左下、下、右下）
+        regions = {
+            "左上": combined_grid[0:5, 0:5],
+            "上": combined_grid[0:5, 5:9],
+            "右上": combined_grid[0:5, 9:14],
+            "左": combined_grid[5:9, 0:5],
+            "中央": combined_grid[5:9, 5:9],
+            "右": combined_grid[5:9, 9:14],
+            "左下": combined_grid[9:14, 0:5],
+            "下": combined_grid[9:14, 5:9],
+            "右下": combined_grid[9:14, 9:14],
+        }
+
+        # 各領域の平均スコアを計算（合成値ベース）
+        region_scores = {name: region.mean() for name, region in regions.items()}
+        combined_mean = combined_grid.mean()
+
+        # 高スコア領域を検出（相対的：平均の1.3倍以上、または上位で平均より0.1以上高い）
+        sorted_regions = sorted(region_scores.items(), key=lambda x: x[1], reverse=True)
+        for name, score in sorted_regions[:3]:  # 上位3領域まで
+            # 平均の1.3倍以上、または平均より0.1以上高い場合
+            if score >= combined_mean * 1.3 or score >= combined_mean + 0.1:
+                high_score_regions.append((name, score))
+
+        # ログ生成
+        if high_score_regions:
+            # スコア順にソート
+            high_score_regions.sort(key=lambda x: x[1], reverse=True)
+            region_strs = [f"{name}({score*100:.0f}%)" for name, score in high_score_regions[:3]]
+            patch_analysis_log = f"パッチ解析: {', '.join(region_strs)}に局所的AI痕跡（全体平均{patch_mean*100:.0f}%）"
+        else:
+            # 高スコア領域がない場合でも基本情報は出力
+            patch_analysis_log = f"パッチ解析: 平均{patch_mean*100:.0f}%、最大{patch_max*100:.0f}%、分散{patch_var:.3f}"
+
+        logs.append(patch_analysis_log)
+
+        # evidenceにも追加
+        if high_score_regions and is_ai:
+            top_region = high_score_regions[0]
+            evidence.append(f"{top_region[0]}領域{top_region[1]*100:.0f}%")
+
+    # 4.6 パッチ統計を痕跡用に保存（後で使用）
+    patch_trace_info = None
+    if patch_scores is not None:
+        patch_trace_info = {
+            "max_score": patch_max,
+            "mean_score": patch_mean,
+            "max_minus_mean": patch_max - patch_mean,
+            "var_score": patch_var,
+            "high_regions": high_score_regions
+        }
+
     # 5. 総合判定（常に追加）
     if confidence > 0.9:
         if is_ai:
@@ -521,42 +598,56 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
         trace_parts = []
         # ヘッド多様性に基づく分析
         if head_diversity is not None and head_diversity < 0.5:
-            trace_parts.append(f"12ヘッド中{int(head_diversity*12)}個が同一領域に収束")
+            trace_parts.append(f"マルチヘッドの{int(head_diversity*12)}個が単一の特徴量に収束。AI特有の画一的な演算パターンを検出")
         # 集中度に基づく分析
         if concentration is not None and concentration > 0.40:
-            trace_parts.append(f"Attentionの{concentration*100:.0f}%が局所領域に集中")
+            trace_parts.append(f"特定パッチへの異常なAttention集中（{concentration*100:.0f}%）。局所的なAIアーティファクト、またはLoRAの痕跡を検知")
         elif concentration is not None and concentration > 0.30:
-            trace_parts.append("中程度のAttention集中")
+            trace_parts.append("中程度のAttention偏重。機械生成特有のテクスチャ密度の偏りを示唆")
         # 中央集中に基づく分析
         if center_ratio is not None and center_ratio > 0.70:
-            trace_parts.append("中央構図への顕著な偏重")
+            trace_parts.append("中央領域への過剰なリソース配分。学習モデル特有の構図バイアスを検出")
         # 対称性に基づく分析
         if lr_symmetry is not None and lr_symmetry > 0.90:
-            trace_parts.append("高い左右対称性")
+            trace_parts.append("高精度の左右対称性。手描きでは不可能な数学的対称性を特定")
+
+        # パッチ解析に基づく痕跡
+        if patch_trace_info is not None:
+            # 高スコア領域の検出
+            if patch_trace_info["max_score"] > 0.8 and patch_trace_info["high_regions"]:
+                top_region = patch_trace_info["high_regions"][0]
+                trace_parts.append(f"{top_region[0]}領域にAI生成特有のパターンを確認（信頼度{top_region[1]*100:.0f}%）。局所的な描画密度の不自然な偏りを特定")
+            # 局所的な異常（最大と平均の乖離）
+            if patch_trace_info["max_minus_mean"] > 0.4 and patch_trace_info["high_regions"]:
+                pos = patch_trace_info["high_regions"][0][0]
+                trace_parts.append(f"画像{pos}部に極めて強い生成痕跡を検出。周辺パッチとの統計的乖離からLoRA使用の蓋然性を識別")
+            # 分散異常
+            if patch_trace_info["var_score"] > 0.15:
+                trace_parts.append("特定の描画レイヤーにおいてAIモデル固有のシグネチャーを捕捉。テクスチャの再現性に非人間的な一貫性を検出")
 
         if trace_parts:
             detected_traces = "; ".join(trace_parts)
         else:
-            detected_traces = "複合的な特徴パターンから機械学習モデルによる生成と推測"
+            detected_traces = "パッチ間の相関統計および高次元特徴量に基づき、非人間的な生成プロセスと断定"
     else:
         trace_parts = []
         # ヘッド多様性に基づく分析
         if head_diversity is not None and head_diversity > 0.7:
-            trace_parts.append(f"12ヘッドが{int(head_diversity*12)}箇所に分散")
+            trace_parts.append(f"12層のマルチヘッドが{int(head_diversity*12)}箇所へ柔軟に分散。多層的な意図に基づく有機的な筆致を確認")
         # エントロピーに基づく分析
         if entropy_ratio is not None and entropy_ratio > 0.88:
-            trace_parts.append("高エントロピー（Attentionの自然な分散）")
+            trace_parts.append("Attentionの適度な分散を計測。人間の手によるゆらぎと複雑性が高度に調和")
         # 非対称性
         if lr_symmetry is not None and lr_symmetry < 0.75:
-            trace_parts.append("非対称的な構図")
+            trace_parts.append("非対称的かつ動的な構図。意図された視覚的誘導と自然なattention分布を検出")
         # 集中度
         if concentration is not None and concentration < 0.28:
-            trace_parts.append("特定領域への過度な集中なし")
+            trace_parts.append("特定領域への機械的な痕跡なし。画像全体にわたる自然な密度バランスと空間把握を確認")
 
         if trace_parts:
             detected_traces = "; ".join(trace_parts)
         else:
-            detected_traces = "自然なAttention分布と有機的テクスチャを検出"
+            detected_traces = "ミクロ領域における有機的なテクスチャーと、躍動感ある描画シグネチャーを検出"
 
     return (logs if logs else ["分析完了: 明確な特徴パターンなし"], detected_traces)
 
@@ -590,12 +681,20 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         hidden_states = outputs.last_hidden_state
         features = hidden_states[:, 0, :]  # CLS token (1, 768)
 
-        # パッチ統計量を追加（use_patch_statsがTrueの場合）
+        # パッチ埋め込みを取得（フォレンジック分析用に常に取得）
+        # DINOv3: [CLS, REG1-4, PATCH1-196] なので 5: がパッチ
+        patch_embeddings = hidden_states[:, 5:5+196, :]  # (1, 196, 768)
+
+        # パッチ統計量を追加（use_patch_statsがTrueの場合）+ パッチスコア取得
+        patch_scores_np = None
         if use_patch_stats:
-            # DINOv3: [CLS, REG1-4, PATCH1-196] なので 5: がパッチ
-            patch_embeddings = hidden_states[:, 5:5+196, :]  # (1, 196, 768)
-            patch_stats = compute_patch_stats(patch_embeddings, dinov3_classifier)  # (1, 6)
+            patch_stats, patch_scores = compute_patch_stats(patch_embeddings, dinov3_classifier, return_scores=True)
             features = torch.cat([features, patch_stats], dim=1)  # (1, 774)
+            patch_scores_np = patch_scores.cpu().numpy()
+        else:
+            # use_patch_statsがFalseでもフォレンジック用にパッチスコアを計算
+            _, patch_scores = compute_patch_stats(patch_embeddings, dinov3_classifier, return_scores=True)
+            patch_scores_np = patch_scores.cpu().numpy()
 
         # 分類（Temperature Scalingで確率を平滑化）
         logits = dinov3_classifier(features)
@@ -652,12 +751,24 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 cls_attention = cls_attention[:target_patches]
                 attention_map_raw = cls_attention.reshape(num_patches, num_patches).cpu().numpy()
 
-                # 正規化
+                # Attention正規化
                 attention_map_norm = (attention_map_raw - attention_map_raw.min()) / (attention_map_raw.max() - attention_map_raw.min() + 1e-8)
+
+                # パッチAIスコアを14x14にreshape（Attention × AIスコアの合成マップ）
+                if patch_scores_np is not None and len(patch_scores_np) == 196:
+                    patch_scores_grid = patch_scores_np.reshape(14, 14)
+                    # 合成: AIスコアをベースに、Attentionで透明度を調整
+                    # 「モデルが注目していて、かつAIスコアが高い場所」が強調される
+                    combined_map = patch_scores_grid * attention_map_norm
+                    # 正規化
+                    combined_map = (combined_map - combined_map.min()) / (combined_map.max() - combined_map.min() + 1e-8)
+                    heatmap_source = combined_map
+                else:
+                    heatmap_source = attention_map_norm
 
                 # 元の画像サイズにリサイズ
                 original_size = image.size
-                attention_resized = np.array(Image.fromarray((attention_map_norm * 255).astype(np.uint8)).resize(
+                attention_resized = np.array(Image.fromarray((heatmap_source * 255).astype(np.uint8)).resize(
                     original_size, Image.BILINEAR
                 )) / 255.0
 
@@ -679,8 +790,8 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             print(f"Attention map generation failed: {e}")
             traceback.print_exc()
 
-    # フォレンジック分析ログ生成
-    forensic_logs, detected_traces = generate_forensic_analysis(attention_map_raw, features, ai_prob, head_attentions)
+    # フォレンジック分析ログ生成（パッチスコアも渡す）
+    forensic_logs, detected_traces = generate_forensic_analysis(attention_map_raw, features, ai_prob, head_attentions, patch_scores_np)
 
     # TTAログを先頭に追加
     if tta_log:

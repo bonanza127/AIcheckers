@@ -870,8 +870,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     <div className="relative w-full">
                       <div className={`active-image-container w-full h-72 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
                         <img
-                          src={showHeatmap && result?.attentionMap ? `data:image/png;base64,${result.attentionMap}` : previewImage}
-                          alt={showHeatmap ? "Attention Heatmap" : "Active Scan"}
+                          src={showHeatmap && result?.attentionMap && phase === "complete" ? `data:image/png;base64,${result.attentionMap}` : previewImage}
+                          alt={showHeatmap && phase === "complete" ? "Attention Heatmap" : "Active Scan"}
                           className="max-w-full max-h-full object-contain"
                         />
                       </div>
