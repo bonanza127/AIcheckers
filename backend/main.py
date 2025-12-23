@@ -52,6 +52,9 @@ RECOVERY_INTERVAL_HOURS = 1  # 1時間ごとに回復
 RECOVERY_AMOUNT = 1  # 通常: 1枚回復
 RECOVERY_AMOUNT_VIP = 10  # VIP: 10枚回復
 
+# 管理者アカウント（レート制限免除）
+ADMIN_EMAILS = {"hokhok7676@gmail.com"}
+
 # Test Time Augmentation (TTA): 水平反転で2回推論し平均化
 TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
 
@@ -292,28 +295,38 @@ def _recover_tokens(ip: str, is_vip: bool = False) -> None:
         data["last_recovery"] = current_hour
 
 
-def get_rate_limit_key(request: Request) -> tuple[str, bool]:
-    """リクエストからレート制限キーとVIPステータスを取得。
+def get_rate_limit_key(request: Request) -> tuple[str, bool, bool]:
+    """リクエストからレート制限キー、VIPステータス、管理者ステータスを取得。
     ログインユーザーはuser_id、非ログインはIPをキーにする。
+    Returns: (key, is_vip, is_admin)
     """
     # Authorizationヘッダーからユーザー情報を取得
     auth_header = request.headers.get("Authorization", "")
+    print(f"[DEBUG] auth_header: {auth_header[:50] if auth_header else 'None'}...")
     if auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
         payload = verify_jwt_token(token)
+        print(f"[DEBUG] payload: {payload}")
         if payload:
             user_id = payload.get("sub")
             email = payload.get("email")
             is_vip = email in vip_users if email else False
-            return user_id, is_vip
+            is_admin = email in ADMIN_EMAILS if email else False
+            print(f"[DEBUG] email={email}, is_admin={is_admin}, ADMIN_EMAILS={ADMIN_EMAILS}")
+            return user_id, is_vip, is_admin
 
     # 非ログインユーザーはIPをキーにする
     ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.client.host
-    return ip, False
+    print(f"[DEBUG] No auth, using IP: {ip}")
+    return ip, False, False
 
 
-def check_rate_limit(key: str, is_vip: bool = False) -> tuple[bool, int, int]:
+def check_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False) -> tuple[bool, int, int]:
     """レート制限チェック。(許可されているか, 残り回数, 上限) を返す"""
+    # 管理者は無制限
+    if is_admin:
+        return True, 9999, 9999
+
     max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
 
     if not RATE_LIMIT_ENABLED:
@@ -324,8 +337,12 @@ def check_rate_limit(key: str, is_vip: bool = False) -> tuple[bool, int, int]:
     return data["tokens"] > 0, data["tokens"], max_tokens
 
 
-def increment_rate_limit(key: str, is_vip: bool = False) -> None:
+def increment_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False) -> None:
     """トークンを1消費"""
+    # 管理者は消費しない
+    if is_admin:
+        return
+
     if not RATE_LIMIT_ENABLED:
         return  # 無効時は消費しない
 
@@ -346,8 +363,8 @@ async def root():
 @app.get("/health")
 async def health_check(request: Request):
     # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
-    key, is_vip = get_rate_limit_key(request)
-    _, remaining, limit = check_rate_limit(key, is_vip)
+    key, is_vip, is_admin = get_rate_limit_key(request)
+    _, remaining, limit = check_rate_limit(key, is_vip, is_admin)
 
     return {
         "status": "healthy" if dinov3_model is not None and dinov3_classifier is not None else "unhealthy",
@@ -633,10 +650,10 @@ async def analyze_image(
     画像を解析してAI生成かどうかを判定（Moonlightのみ）
     """
     # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
-    key, is_vip = get_rate_limit_key(request)
+    key, is_vip, is_admin = get_rate_limit_key(request)
 
     # レート制限チェック
-    allowed, remaining, limit = check_rate_limit(key, is_vip)
+    allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
     if not allowed:
         return JSONResponse(
             status_code=429,
@@ -659,8 +676,8 @@ async def analyze_image(
         if image_hash in result_cache:
             cached = result_cache[image_hash]
             # キャッシュヒット時もレート制限カウント増加
-            increment_rate_limit(key, is_vip)
-            _, remaining_after, limit_after = check_rate_limit(key, is_vip)
+            increment_rate_limit(key, is_vip, is_admin)
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
             return JSONResponse(
                 content={**cached, "cached": True, "filename": file.filename},
                 headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
@@ -692,8 +709,8 @@ async def analyze_image(
         result_cache[image_hash] = cache_data
 
         # レート制限カウント増加
-        increment_rate_limit(key, is_vip)
-        _, remaining_after, limit_after = check_rate_limit(key, is_vip)
+        increment_rate_limit(key, is_vip, is_admin)
+        _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
 
         return JSONResponse(
             content=response_data,
@@ -735,10 +752,10 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
     URLから画像を取得して解析（Moonlightのみ）
     """
     # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
-    key, is_vip = get_rate_limit_key(request)
+    key, is_vip, is_admin = get_rate_limit_key(request)
 
     # レート制限チェック
-    allowed, remaining, limit = check_rate_limit(key, is_vip)
+    allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
     if not allowed:
         return JSONResponse(
             status_code=429,
@@ -787,8 +804,8 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         image_hash = get_image_hash(contents)
         if image_hash in result_cache:
             cached = result_cache[image_hash]
-            increment_rate_limit(key, is_vip)
-            _, remaining_after, limit_after = check_rate_limit(key, is_vip)
+            increment_rate_limit(key, is_vip, is_admin)
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
             filename = url.split("/")[-1].split("?")[0] or "image_from_url"
             return JSONResponse(
                 content={**cached, "cached": True, "filename": filename, "source_url": body.url},
@@ -826,8 +843,8 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         result_cache[image_hash] = cache_data
 
         # レート制限カウント増加
-        increment_rate_limit(key, is_vip)
-        _, remaining_after, limit_after = check_rate_limit(key, is_vip)
+        increment_rate_limit(key, is_vip, is_admin)
+        _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
 
         return JSONResponse(
             content=response_data,

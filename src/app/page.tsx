@@ -309,9 +309,13 @@ export default function Home() {
 
     try {
       const apiUrl = getApiUrl();
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (authUser?.token) {
+        headers["Authorization"] = `Bearer ${authUser.token}`;
+      }
       const response = await fetch(`${apiUrl}/analyze-url`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ url: urlInput, model: selectedModel })
       });
 
@@ -444,10 +448,15 @@ export default function Home() {
 
     try {
       const apiUrl = getApiUrl();
+      const headers: HeadersInit = {};
+      if (authUser?.token) {
+        headers["Authorization"] = `Bearer ${authUser.token}`;
+      }
       const [response] = await Promise.all([
         fetch(`${apiUrl}/analyze`, {
           method: "POST",
           body: formData,
+          headers,
         }),
         scanDelayPromise
       ]);
@@ -587,6 +596,9 @@ export default function Home() {
           ? `最終判定: 判定困難 (${aiScore}%)`
           : `最終判定: 人間による創作物 (${aiScore}%)`;
     addLog(logMessage, rateLimitError ? "error" : "result");
+
+    // レート制限エラーを返す（バッチ中断用）
+    return { rateLimitError };
   };
 
   const startBatchScan = async () => {
@@ -600,15 +612,28 @@ export default function Home() {
     setBatchProgress({ current: 0, total: files.length });
     addLog("--- BATCH SCAN INITIATED (一括解析開始) ---", "heading");
 
+    let completedCount = 0;
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
-      await processFile(files[i], queueSnapshot[i]?.id || "", i + 1, files.length);
+      const result = await processFile(files[i], queueSnapshot[i]?.id || "", i + 1, files.length);
+
+      // レート制限に達したらバッチを中断
+      if (result?.rateLimitError) {
+        const remaining = files.length - i - 1;
+        addLog(`--- BATCH SCAN ABORTED (レート制限により中断) ---`, "error");
+        addLog(`STATUS: ${remaining}個のアーティファクトが未処理です。しばらく待ってから再試行してください。`, "error");
+        break;
+      }
+      completedCount++;
     }
 
     setIsScanning(false);
     setStartTime(null);
-    addLog("--- BATCH SCAN COMPLETE (一括解析完了) ---", "heading");
-    addLog(`STATUS: 全ての${files.length}個のアーティファクトの処理が完了しました。`, "process");
+
+    if (completedCount === files.length) {
+      addLog("--- BATCH SCAN COMPLETE (一括解析完了) ---", "heading");
+      addLog(`STATUS: 全ての${files.length}個のアーティファクトの処理が完了しました。`, "process");
+    }
 
     // Clear pending files
     (window as unknown as { _pendingFiles: File[] })._pendingFiles = [];

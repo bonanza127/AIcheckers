@@ -71,10 +71,14 @@ def load_embeddings():
 
 def train_classifier(X, y, epochs=30, lr=0.001,
                      vat_epsilon=0.005, vat_alpha_start=0.05, vat_alpha_end=0.3,
-                     entropy_start_epoch=15, entropy_alpha_end=0.1):
-    """Linear Probe分類器を学習（全エポックVAT + Entropy Minimization）
+                     entropy_start_epoch=20, entropy_alpha_end=0.05,
+                     entropy_threshold=0.9, entropy_temperature=0.6,
+                     cons_start_epoch=5, cons_alpha=0.15,
+                     cons_weak_sigma=0.02, cons_strong_sigma=0.08, cons_mask_ratio=0.2):
+    """Linear Probe分類器を学習（VAT + Entropy Minimization + Consistency Regularization）
 
     - Epoch 0〜end: VAT（勾配ベース敵対的ノイズ）+ αウォームアップ
+    - Epoch cons_start_epoch〜end: Consistency Regularization（embedding空間）
     - Epoch entropy_start_epoch〜end: Entropy Minimization追加
     """
     from torch.utils.data import DataLoader, TensorDataset
@@ -87,7 +91,8 @@ def train_classifier(X, y, epochs=30, lr=0.001,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nTraining on {device}")
     print(f"VAT: ε={vat_epsilon}, α={vat_alpha_start}→{vat_alpha_end} (全エポック)")
-    print(f"Entropy Minimization: starts at epoch {entropy_start_epoch}, α=0→{entropy_alpha_end}")
+    print(f"Consistency: epoch {cons_start_epoch}〜, α={cons_alpha}, weak_σ={cons_weak_sigma}, strong_σ={cons_strong_sigma}, mask={cons_mask_ratio}")
+    print(f"Entropy Minimization: epoch {entropy_start_epoch}〜, α=0→{entropy_alpha_end}, τ={entropy_threshold}, T={entropy_temperature}")
 
     # Shuffle
     perm = np.random.permutation(len(X))
@@ -120,11 +125,15 @@ def train_classifier(X, y, epochs=30, lr=0.001,
     best_acc = 0.0
     best_state = None
     nan_skip_count = 0
+    em_loss_sum = 0.0
+    em_count_sum = 0
 
     for epoch in range(epochs):
         # Training
         model.train()
         train_loss = 0
+        em_loss_sum = 0.0
+        em_count_sum = 0
 
         # VAT用αのウォームアップ（全エポックで線形増加）
         vat_alpha = vat_alpha_start + (vat_alpha_end - vat_alpha_start) * (epoch / max(epochs - 1, 1))
@@ -181,12 +190,44 @@ def train_classifier(X, y, epochs=30, lr=0.001,
             # 合計ロス
             loss = main_loss + vat_alpha * vat_loss
 
-            # Entropy Minimization（中盤から投入）
+            # Entropy Minimization（終盤、高信頼度サンプルのみ）
             if use_entropy:
-                probs = F.softmax(logits, dim=1)
-                # 正規化: log(C)で割って0.0〜1.0の範囲に
-                entropy_loss = -torch.mean(torch.sum(probs * torch.log(probs + 1e-8), dim=1)) / LOG_NUM_CLASSES
-                loss = loss + entropy_alpha * entropy_loss
+                # 温度付きsoftmaxで分布を尖らせる
+                probs = F.softmax(logits / entropy_temperature, dim=1)
+                confidence, _ = torch.max(probs, dim=1)
+
+                # 信頼度がτ以上のサンプルのみにEM適用
+                high_conf_mask = confidence >= entropy_threshold
+                n_high_conf = high_conf_mask.sum().item()
+                em_count_sum += n_high_conf
+                if n_high_conf > 0:
+                    probs_high = probs[high_conf_mask]
+                    # 正規化: log(C)で割って0.0〜1.0の範囲に
+                    entropy_loss = -torch.mean(torch.sum(probs_high * torch.log(probs_high + 1e-8), dim=1)) / LOG_NUM_CLASSES
+                    loss = loss + entropy_alpha * entropy_loss
+                    em_loss_sum += entropy_loss.item()
+
+            # Consistency Regularization（embedding空間での擬似augmentation）
+            if epoch >= cons_start_epoch:
+                # Weak augmentation: 軽いGaussian noise
+                noise_weak = torch.randn_like(batch_x) * cons_weak_sigma
+                x_weak = batch_x + noise_weak
+
+                # Strong augmentation: 強いnoise + feature masking
+                noise_strong = torch.randn_like(batch_x) * cons_strong_sigma
+                mask = (torch.rand(batch_x.shape, device=device) > cons_mask_ratio).float()
+                x_strong = (batch_x + noise_strong) * mask
+
+                # Teacher (weak) の予測をdetach
+                with torch.no_grad():
+                    p_weak = F.softmax(model(x_weak), dim=1)
+
+                # Student (strong) の予測
+                p_strong = F.log_softmax(model(x_strong), dim=1)
+
+                # Consistency Loss: KL(weak || strong)
+                cons_loss = F.kl_div(p_strong, p_weak, reduction='batchmean')
+                loss = loss + cons_alpha * cons_loss
 
             # NaNチェック（step()前に確認）
             if torch.isnan(loss):
@@ -218,8 +259,13 @@ def train_classifier(X, y, epochs=30, lr=0.001,
             best_state = model.state_dict().copy()
 
         if (epoch + 1) % 5 == 0:
-            em_str = f", EM α={entropy_alpha:.3f}" if use_entropy else ""
-            print(f"Epoch {epoch+1}/{epochs} - Loss: {train_loss/len(train_loader):.4f} - Val Acc: {val_acc*100:.2f}% (VAT α={vat_alpha:.3f}{em_str})")
+            cons_str = ", Cons" if epoch >= cons_start_epoch else ""
+            if use_entropy:
+                avg_em = em_loss_sum / max(len(train_loader), 1)
+                em_str = f", EM={avg_em:.4f} ({em_count_sum})"
+            else:
+                em_str = ""
+            print(f"Epoch {epoch+1}/{epochs} - Loss: {train_loss/len(train_loader):.4f} - Val Acc: {val_acc*100:.2f}% (VAT α={vat_alpha:.3f}{cons_str}{em_str})")
 
     print(f"\nBest Validation Accuracy: {best_acc*100:.2f}%")
     if nan_skip_count > 0:
