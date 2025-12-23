@@ -40,6 +40,7 @@ device = None
 dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
+use_patch_stats = False  # パッチ統計量を使用するかどうか
 
 # キャッシュ: 画像ハッシュ -> 解析結果（最大10,000件、約1MB）
 result_cache: LRUCache = LRUCache(maxsize=10000)
@@ -164,7 +165,7 @@ HF_TOKEN = "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"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """起動時にMoonlight (DINOv3) をロード"""
-    global device, dinov3_model, dinov3_processor, dinov3_classifier, vip_users, users_db
+    global device, dinov3_model, dinov3_processor, dinov3_classifier, use_patch_stats, vip_users, users_db
 
     # ユーザーデータをロード
     users_db = load_users()
@@ -192,13 +193,15 @@ async def lifespan(app: FastAPI):
         dinov3_model.to(device)
         dinov3_model.eval()
 
-        # 分類器ロード
+        # 分類器ロード（入力次元を動的に取得）
         if DINOV3_CLASSIFIER_PATH.exists():
             checkpoint = torch.load(DINOV3_CLASSIFIER_PATH, map_location=device)
-            dinov3_classifier = nn.Linear(768, 2).to(device)
+            input_dim = checkpoint.get("input_dim", 768)  # デフォルト768（後方互換）
+            dinov3_classifier = nn.Linear(input_dim, 2).to(device)
             dinov3_classifier.load_state_dict(checkpoint["classifier"])
             dinov3_classifier.eval()
-            print(f"Moonlight classifier loaded! (val_acc: {checkpoint.get('val_acc', 'N/A')})")
+            use_patch_stats = checkpoint.get("use_patch_stats", input_dim > 768)  # 774次元なら自動でTrue
+            print(f"Moonlight classifier loaded! (input_dim: {input_dim}, patch_stats: {use_patch_stats}, val_acc: {checkpoint.get('val_acc', 'N/A')})")
         else:
             raise Exception(f"Classifier not found at {DINOV3_CLASSIFIER_PATH}")
 
@@ -374,6 +377,41 @@ async def health_check(request: Request):
     }
 
 
+def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear) -> torch.Tensor:
+    """
+    パッチ埋め込みから統計量を計算（推論時用）
+
+    Args:
+        patch_embeddings: (1, 196, 768) パッチ埋め込み
+        classifier: 768→2の分類器（パッチスコア計算用）
+
+    Returns:
+        (1, 6) パッチ統計量
+    """
+    HIGH_SCORE_THRESHOLD = 0.8
+
+    with torch.no_grad():
+        # パッチごとのAIスコアを計算（768次元入力）
+        # 774次元分類器の場合は先頭768次元のみ使用
+        weight = classifier.weight[:, :768]  # (2, 768)
+        bias = classifier.bias
+        flat_patches = patch_embeddings.reshape(-1, 768)  # (196, 768)
+        logits = torch.mm(flat_patches, weight.t()) + bias  # (196, 2)
+        probs = torch.softmax(logits, dim=1)
+        ai_scores = probs[:, 1]  # (196,)
+
+        # 統計量計算
+        patch_mean = ai_scores.mean()
+        patch_max = ai_scores.max()
+        patch_var = ai_scores.var()
+        max_minus_mean = patch_max - patch_mean
+        embed_var_mean = patch_embeddings[0].var(dim=0).mean()
+        count_high_score = (ai_scores >= HIGH_SCORE_THRESHOLD).float().mean()
+
+        stats = torch.stack([patch_mean, patch_max, patch_var, max_minus_mean, embed_var_mean, count_high_score])
+        return stats.unsqueeze(0)  # (1, 6)
+
+
 def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor, ai_prob: float, head_attentions: np.ndarray = None) -> tuple:
     """
     DINOv3の内部分析からフォレンジック風のログを生成
@@ -523,6 +561,20 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
     return (logs if logs else ["分析完了: 明確な特徴パターンなし"], detected_traces)
 
 
+def get_verdict(ai_score: float) -> str:
+    """AIスコアに基づいてverdict（判定結果）を返す"""
+    if ai_score >= 80:
+        return "AI DETECTED"
+    elif ai_score >= 60:
+        return "HIGH ALERT"
+    elif ai_score >= 40:
+        return "UNKNOWN"
+    elif ai_score >= 20:
+        return "MINOR CAUTION"
+    else:
+        return "HUMAN CONFIRMED"
+
+
 async def analyze_with_dinov3(image: Image.Image) -> dict:
     """DINOv3 (ローカル) で解析 - Attention Map + フォレンジック分析付き"""
     if dinov3_model is None or dinov3_classifier is None:
@@ -535,7 +587,15 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     # 特徴抽出 + Attention Map
     with torch.no_grad():
         outputs = dinov3_model(**inputs, output_attentions=True)
-        features = outputs.last_hidden_state[:, 0, :]  # CLS token
+        hidden_states = outputs.last_hidden_state
+        features = hidden_states[:, 0, :]  # CLS token (1, 768)
+
+        # パッチ統計量を追加（use_patch_statsがTrueの場合）
+        if use_patch_stats:
+            # DINOv3: [CLS, REG1-4, PATCH1-196] なので 5: がパッチ
+            patch_embeddings = hidden_states[:, 5:5+196, :]  # (1, 196, 768)
+            patch_stats = compute_patch_stats(patch_embeddings, dinov3_classifier)  # (1, 6)
+            features = torch.cat([features, patch_stats], dim=1)  # (1, 774)
 
         # 分類（Temperature Scalingで確率を平滑化）
         logits = dinov3_classifier(features)
@@ -550,7 +610,12 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             inputs_flipped = dinov3_processor(images=image_flipped, return_tensors="pt")
             inputs_flipped = {k: v.to(device) for k, v in inputs_flipped.items()}
             outputs_flipped = dinov3_model(**inputs_flipped)
-            features_flipped = outputs_flipped.last_hidden_state[:, 0, :]
+            hidden_states_flipped = outputs_flipped.last_hidden_state
+            features_flipped = hidden_states_flipped[:, 0, :]
+            if use_patch_stats:
+                patch_embeddings_flipped = hidden_states_flipped[:, 5:5+196, :]
+                patch_stats_flipped = compute_patch_stats(patch_embeddings_flipped, dinov3_classifier)
+                features_flipped = torch.cat([features_flipped, patch_stats_flipped], dim=1)
             logits_flipped = dinov3_classifier(features_flipped)
             probs_flipped = torch.softmax(logits_flipped / TEMPERATURE, dim=1)[0]
             ai_prob_flipped = probs_flipped[1].item()
@@ -691,7 +756,7 @@ async def analyze_image(
             "ai_score": result["ai_score"],
             "human_score": result["human_score"],
             "confidence": result["confidence"],
-            "verdict": "AI DETECTED" if result["is_ai"] else "HUMAN CONFIRMED",
+            "verdict": get_verdict(result["ai_score"]),
             "processing_time": round(processing_time, 3),
             "filename": file.filename,
             "model_used": result["model_used"],
@@ -824,7 +889,7 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
             "ai_score": result["ai_score"],
             "human_score": result["human_score"],
             "confidence": result["confidence"],
-            "verdict": "AI DETECTED" if result["is_ai"] else "HUMAN CONFIRMED",
+            "verdict": get_verdict(result["ai_score"]),
             "processing_time": round(processing_time, 3),
             "filename": filename,
             "source_url": body.url,

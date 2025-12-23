@@ -277,7 +277,75 @@ loss = main_loss + lambda_cons * L_cons
 
 ---
 
-### 8. バッチ内クラスバランス制約 H(Batch)
+### 8. パッチ別スコア分析（Patch-wise Score Analysis）
+
+**フェーズ**: 推論時
+**状態**: 🟡 未実装（推奨）
+
+```python
+# DINOv3は画像を197トークンに分割: [CLS] + 196パッチ (14×14)
+# 現在は[CLS]のみ使用 → 全パッチを活用して局所的AI度を検出
+
+# 推論時（オンライン計算、保存不要）
+with torch.no_grad():
+    # 全トークン出力を取得
+    outputs = dino_model(image, return_dict=True)
+    patch_features = outputs.last_hidden_state[:, 1:, :]  # [1, 196, 768]
+
+    # パッチごとにAIスコア計算
+    patch_logits = classifier(patch_features.squeeze(0))  # [196, 2]
+    patch_scores = F.softmax(patch_logits, dim=1)[:, 1].numpy()  # [196]
+
+    # 統計量計算
+    mean_score = np.mean(patch_scores)
+    max_score = np.max(patch_scores)
+    variance = np.var(patch_scores)
+
+    # 実務的指標
+    max_minus_mean = max_score - mean_score
+    practical_score = max_minus_mean + variance
+
+# 出力例
+{
+    "ai_score": 0.85,           # 従来の[CLS]ベーススコア
+    "patch_variance": 0.12,     # パッチ間ばらつき
+    "max_minus_mean": 0.25,     # 局所的AI度の突出
+    "lora_blend_flag": true     # 複数LoRA使用疑いフラグ
+}
+```
+
+**原理**:
+- 人間の絵: 全体的に均一なスコア分布（筆致が一貫）
+- LoRA重ね合わせ: 顔は99%、背景は60%のようなムラが出る
+- 「顔LoRA」「服LoRA」「背景LoRA」の境界でスコアが乖離
+
+**統計量の選択**:
+| 指標 | 用途 |
+|------|------|
+| Variance | 基本指標 |
+| Max − Mean | 一部だけ異常にAIっぽい場合を検出 |
+| Skewness（歪度） | LoRA顔が突出するケースに強い |
+| Top-k mean − global mean | 上位10%パッチだけ異常か |
+
+**実務的推奨**: `(max - mean) + variance` で十分効く
+
+**顔検出は不要**:
+- DINOパッチは空間構造を保持
+- 高スコアパッチが自然に空間クラスタを形成
+- 顔検出は可視化用に後から使えばいい
+
+**ストレージ**:
+- ❌ 全パッチembedding保存: 197 × 768 × 4bytes = 605KB/画像（現状の200倍）
+- ✅ 推論時オンライン計算 → 最終スコア+フラグのみ保存
+
+**適用条件**:
+- ✅ 複数LoRA重ね合わせ検出に有効
+- ✅ 追加ストレージ不要（オンライン計算）
+- ⚠️ 推論時間が若干増加（パッチ分類 × 196）
+
+---
+
+### 9. バッチ内クラスバランス制約 H(Batch)
 
 **フェーズ**: 学習時
 **状態**: 🟡 クラス不均衡時に検討
@@ -310,6 +378,7 @@ loss = main_loss - lambda_batch * batch_entropy  # マイナスで最大化
 |-----------|-------------|---------------|--------|
 | TTA | 推論 | - | 水平反転のみ |
 | Temperature Scaling | 推論 | T | 1.5（通常）、0.02-0.04（SS-VAT teacher） |
+| Patch-wise Analysis | 推論 | - | (max-mean)+variance ⭐LoRA対策 |
 | VAT | 学習 | ε, α | ε=0.005-0.01, α=0.05→0.3 |
 | Entropy Minimization | 学習 | α, start_epoch | α=0→0.1, start=15 |
 | Label Smoothing | 学習 | smoothing | 0.1 |
@@ -325,9 +394,10 @@ loss = main_loss - lambda_batch * batch_entropy  # マイナスで最大化
 3. [ ] VAT適用（εの最適値を探索）
 4. [ ] Temperature Scaling（検証データでTを調整）
 5. [ ] TTA有効化（推論時）
-6. [ ] Label Smoothing検討
-7. [ ] クラスバランス確認（不均衡ならH(Batch)追加）
-8. [ ] SS-VAT移行時: Consistency Regularization追加（最優先）
+6. [ ] Patch-wise Analysis（LoRA重ね合わせ対策）
+7. [ ] Label Smoothing検討
+8. [ ] クラスバランス確認（不均衡ならH(Batch)追加）
+9. [ ] SS-VAT移行時: Consistency Regularization追加（最優先）
 
 ---
 
