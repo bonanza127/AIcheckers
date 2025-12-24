@@ -1182,11 +1182,13 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <Search className="w-4 h-4" />
                 <span>スキャン開始</span>
                 <span className="font-normal">
-                  - 残り{rateLimitRemaining ?? "--"}/{authUser?.isVip ? "240" : "24"}枚
+                  - 残り{rateLimitRemaining === -1 ? "∞" : (rateLimitRemaining ?? "--")}/{rateLimitRemaining === -1 ? "∞" : (authUser?.isVip ? "240" : "24")}枚
                 </span>
-                <span className="text-xs opacity-70 font-normal">
-                  (1時間刻みで{authUser?.isVip ? "10" : "1"}枚回復)
-                </span>
+                {rateLimitRemaining !== -1 && (
+                  <span className="text-xs opacity-70 font-normal">
+                    (1時間刻みで{authUser?.isVip ? "10" : "1"}枚回復)
+                  </span>
+                )}
               </button>
               <button
                 onClick={handleTrashClick}

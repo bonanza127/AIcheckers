@@ -324,9 +324,9 @@ def get_rate_limit_key(request: Request) -> tuple[str, bool, bool]:
 
 def check_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False) -> tuple[bool, int, int]:
     """レート制限チェック。(許可されているか, 残り回数, 上限) を返す"""
-    # 管理者は無制限
+    # 管理者は無制限（-1で無限を示す）
     if is_admin:
-        return True, 9999, 9999
+        return True, -1, -1
 
     max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
 
