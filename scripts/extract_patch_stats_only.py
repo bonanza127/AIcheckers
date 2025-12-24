@@ -39,26 +39,45 @@ def load_model():
 
 
 def load_classifier(device):
-    """分類器をロード（パッチスコア計算用）"""
-    if not CLASSIFIER_PATH.exists():
-        print(f"[WARN] Classifier not found at {CLASSIFIER_PATH}")
-        return None
+    """分類器をロード（パッチスコア計算用）- 768d CLS-only版を使用"""
+    # パッチスコア計算には768次元分類器が必要
+    cls_only_path = CLASSIFIER_PATH.with_name("dinov3_classifier_cls_only.pt")
 
-    checkpoint = torch.load(CLASSIFIER_PATH, map_location=device, weights_only=True)
-    classifier = nn.Linear(768, 2)
-    classifier.load_state_dict(checkpoint["classifier"])
-    classifier.to(device)
-    classifier.eval()
-    print(f"[INFO] Loaded classifier from {CLASSIFIER_PATH}")
-    return classifier
+    if cls_only_path.exists():
+        checkpoint = torch.load(cls_only_path, map_location=device, weights_only=True)
+        input_dim = checkpoint.get("input_dim", 768)
+        classifier = nn.Linear(input_dim, 2)
+        classifier.load_state_dict(checkpoint["classifier"])
+        classifier.to(device)
+        classifier.eval()
+        print(f"[INFO] Loaded 768d classifier from {cls_only_path}")
+        return classifier
+    elif CLASSIFIER_PATH.exists():
+        # フォールバック: 774d分類器があってもパッチには使えないので警告
+        checkpoint = torch.load(CLASSIFIER_PATH, map_location=device, weights_only=True)
+        input_dim = checkpoint.get("input_dim", 768)
+        if input_dim != 768:
+            print(f"[ERROR] Only 774d classifier found, cannot use for patch scoring")
+            return None
+        classifier = nn.Linear(768, 2)
+        classifier.load_state_dict(checkpoint["classifier"])
+        classifier.to(device)
+        classifier.eval()
+        print(f"[INFO] Loaded 768d classifier from {CLASSIFIER_PATH}")
+        return classifier
+    else:
+        print(f"[ERROR] No classifier found")
+        return None
 
 
 def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear) -> np.ndarray:
     """パッチ統計量を計算"""
     batch_size = patch_embeddings.shape[0]
     num_patches = patch_embeddings.shape[1]  # 196
-    stats = np.zeros((batch_size, 6), dtype=np.float32)
+    grid_size = 14  # 14x14 patches
+    stats = np.zeros((batch_size, 7), dtype=np.float32)
     HIGH_SCORE_THRESHOLD = 0.8
+    HIGH_SIM_THRESHOLD = 0.85
 
     with torch.no_grad():
         # 分類器を通してパッチごとのAIスコアを計算
@@ -69,14 +88,25 @@ def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear) -
 
         for i in range(batch_size):
             scores = ai_scores[i].cpu().numpy()
-            patch_emb = patch_embeddings[i].cpu().numpy()
+            patch_emb = patch_embeddings[i]  # (196, 768)
 
             stats[i, 0] = np.mean(scores)                                    # patch_mean
             stats[i, 1] = np.max(scores)                                     # patch_max
             stats[i, 2] = np.var(scores)                                     # patch_var
             stats[i, 3] = stats[i, 1] - stats[i, 0]                          # max_minus_mean
-            stats[i, 4] = patch_emb.var(axis=0).mean()                       # embed_var_mean
+            stats[i, 4] = patch_emb.cpu().numpy().var(axis=0).mean()         # embed_var_mean
             stats[i, 5] = np.sum(scores >= HIGH_SCORE_THRESHOLD) / num_patches  # count_high_score
+
+            # [6] v_high_sim_85: 垂直方向の高類似度パッチ比率
+            patches_grid = patch_emb.reshape(grid_size, grid_size, -1)  # (14, 14, 768)
+            v_sims = []
+            for row in range(grid_size - 1):
+                for col in range(grid_size):
+                    current = patches_grid[row, col]
+                    down = patches_grid[row + 1, col]
+                    sim = F.cosine_similarity(current.unsqueeze(0), down.unsqueeze(0)).item()
+                    v_sims.append(sim)
+            stats[i, 6] = np.sum(np.array(v_sims) > HIGH_SIM_THRESHOLD) / len(v_sims)  # v_high_sim_85
 
     return stats
 
@@ -125,8 +155,9 @@ def extract_patch_stats(file_list: list, image_dir: Path, model, processor, devi
         # 特徴抽出
         with torch.no_grad():
             outputs = model(**inputs)
-            hidden_states = outputs.last_hidden_state
-            patch_emb = hidden_states[:, 1:, :]  # (batch, 196, 768)
+            # DINOv3: [CLS(0), REG1-4(1-4), PATCH1-196(5-200)] = 201 tokens
+            hidden_states = outputs.last_hidden_state  # (batch, 201, 768)
+            patch_emb = hidden_states[:, 5:5+196, :]  # (batch, 196, 768)
             patch_stats = compute_patch_stats(patch_emb, classifier)
 
         # 結果を正しい位置に挿入

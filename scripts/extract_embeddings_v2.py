@@ -5,13 +5,14 @@ CLSトークン + パッチ統計量を保存
 
 出力:
   - {name}.npy: CLSトークン (N, 768)
-  - {name}_patch_stats.npy: パッチ統計量 (N, 6)
+  - {name}_patch_stats.npy: パッチ統計量 (N, 7)
     - [0] patch_mean: パッチスコアの平均
     - [1] patch_max: パッチスコアの最大
     - [2] patch_var: パッチスコアの分散
     - [3] max_minus_mean: 最大 - 平均（局所的突出度）
     - [4] embed_var_mean: 次元ごとの分散の平均（パッチ多様性）
     - [5] count_high_score: スコア≥0.8のパッチ数 / 196（高スコア領域の割合）
+    - [6] v_high_sim_85: 垂直方向に隣接するパッチ間で類似度>0.85の割合
 
 注意:
   - 分類器がない場合は _sim_based サフィックスが付く
@@ -50,19 +51,28 @@ def load_model():
 
 
 def load_classifier(device):
-    """分類器をロード（パッチスコア計算用）"""
-    if not CLASSIFIER_PATH.exists():
-        print(f"[WARN] Classifier not found at {CLASSIFIER_PATH}")
+    """分類器をロード（パッチスコア計算用）- 768d CLS-only版を使用"""
+    # パッチスコア計算には768次元分類器が必要
+    cls_only_path = CLASSIFIER_PATH.with_name("dinov3_classifier_cls_only.pt")
+
+    if cls_only_path.exists():
+        checkpoint = torch.load(cls_only_path, map_location=device, weights_only=True)
+        input_dim = checkpoint.get("input_dim", 768)
+        classifier = nn.Linear(input_dim, 2)
+        classifier.load_state_dict(checkpoint["classifier"])
+        classifier.to(device)
+        classifier.eval()
+        print(f"[INFO] Loaded 768d classifier from {cls_only_path}")
+        return classifier
+    elif CLASSIFIER_PATH.exists():
+        # フォールバック: 774d分類器があってもパッチには使えないので警告
+        print(f"[WARN] Only 774d classifier found, cannot use for patch scoring")
         print("[WARN] Patch statistics will use embedding-based metrics only")
         return None
-
-    checkpoint = torch.load(CLASSIFIER_PATH, map_location=device, weights_only=True)
-    classifier = nn.Linear(768, 2)
-    classifier.load_state_dict(checkpoint["classifier"])
-    classifier.to(device)
-    classifier.eval()
-    print(f"[INFO] Loaded classifier from {CLASSIFIER_PATH}")
-    return classifier
+    else:
+        print(f"[WARN] No classifier found")
+        print("[WARN] Patch statistics will use embedding-based metrics only")
+        return None
 
 
 def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear = None) -> np.ndarray:
@@ -74,13 +84,15 @@ def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear = 
         classifier: 分類器（Noneの場合はembedding-based統計のみ）
 
     Returns:
-        stats: (batch, 6) パッチ統計量
+        stats: (batch, 7) パッチ統計量
     """
     batch_size = patch_embeddings.shape[0]
     num_patches = patch_embeddings.shape[1]  # 196
-    stats = np.zeros((batch_size, 6), dtype=np.float32)
+    grid_size = 14  # 14x14 patches
+    stats = np.zeros((batch_size, 7), dtype=np.float32)
 
     HIGH_SCORE_THRESHOLD = 0.8
+    HIGH_SIM_THRESHOLD = 0.85
 
     with torch.no_grad():
         if classifier is not None:
@@ -115,11 +127,22 @@ def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear = 
                 # 類似度ベースでは0.8以上を「高類似度」とみなす
                 stats[i, 5] = np.sum(cos_sims >= HIGH_SCORE_THRESHOLD) / num_patches
 
-        # embedding空間でのパッチ多様性（分類器有無に関わらず計算）
+        # embedding空間でのパッチ多様性 + 垂直方向の高類似度パッチ比率（分類器有無に関わらず計算）
         for i in range(batch_size):
-            patch_emb = patch_embeddings[i].cpu().numpy()  # (196, 768)
+            patch_emb = patch_embeddings[i]  # (196, 768) - keep as tensor
             # 次元ごとの分散の平均 = パッチ間の多様性
-            stats[i, 4] = patch_emb.var(axis=0).mean()  # embed_var_mean
+            stats[i, 4] = patch_emb.cpu().numpy().var(axis=0).mean()  # embed_var_mean
+
+            # [6] v_high_sim_85: 垂直方向の高類似度パッチ比率
+            patches_grid = patch_emb.reshape(grid_size, grid_size, -1)  # (14, 14, 768)
+            v_sims = []
+            for row in range(grid_size - 1):
+                for col in range(grid_size):
+                    current = patches_grid[row, col]
+                    down = patches_grid[row + 1, col]
+                    sim = F.cosine_similarity(current.unsqueeze(0), down.unsqueeze(0)).item()
+                    v_sims.append(sim)
+            stats[i, 6] = np.sum(np.array(v_sims) > HIGH_SIM_THRESHOLD) / len(v_sims)  # v_high_sim_85
 
     return stats
 
@@ -160,13 +183,14 @@ def extract_embeddings(image_dir: Path, model, processor, device, classifier=Non
         # 特徴抽出
         with torch.no_grad():
             outputs = model(**inputs)
-            hidden_states = outputs.last_hidden_state  # (batch, 197, 768)
+            # DINOv3: [CLS(0), REG1-4(1-4), PATCH1-196(5-200)] = 201 tokens
+            hidden_states = outputs.last_hidden_state  # (batch, 201, 768)
 
             # CLSトークン
             cls_emb = hidden_states[:, 0, :].cpu().numpy()  # (batch, 768)
 
-            # パッチトークン
-            patch_emb = hidden_states[:, 1:, :]  # (batch, 196, 768)
+            # パッチトークン（REGトークンをスキップ）
+            patch_emb = hidden_states[:, 5:5+196, :]  # (batch, 196, 768)
 
             # パッチ統計量
             patch_stats = compute_patch_stats(patch_emb, classifier)
@@ -236,6 +260,7 @@ def main():
     print(f"  [3] max_minus_mean:   {patch_stats[:, 3].mean():.4f} ± {patch_stats[:, 3].std():.4f}")
     print(f"  [4] embed_var_mean:   {patch_stats[:, 4].mean():.4f} ± {patch_stats[:, 4].std():.4f}")
     print(f"  [5] count_high_score: {patch_stats[:, 5].mean():.4f} ± {patch_stats[:, 5].std():.4f}")
+    print(f"  [6] v_high_sim_85:    {patch_stats[:, 6].mean():.4f} ± {patch_stats[:, 6].std():.4f}")
 
 
 if __name__ == "__main__":

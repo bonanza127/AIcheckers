@@ -95,6 +95,44 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const authStatus = params.get("auth");
     const vipStatus = params.get("vip");
+    const magicToken = params.get("magic_token");
+    const magicError = params.get("error");
+
+    // マジックリンクエラー処理
+    if (magicError === "magic_link_expired") {
+      setLogs(prev => [...prev, {
+        type: "error" as const,
+        message: "マジックリンクの有効期限が切れています。"
+      }]);
+      window.history.replaceState({}, "", window.location.pathname);
+      setIsAuthLoading(false);
+      return;
+    } else if (magicError === "invalid_magic_link") {
+      setLogs(prev => [...prev, {
+        type: "error" as const,
+        message: "無効なマジックリンクです。"
+      }]);
+      window.history.replaceState({}, "", window.location.pathname);
+      setIsAuthLoading(false);
+      return;
+    }
+
+    // マジックリンクログイン処理
+    if (magicToken) {
+      const name = params.get("name") || "Developer";
+      const email = params.get("email") || "";
+      const isVip = params.get("is_vip") === "true";
+
+      setAuthUser({ name, email, token: magicToken, isVip });
+      localStorage.setItem("auth_token", magicToken);
+      setLogs(prev => [...prev, {
+        type: "system" as const,
+        message: `🔑 Developer access granted. Welcome, ${name}!`
+      }]);
+      window.history.replaceState({}, "", window.location.pathname);
+      setIsAuthLoading(false);
+      return;
+    }
 
     // VIP決済成功/キャンセル処理
     if (vipStatus === "success") {

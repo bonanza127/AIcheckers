@@ -35,10 +35,10 @@ export default function HowItWorks() {
             生成AIの急速な発展により、AIの判別が非常に難しくなっています。
           </p>
           <p className="text-muted leading-relaxed mt-3">
-            AIそのものの是非はともかく、AI生成画像を自作と偽ってプラットフォームに投稿したり、不正にマネタイズするような行為は対策されるべきでしょう。
+            AIそのものの是非はともかく、生成画像を自作と偽って投稿したり、AI禁止のプラットフォームで不正にマネタイズするような行為は明確に悪であり、抑止されるべきです。
           </p>
           <p className="text-muted leading-relaxed mt-3">
-            海外にもAIチェッカーの類いはありますが、その多くはDeepfakeを念頭にした実写画像・動画が対象のものがほとんどで、アニメイラストをきちんと判別できるようなものは見当たりませんでした。
+            しかし残念ながら、現状はどのプラットフォームも対策が万全とは言い難く、直感によってAI作品を見分けるか、ユーザーからの指摘を受けて対応するしかないのが現状です。
           </p>
           <p className="text-muted leading-relaxed mt-3">
             そこでこうした状況に対策を講じるべく、<span className="text-accent font-bold">二次元イラストに特化した日本向けのAIチェッカー</span>を開発しました。

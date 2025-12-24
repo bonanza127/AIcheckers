@@ -54,7 +54,7 @@ RECOVERY_AMOUNT = 1  # 通常: 1枚回復
 RECOVERY_AMOUNT_VIP = 10  # VIP: 10枚回復
 
 # 管理者アカウント（レート制限免除）
-ADMIN_EMAILS = {"hokhok7676@gmail.com"}
+ADMIN_EMAILS = {"hokhok7676@gmail.com", "dlsite-trial@aicheckers.net"}
 
 # Test Time Augmentation (TTA): 水平反転で2回推論し平均化
 TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
@@ -311,8 +311,10 @@ def get_rate_limit_key(request: Request) -> tuple[str, bool, bool]:
         if payload:
             user_id = payload.get("sub")
             email = payload.get("email")
-            is_vip = email in vip_users if email else False
-            is_admin = email in ADMIN_EMAILS if email else False
+            # JWTにis_adminフラグがあればそれを使う（マジックリンク用）
+            jwt_is_admin = payload.get("is_admin", False)
+            is_admin = jwt_is_admin or (email in ADMIN_EMAILS if email else False)
+            is_vip = (email in vip_users or is_admin) if email else is_admin
             return user_id, is_vip, is_admin
 
     # 非ログインユーザーはIPをキーにする
@@ -387,14 +389,18 @@ def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear, r
         return_scores: Trueの場合、パッチスコア配列も返す
 
     Returns:
-        return_scores=False: (1, 6) パッチ統計量
-        return_scores=True: ((1, 6) パッチ統計量, (196,) パッチAIスコア)
+        return_scores=False: (1, 7) パッチ統計量
+        return_scores=True: ((1, 7) パッチ統計量, (196,) パッチAIスコア)
     """
+    import torch.nn.functional as F
+
     HIGH_SCORE_THRESHOLD = 0.8
+    HIGH_SIM_THRESHOLD = 0.85
+    grid_size = 14
 
     with torch.no_grad():
         # パッチごとのAIスコアを計算（768次元入力）
-        # 774次元分類器の場合は先頭768次元のみ使用
+        # 775次元分類器の場合は先頭768次元のみ使用
         weight = classifier.weight[:, :768]  # (2, 768)
         bias = classifier.bias
         flat_patches = patch_embeddings.reshape(-1, 768)  # (196, 768)
@@ -410,11 +416,23 @@ def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear, r
         embed_var_mean = patch_embeddings[0].var(dim=0).mean()
         count_high_score = (ai_scores >= HIGH_SCORE_THRESHOLD).float().mean()
 
-        stats = torch.stack([patch_mean, patch_max, patch_var, max_minus_mean, embed_var_mean, count_high_score])
+        # v_high_sim_85: 垂直方向の高類似度パッチ比率
+        patch_emb = patch_embeddings[0]  # (196, 768)
+        patches_grid = patch_emb.reshape(grid_size, grid_size, -1)  # (14, 14, 768)
+        v_sims = []
+        for row in range(grid_size - 1):
+            for col in range(grid_size):
+                current = patches_grid[row, col]
+                down = patches_grid[row + 1, col]
+                sim = F.cosine_similarity(current.unsqueeze(0), down.unsqueeze(0)).item()
+                v_sims.append(sim)
+        v_high_sim_85 = torch.tensor(sum(1 for s in v_sims if s > HIGH_SIM_THRESHOLD) / len(v_sims), device=patch_embeddings.device)
+
+        stats = torch.stack([patch_mean, patch_max, patch_var, max_minus_mean, embed_var_mean, count_high_score, v_high_sim_85])
 
         if return_scores:
-            return stats.unsqueeze(0), ai_scores  # (1, 6), (196,)
-        return stats.unsqueeze(0)  # (1, 6)
+            return stats.unsqueeze(0), ai_scores  # (1, 7), (196,)
+        return stats.unsqueeze(0)  # (1, 7)
 
 
 def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor, ai_prob: float, head_attentions: np.ndarray = None, patch_scores: np.ndarray = None) -> tuple:
@@ -603,7 +621,7 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
         if concentration is not None and concentration > 0.40:
             trace_parts.append(f"特定パッチへの異常なAttention集中（{concentration*100:.0f}%）。局所的なAIアーティファクト、またはLoRAの痕跡を検知")
         elif concentration is not None and concentration > 0.30:
-            trace_parts.append("中程度のAttention偏重。機械生成特有のテクスチャ密度の偏りを示唆")
+            trace_parts.append("特定領域にリソースが偏る生成モデル特有の局所的バイアスを検出")
         # 中央集中に基づく分析
         if center_ratio is not None and center_ratio > 0.70:
             trace_parts.append("中央領域への過剰なリソース配分。学習モデル特有の構図バイアスを検出")
@@ -1261,8 +1279,8 @@ async def auth_google_callback(request: Request):
         # JWT発行
         jwt_token = create_jwt_token(user_id, email)
 
-        # VIPステータス確認
-        is_vip = email in vip_users
+        # VIPステータス確認（ADMIN_EMAILSも自動VIP）
+        is_vip = email in vip_users or email in ADMIN_EMAILS
 
         return RedirectResponse(
             f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}"
@@ -1322,8 +1340,8 @@ async def auth_twitter_callback(request: Request):
         # JWT発行
         jwt_token = create_jwt_token(user_id, email)
 
-        # VIPステータス確認（Twitterユーザーはusernameで確認）
-        is_vip = email in vip_users or f"@{username}" in vip_users
+        # VIPステータス確認（Twitterユーザーはusernameで確認、ADMIN_EMAILSも自動VIP）
+        is_vip = email in vip_users or f"@{username}" in vip_users or email in ADMIN_EMAILS
 
         return RedirectResponse(
             f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}"
@@ -1350,7 +1368,8 @@ async def auth_me(request: Request):
     email = payload.get("email")
 
     user = users_db.get(user_id, {})
-    is_vip = email in vip_users
+    # ADMIN_EMAILSも自動的にVIP扱い
+    is_vip = email in vip_users or email in ADMIN_EMAILS
 
     return {
         "id": user_id,
@@ -1422,7 +1441,8 @@ async def auth_register(body: EmailRegisterRequest):
 
     # JWT発行
     jwt_token = create_jwt_token(user_id, email)
-    is_vip = email in vip_users
+    # ADMIN_EMAILSも自動的にVIP扱い
+    is_vip = email in vip_users or email in ADMIN_EMAILS
 
     return {
         "status": "success",
@@ -1456,7 +1476,8 @@ async def auth_login(body: EmailLoginRequest):
 
     # JWT発行
     jwt_token = create_jwt_token(user_id, email)
-    is_vip = email in vip_users
+    # ADMIN_EMAILSも自動的にVIP扱い
+    is_vip = email in vip_users or email in ADMIN_EMAILS
 
     return {
         "status": "success",
@@ -1465,6 +1486,49 @@ async def auth_login(body: EmailLoginRequest):
         "email": email,
         "is_vip": is_vip
     }
+
+
+# ==================== マジックリンク認証 ====================
+
+@app.get("/auth/magic/{token}")
+async def magic_link_login(token: str):
+    """マジックリンクでログイン（期間限定の開発者/VIPアクセス）"""
+    try:
+        # トークンを検証
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+        # マジックリンク用トークンかチェック
+        if payload.get("type") != "magic_link":
+            raise HTTPException(status_code=400, detail="Invalid token type")
+
+        email = payload.get("email")
+        name = payload.get("name", "Developer")
+        is_admin = payload.get("is_admin", False)
+
+        # 通常のログイン用JWTを発行（有効期限はマジックリンクの期限を引き継ぐ）
+        exp = payload.get("exp")
+        user_id = f"magic_{email}"
+
+        login_token = jwt.encode(
+            {
+                "sub": user_id,
+                "email": email,
+                "exp": exp,
+                "is_admin": is_admin,  # 管理者フラグを埋め込み
+            },
+            JWT_SECRET,
+            algorithm=JWT_ALGORITHM
+        )
+
+        # フロントエンドにリダイレクト（トークンをクエリパラメータで渡す）
+        redirect_url = f"https://aicheckers.net?magic_token={login_token}&name={name}&email={email}&is_vip=true"
+        return RedirectResponse(url=redirect_url)
+
+    except jwt.ExpiredSignatureError:
+        # 期限切れの場合、フロントエンドにエラーを伝える
+        return RedirectResponse(url="https://aicheckers.net?error=magic_link_expired")
+    except jwt.JWTError as e:
+        return RedirectResponse(url=f"https://aicheckers.net?error=invalid_magic_link")
 
 
 # ==================== PayPal決済 ====================

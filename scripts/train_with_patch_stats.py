@@ -13,7 +13,7 @@ import torch.nn as nn
 from pathlib import Path
 
 EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
-OUTPUT_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier_v2.pt")
+OUTPUT_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
 
 # AIカテゴリ（1=AI）
 AI_CATEGORIES = [
@@ -25,6 +25,9 @@ AI_CATEGORIES = [
     "flux1d_ai",
     "novelai_ai",
     "pixai_ai",
+    "novelai_aibooru_ai",  # aibooruのみ追加（品質良）
+    # "novelai_pixiv_ai",   # 除外（人間の絵が多数混入）
+    "twitter_novelai_all_ai",  # Twitter #NovelAI (2985枚)
 ]
 
 # Realカテゴリ（0=Real）
@@ -196,7 +199,7 @@ def main():
     args = parser.parse_args()
 
     use_patch_stats = not args.cls_only
-    mode_str = "CLS + patch_stats (774 dims)" if use_patch_stats else "CLS only (768 dims)"
+    mode_str = "CLS + patch_stats (775 dims)" if use_patch_stats else "CLS only (768 dims)"
 
     print("=" * 50)
     print(f"Training: {mode_str}")

@@ -27,6 +27,8 @@ AI_CATEGORIES = [
     "other_ai",
     "flux1d_ai",
     "novelai_ai",
+    "novelai_aibooru_ai",
+    "twitter_novelai_all_ai",
     "pixai_ai",
 ]
 
@@ -43,20 +45,22 @@ def load_model(device):
     if not MODEL_PATH.exists():
         return None, None
 
-    checkpoint = torch.load(MODEL_PATH, map_location=device)
+    checkpoint = torch.load(MODEL_PATH, map_location=device, weights_only=True)
 
     if isinstance(checkpoint, dict) and "classifier" in checkpoint:
         state_dict = checkpoint["classifier"]
         val_acc = checkpoint.get("val_acc", None)
+        input_dim = checkpoint.get("input_dim", 768)
     else:
         state_dict = checkpoint
         val_acc = None
+        input_dim = 768
 
-    model = nn.Linear(768, 2).to(device)
+    model = nn.Linear(input_dim, 2).to(device)
     model.load_state_dict(state_dict)
     model.eval()
 
-    return model, val_acc
+    return model, val_acc, input_dim
 
 
 def get_detection_rate(model, embeddings, device):
@@ -125,11 +129,13 @@ def run_diagnosis(verbose=False, quick=False):
 
     # モデルロード
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, val_acc = load_model(device)
+    model, val_acc, input_dim = load_model(device)
 
     if model is None:
         print("❌ モデルが見つかりません")
         return 1
+
+    print(f"📐 モデル次元: {input_dim}d")
 
     # カテゴリ別検出率
     print()
@@ -140,11 +146,16 @@ def run_diagnosis(verbose=False, quick=False):
 
     for cat in AI_CATEGORIES:
         npy_path = EMBEDDINGS_DIR / f"{cat}.npy"
+        stats_path = EMBEDDINGS_DIR / f"{cat}_patch_stats.npy"
         if not npy_path.exists():
             print(f"  {cat}: NOT FOUND")
             continue
 
         emb = np.load(npy_path)
+        # 775次元モデル（768+7）の場合、patch_statsを結合
+        if input_dim == 775 and stats_path.exists():
+            stats = np.load(stats_path)
+            emb = np.concatenate([emb, stats], axis=1)
         rate = get_detection_rate(model, emb, device)
         count = len(emb)
 
@@ -167,10 +178,14 @@ def run_diagnosis(verbose=False, quick=False):
         print("📊 Real判定率（参考）")
         for cat in REAL_CATEGORIES:
             npy_path = EMBEDDINGS_DIR / f"{cat}.npy"
+            stats_path = EMBEDDINGS_DIR / f"{cat}_patch_stats.npy"
             if not npy_path.exists():
                 continue
 
             emb = np.load(npy_path)
+            if input_dim == 775 and stats_path.exists():
+                stats = np.load(stats_path)
+                emb = np.concatenate([emb, stats], axis=1)
             X = torch.FloatTensor(emb).to(device)
 
             with torch.no_grad():

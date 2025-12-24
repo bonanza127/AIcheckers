@@ -20,6 +20,10 @@ AI_CATEGORIES = [
     "flux1d_ai",
     "novelai_ai",
     "pixai_ai",
+    "novelai_aibooru_ai",
+    # "novelai_pixiv_ai",  # 品質が低いため除外
+    # "twitter_novelai_ai",  # フィルタ済み版（1220枚）
+    "twitter_novelai_all_ai",  # 全2000枚（フィルタなし）
 ]
 
 # Realカテゴリ（0=Real）
@@ -28,30 +32,66 @@ REAL_CATEGORIES = [
 ]
 
 
-def load_embeddings():
-    """全embeddingsを読み込んで結合"""
+def load_embeddings(use_patch_stats=True):
+    """全embeddingsを読み込んで結合
+
+    Args:
+        use_patch_stats: TrueならCLS+patch_stats(774次元)、FalseならCLSのみ(768次元)
+    """
     ai_embeddings = []
     real_embeddings = []
 
     print("Loading AI embeddings...")
     for cat in AI_CATEGORIES:
-        npy_path = EMBEDDINGS_DIR / f"{cat}.npy"
-        if npy_path.exists():
-            emb = np.load(npy_path)
-            ai_embeddings.append(emb)
-            print(f"  {cat}: {emb.shape[0]} samples")
+        cls_path = EMBEDDINGS_DIR / f"{cat}.npy"
+        stats_path = EMBEDDINGS_DIR / f"{cat}_patch_stats.npy"
+
+        if not cls_path.exists():
+            print(f"  {cat}: CLS NOT FOUND, skipping")
+            continue
+
+        cls_emb = np.load(cls_path)
+
+        if use_patch_stats:
+            if not stats_path.exists():
+                print(f"  {cat}: patch_stats NOT FOUND, skipping")
+                continue
+            stats = np.load(stats_path)
+            # CLS + patch_stats を結合
+            emb = np.concatenate([cls_emb, stats], axis=1)
+            print(f"  {cat}: {emb.shape[0]} samples ({emb.shape[1]} dims)")
         else:
-            print(f"  {cat}: NOT FOUND")
+            emb = cls_emb
+            print(f"  {cat}: {emb.shape[0]} samples (768 dims)")
+
+        ai_embeddings.append(emb)
 
     print("\nLoading Real embeddings...")
     for cat in REAL_CATEGORIES:
-        npy_path = EMBEDDINGS_DIR / f"{cat}.npy"
-        if npy_path.exists():
-            emb = np.load(npy_path)
-            real_embeddings.append(emb)
-            print(f"  {cat}: {emb.shape[0]} samples")
+        cls_path = EMBEDDINGS_DIR / f"{cat}.npy"
+        stats_path = EMBEDDINGS_DIR / f"{cat}_patch_stats.npy"
+
+        if not cls_path.exists():
+            print(f"  {cat}: CLS NOT FOUND, skipping")
+            continue
+
+        cls_emb = np.load(cls_path)
+
+        if use_patch_stats:
+            if not stats_path.exists():
+                print(f"  {cat}: patch_stats NOT FOUND, skipping")
+                continue
+            stats = np.load(stats_path)
+            emb = np.concatenate([cls_emb, stats], axis=1)
+            print(f"  {cat}: {emb.shape[0]} samples ({emb.shape[1]} dims)")
         else:
-            print(f"  {cat}: NOT FOUND")
+            emb = cls_emb
+            print(f"  {cat}: {emb.shape[0]} samples (768 dims)")
+
+        real_embeddings.append(emb)
+
+    if not ai_embeddings or not real_embeddings:
+        raise ValueError("No embeddings loaded!")
 
     # 結合
     ai_all = np.concatenate(ai_embeddings, axis=0)
@@ -59,6 +99,7 @@ def load_embeddings():
 
     print(f"\nTotal AI samples: {ai_all.shape[0]}")
     print(f"Total Real samples: {real_all.shape[0]}")
+    print(f"Feature dimension: {ai_all.shape[1]}")
 
     # ラベル作成
     ai_labels = np.ones(ai_all.shape[0])
@@ -67,10 +108,10 @@ def load_embeddings():
     X = np.concatenate([ai_all, real_all], axis=0)
     y = np.concatenate([ai_labels, real_labels], axis=0)
 
-    return X, y
+    return X, y, ai_all.shape[1]  # input_dimも返す
 
 
-def train_classifier(X, y, epochs=30, lr=0.001,
+def train_classifier(X, y, input_dim, epochs=30, lr=0.001,
                      vat_epsilon=0.005, vat_alpha_start=0.05, vat_alpha_end=0.3,
                      entropy_start_epoch=20, entropy_alpha_end=0.05,
                      entropy_threshold=0.9, entropy_temperature=0.6,
@@ -81,6 +122,9 @@ def train_classifier(X, y, epochs=30, lr=0.001,
     - Epoch 0〜end: VAT（勾配ベース敵対的ノイズ）+ αウォームアップ
     - Epoch cons_start_epoch〜end: Consistency Regularization（embedding空間）
     - Epoch entropy_start_epoch〜end: Entropy Minimization追加
+
+    Args:
+        input_dim: 入力次元（768 or 774）
     """
     from torch.utils.data import DataLoader, TensorDataset
     import torch.nn.functional as F
@@ -117,8 +161,9 @@ def train_classifier(X, y, epochs=30, lr=0.001,
     train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=64, shuffle=True)
     val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=64)
 
-    # Model - 元のアーキテクチャ
-    model = nn.Linear(768, 2).to(device)
+    # Model - 動的次元対応
+    print(f"Input dimension: {input_dim}")
+    model = nn.Linear(input_dim, 2).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
@@ -274,36 +319,52 @@ def train_classifier(X, y, epochs=30, lr=0.001,
 
     # Save best model
     model.load_state_dict(best_state)
-    return model, best_acc
+    return model, best_acc, input_dim
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Train Linear Probe classifier")
+    parser.add_argument("--cls-only", action="store_true",
+                        help="Use CLS only (768 dims) instead of CLS+patch_stats (774 dims)")
+    parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
+    args = parser.parse_args()
+
+    use_patch_stats = not args.cls_only
+    mode_str = "CLS + patch_stats (774 dims)" if use_patch_stats else "CLS only (768 dims)"
+
     print("=" * 50)
-    print("Linear Probe Training from Saved Embeddings")
+    print(f"Linear Probe Training: {mode_str}")
     print("=" * 50)
 
     # Backup existing model first
-    if OUTPUT_PATH.exists():
+    output_path = OUTPUT_PATH if use_patch_stats else OUTPUT_PATH.with_name("dinov3_classifier_cls_only.pt")
+    if output_path.exists():
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = OUTPUT_PATH.with_name(f"dinov3_classifier_backup_{timestamp}.pt")
+        backup_path = output_path.with_name(f"dinov3_classifier_backup_{timestamp}.pt")
         import shutil
-        shutil.copy(OUTPUT_PATH, backup_path)
+        shutil.copy(output_path, backup_path)
         print(f"Existing model backed up to {backup_path}")
 
     # Load embeddings
-    X, y = load_embeddings()
+    X, y, input_dim = load_embeddings(use_patch_stats=use_patch_stats)
 
     # Train
-    model, best_acc = train_classifier(X, y)  # epochs=30 (default)
+    model, best_acc, input_dim = train_classifier(X, y, input_dim, epochs=args.epochs)
 
     # Save (checkpoint形式: バックエンドが checkpoint["classifier"] を期待)
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({
         "classifier": model.state_dict(),
-        "val_acc": best_acc
-    }, OUTPUT_PATH)
-    print(f"\nModel saved to {OUTPUT_PATH} (val_acc: {best_acc*100:.2f}%)")
+        "val_acc": best_acc,
+        "input_dim": input_dim,
+        "use_patch_stats": use_patch_stats
+    }, output_path)
+    print(f"\nModel saved to {output_path}")
+    print(f"Validation accuracy: {best_acc*100:.2f}%")
+    print(f"Input dimension: {input_dim}")
 
 
 if __name__ == "__main__":

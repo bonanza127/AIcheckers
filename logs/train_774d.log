@@ -1,0 +1,36 @@
+==================================================
+Training: CLS + patch_stats (774 dims)
+==================================================
+Loading AI embeddings...
+  illustrious_ai: 4824 samples (774 dims)
+  pony_ai: 19857 samples (774 dims)
+  sdxl10_ai: 8916 samples (774 dims)
+  sd15_ai: 9985 samples (774 dims)
+  other_ai: 4555 samples (774 dims)
+  flux1d_ai: 1843 samples (774 dims)
+  novelai_ai: 1045 samples (774 dims)
+  pixai_ai: 1018 samples (774 dims)
+  novelai_aibooru_ai: 1283 samples (774 dims)
+  twitter_novelai_all_ai: 2985 samples (774 dims)
+
+Loading Real embeddings...
+  danbooru_real: 49998 samples (774 dims)
+
+Total AI samples: 56311
+Total Real samples: 49998
+Feature dimension: 774
+
+Training on cuda
+Input dimension: 774
+Train: 95678, Val: 10631
+Epoch 5/30 - Loss: 0.0793 - Val Acc: 96.87%
+Epoch 10/30 - Loss: 0.0748 - Val Acc: 96.93%
+Epoch 15/30 - Loss: 0.0724 - Val Acc: 97.05%
+Epoch 20/30 - Loss: 0.0709 - Val Acc: 97.09%
+Epoch 25/30 - Loss: 0.0698 - Val Acc: 97.09%
+Epoch 30/30 - Loss: 0.0693 - Val Acc: 97.12%
+
+Best Validation Accuracy: 97.12%
+
+Model saved to /home/techne/aicheckers/models/dinov3_classifier.pt
+Validation accuracy: 97.12%
