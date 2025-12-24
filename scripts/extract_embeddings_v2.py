@@ -51,26 +51,27 @@ def load_model():
 
 
 def load_classifier(device):
-    """分類器をロード（パッチスコア計算用）- 768d CLS-only版を使用"""
-    # パッチスコア計算には768次元分類器が必要
-    cls_only_path = CLASSIFIER_PATH.with_name("dinov3_classifier_cls_only.pt")
+    """分類器をロード（パッチスコア計算用）
 
-    if cls_only_path.exists():
-        checkpoint = torch.load(cls_only_path, map_location=device, weights_only=True)
+    重要: backend/main.py と同じ方法でパッチ統計を計算するため、
+    775d分類器の先頭768dを使用する。これにより学習と推論の一貫性を保つ。
+    """
+    if CLASSIFIER_PATH.exists():
+        checkpoint = torch.load(CLASSIFIER_PATH, map_location=device, weights_only=True)
         input_dim = checkpoint.get("input_dim", 768)
+
         classifier = nn.Linear(input_dim, 2)
         classifier.load_state_dict(checkpoint["classifier"])
         classifier.to(device)
         classifier.eval()
-        print(f"[INFO] Loaded 768d classifier from {cls_only_path}")
+
+        if input_dim > 768:
+            print(f"[INFO] Loaded {input_dim}d classifier, using first 768d for patch scoring")
+        else:
+            print(f"[INFO] Loaded {input_dim}d classifier from {CLASSIFIER_PATH}")
         return classifier
-    elif CLASSIFIER_PATH.exists():
-        # フォールバック: 774d分類器があってもパッチには使えないので警告
-        print(f"[WARN] Only 774d classifier found, cannot use for patch scoring")
-        print("[WARN] Patch statistics will use embedding-based metrics only")
-        return None
     else:
-        print(f"[WARN] No classifier found")
+        print(f"[WARN] No classifier found at {CLASSIFIER_PATH}")
         print("[WARN] Patch statistics will use embedding-based metrics only")
         return None
 
@@ -97,9 +98,12 @@ def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear = 
     with torch.no_grad():
         if classifier is not None:
             # 分類器を通してパッチごとのAIスコアを計算
+            # 775次元分類器の場合は先頭768次元のみ使用（backend/main.pyと同じ）
             # (batch, 196, 768) -> (batch * 196, 768)
             flat_patches = patch_embeddings.reshape(-1, 768)
-            logits = classifier(flat_patches)  # (batch * 196, 2)
+            weight = classifier.weight[:, :768]  # (2, 768)
+            bias = classifier.bias
+            logits = torch.mm(flat_patches, weight.t()) + bias  # (batch * 196, 2)
             probs = F.softmax(logits, dim=1)
             ai_scores = probs[:, 1].reshape(batch_size, -1)  # (batch, 196)
 

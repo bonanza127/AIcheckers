@@ -2,17 +2,103 @@
 
 アニメ絵特化のAI生成画像判別ツール。日本市場向け。
 
-## 本番環境
+---
 
+## クイックリファレンス
+
+### 本番環境
 | 項目 | URL/値 |
 |------|--------|
 | フロントエンド | https://aicheckers.net (Vercel) |
 | API | https://api.aicheckers.net (Cloudflare Tunnel → localhost:8000) |
 | 速度 | 70-120ms (TTA有効時) |
 
+### よく使うコマンド
+```bash
+# 診断（テスト）- 必ずこれを使う
+python3 .claude/skills/diagnose/scripts/diagnose.py -v    # Embeddingベース
+python3 .claude/skills/diagnose/scripts/diagnose.py -t    # 実画像テスト
+
+# バックエンド再起動
+systemctl --user restart aicheckers-backend
+
+# 重複削除
+python3 scripts/dedup_images.py --dir /path/to/images --threshold 9
+
+# Embedding抽出
+python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name
+
+# 学習
+python3 scripts/train_from_embeddings.py
+```
+
 ---
 
-## 技術スタック（現行）
+## 絶対にやってはいけないこと
+
+1. **curlでAPIをテストしない** - レート制限でエラーになる
+2. **新しいテストスクリプトを作らない** - `diagnose`スキルを使う
+3. **パッチ統計計算を独自実装しない** - 不整合の原因になる
+4. **バグの原因を外部のせいにしない** - コードに問題がある前提で調査
+5. **Validation Accuracy（96%+）を最終精度と誤解しない**
+
+---
+
+## ファイル構成インデックス
+
+### scripts/ - 使用中のスクリプト
+| ファイル | 用途 | 使用頻度 |
+|----------|------|----------|
+| `extract_embeddings_v2.py` | CLS + パッチ統計量抽出 | 高 |
+| `train_from_embeddings.py` | 分類器学習 | 高 |
+| `dedup_images.py` | pHash重複削除 | 中 |
+| `extract_patch_stats_only.py` | パッチ統計のみ追加抽出 | 低 |
+| `patch_analysis.py` | パッチ分析ツール | 低 |
+| `train_with_patch_stats.py` | パッチ統計付き学習（実験用） | 低 |
+
+### scripts/ - スクレイパー類
+| ファイル | 用途 |
+|----------|------|
+| `smart_scraper.py` | 汎用スクレイパー |
+| `aibooru_scraper.py` | AIBooru用 |
+| `pixiv_scraper.py` | Pixiv用 |
+| `pixai_scraper.py` | PixAI用 |
+| `civitai_scraper.py` | CivitAI用 |
+| `twitter_bot.py` | Twitter用 |
+
+### archive/deprecated_scripts/ - 非推奨（使うな）
+| ファイル | 非推奨理由 |
+|----------|-----------|
+| `test_model.py` | diagnoseスキルと重複、不整合の原因 |
+| `extract_embeddings.py` | v2に置き換え済み |
+| `train_simple.py` | train_from_embeddingsに統合 |
+| `train_classifier.py` | 古い学習スクリプト |
+| `batch_extract.py` | 使用されていない |
+| `extract_real.py` | v2に統合済み |
+
+### .claude/skills/ - スキル
+| スキル | 用途 |
+|--------|------|
+| `train` | 学習ワークフロー全体 |
+| `diagnose` | モデル診断・テスト |
+
+### models/
+| ファイル | 説明 |
+|----------|------|
+| `dinov3_classifier.pt` | **本番モデル** (775次元) |
+| `dinov3_classifier_cls_only.pt` | CLS-only分類器 (768次元) |
+| `baseline_before_gate/` | ベースライン保存 |
+
+### embeddings/
+```
+{category}.npy              # CLSトークン (N, 768)
+{category}_patch_stats.npy  # パッチ統計量 (N, 7)
+{category}_files.txt        # ファイル名リスト
+```
+
+---
+
+## 技術スタック
 
 ```
 DINOv3 (facebook/dinov3-vitb16-pretrain-lvd1689m)
@@ -21,10 +107,10 @@ CLS Token (768次元) + Patch Stats (7次元)
     ↓
 Linear Probe (nn.Linear(775, 2))
     ↓
-TTA + Temperature Scaling
+TTA + Temperature Scaling (T=1.5)
 ```
 
-### パッチ統計量 (Patch Stats) - 現行775次元
+### パッチ統計量 (Patch Stats)
 | Index | 名前 | 説明 |
 |-------|------|------|
 | 0 | patch_mean | パッチAIスコアの平均 |
@@ -37,68 +123,24 @@ TTA + Temperature Scaling
 
 ---
 
-## モデル評価の正しい手順（重要）
+## 既知の問題と注意点
 
-### やってはいけないこと
-- **curlでAPIを叩いてテストしない** - レート制限に引っかかり、エラーが返ってくる
-- **bashでJSONパースしない** - 複雑なレスポンスはPythonで処理せよ
-- Validation Accuracy（96%+）と実世界の検出率（88-90%）を混同しない
+### パッチ統計計算の一貫性（2024-12-25 修正済み）
 
-### 正しいテスト方法
-学習後は以下のPythonスクリプトでテストせよ：
+**修正内容:**
+- `extract_embeddings_v2.py`を修正し、775d分類器の先頭768dを使用するようにした
+- `backend/main.py`と同じ計算方法になり、学習と推論の一貫性が確保された
 
-```python
-# scripts/test_model.py として保存済み
-python3 scripts/test_model.py --model models/dinov3_classifier.pt
-
-# 出力例:
-# NovelAI (AIBooru): 44/50 detected (84.5% avg)
-# NovelAI Combined: 45/50 detected (83.4% avg)
-# Human (Danbooru): 99/100 correct (10.2% avg)
-```
-
-### 精度の読み方
-| 指標 | 意味 | 目標 |
-|------|------|------|
-| Validation Accuracy | 学習時のホールドアウト精度 | 96%+ |
-| AI検出率 | テスト画像でAI≥50%の割合 | 88%+ |
-| Human正解率 | テスト画像でAI<50%の割合 | 98%+ |
-| 平均AIスコア(AI画像) | AI画像の平均スコア | 80%+ |
-| 平均AIスコア(Human画像) | Human画像の平均スコア | 20%以下 |
-
-### CLS-only vs CLS+Patch Stats
-- 両者の差は誤差範囲内（0.1-0.2%程度）
-- どちらを使っても実用上の差はない
-- 現行は775次元（CLS+Patch Stats）を採用
-
----
-
-## ファイル構成
-
-```
-aicheckers/
-├── src/app/                        # Next.js フロントエンド
-├── backend/
-│   └── main.py                     # FastAPI
-├── scripts/
-│   ├── extract_embeddings_v2.py    # CLS + パッチ統計量抽出
-│   ├── extract_patch_stats_only.py # パッチ統計量のみ追加抽出
-│   ├── train_from_embeddings.py    # 分類器学習
-│   ├── test_model.py               # モデルテスト（学習後に使用）
-│   └── dedup_images.py             # pHashによる重複削除
-├── embeddings/
-│   ├── {category}.npy              # CLSトークン (N, 768)
-│   ├── {category}_patch_stats.npy  # パッチ統計量 (N, 7)
-│   └── {category}_files.txt        # ファイル名リスト
-└── models/
-    └── dinov3_classifier.pt        # 本番モデル (775次元)
-```
+**重要:**
+- モデルを再学習したら、**全embeddingを再抽出**する必要がある
+- 抽出コマンド: `python3 scripts/extract_embeddings_v2.py --dir /path --name name`
+- 抽出時は775d分類器（`models/dinov3_classifier.pt`）を使用する
 
 ---
 
 ## データセット
 
-### AI画像 (57,825枚)
+### AI画像（学習用）
 | カテゴリ | 枚数 | ソース |
 |----------|------|--------|
 | illustrious_ai | 4,824 | AnimeDL-2M |
@@ -111,8 +153,10 @@ aicheckers/
 | pixai_ai | 1,018 | PixAI |
 | novelai_aibooru_ai | 1,283 | AIBooru |
 | novelai_combined_ai | 4,499 | Pixiv+Twitter (dedup済み) |
+| pixiv_novelai_v2_ai | 8,859 | Pixiv (dedup済み) |
+| twitter_novelai_v2_ai | 12,262 | Twitter (dedup済み) |
 
-### Human画像 (49,998枚)
+### Human画像（学習用）
 | カテゴリ | 枚数 | ソース |
 |----------|------|--------|
 | danbooru_real | 49,998 | Danbooru |
@@ -120,91 +164,47 @@ aicheckers/
 ### テスト用画像フォルダ
 | フォルダ | 用途 |
 |----------|------|
-| data/novelai/ | NovelAI画像（AIBooruソース）テスト用 |
-| data/novelai_combined/ | Pixiv+Twitter NovelAI画像 |
-| data/animedl2m_dataset_release/real_images/images/ | Human画像テスト用 |
+| data/novelai/ | NovelAI (AIBooru) テスト |
+| data/novelai_combined/ | Pixiv+Twitter NovelAI テスト |
+| data/animedl2m_dataset_release/real_images/images/ | Human テスト |
 
 ---
 
-## 分類器の保存形式
+## pHash重複削除 推奨閾値
 
-```python
-# 保存
-torch.save({
-    "classifier": model.state_dict(),
-    "val_acc": best_acc,
-    "input_dim": input_dim,      # 775 or 768
-    "use_patch_stats": True/False
-}, OUTPUT_PATH)
-
-# ロード（バックエンドが期待する形式）
-checkpoint = torch.load(path)
-input_dim = checkpoint.get("input_dim", 768)
-classifier = nn.Linear(input_dim, 2)
-classifier.load_state_dict(checkpoint["classifier"])
-```
-
----
-
-## よく使うコマンド
-
-```bash
-# バックエンド再起動（モデル更新後は必須）
-systemctl --user restart aicheckers-backend
-journalctl --user -u aicheckers-backend -f
-
-# Embedding抽出（新規カテゴリ追加時）
-python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name
-
-# 分類器学習
-python3 scripts/train_from_embeddings.py
-
-# モデルテスト（学習後に必ず実行）
-python3 scripts/test_model.py --model models/dinov3_classifier.pt
-
-# 画像重複削除（新規データ追加前）
-python3 scripts/dedup_images.py --dir /path/to/images --threshold 16
-```
+| 媒体 | 推奨閾値 |
+|------|----------|
+| Pixiv | 9 |
+| Twitter/X | 11 |
+| Danbooru系 | 8 |
+| AI生成サイト | 10〜11 |
 
 ---
 
 ## 学習→デプロイのワークフロー
 
-1. **データ準備**
-   - 新規画像を収集
-   - `dedup_images.py`で重複削除（threshold 16推奨）
-   - `extract_embeddings_v2.py`でembedding抽出
+**必ず`train`スキルを使う。**
 
-2. **学習**
-   - `train_from_embeddings.py`のAI_CATEGORIESに新カテゴリ追加
-   - 学習実行：`python3 scripts/train_from_embeddings.py`
-   - ログ確認：Validation Accuracy 96%+を確認
-
-3. **テスト（必須）**
-   - `python3 scripts/test_model.py --model models/dinov3_classifier.pt`
-   - AI検出率88%+、Human正解率98%+を確認
-   - **curlでテストしない**（レート制限あり）
-
-4. **デプロイ**
-   - `systemctl --user restart aicheckers-backend`
-   - 本番サイトで動作確認
+1. データ準備（重複削除）
+2. Embedding抽出
+3. 学習スクリプト更新・実行
+4. **diagnoseスキルでテスト**（新しいスクリプトを作るな）
+5. バックエンド再起動
 
 ---
 
-## 精度向上テクニック
+## ベースライン精度（比較用）
 
-### 推論時
-| 技術 | 効果 | 設定 |
-|------|------|------|
-| TTA | +0.5〜1% | `TTA_ENABLED` 環境変数 |
-| Temperature Scaling | 過信防止 | `TEMPERATURE` 環境変数 (default: 1.5) |
+```
+models/baseline_before_gate/
+├── dinov3_classifier.pt
+├── dinov3_classifier_cls_only.pt
+└── test_results.txt
+```
 
-### 学習時
-| 技術 | タイミング | 効果 |
-|------|------------|------|
-| VAT | 全エポック | 決定境界を滑らかに |
-| Entropy Minimization | epoch 20〜 | 曖昧な予測を減らす |
-| Consistency Regularization | epoch 5〜 | embedding空間での一貫性 |
+- NovelAI (AIBooru): 83/100 (83%)
+- NovelAI Combined: 81/100 (81%)
+- Human正解率: 99/100 (99%)
 
 ---
 
@@ -213,7 +213,6 @@ python3 scripts/dedup_images.py --dir /path/to/images --threshold 16
 - **GPU**: GTX 1660 (6GB VRAM)
 - **DINOv3 VRAM**: 0.34GB
 - **HuggingFace Token**: 環境変数 `HF_TOKEN`
-- **レート制限**: `backend/main.py` の `RATE_LIMIT_ENABLED`
 
 ---
 
@@ -225,13 +224,3 @@ python3 scripts/dedup_images.py --dir /path/to/images --threshold 16
 | DLsite検証用 | dlsite-trial@aicheckers.net |
 
 **設定**: `backend/main.py` の `ADMIN_EMAILS`
-
----
-
-## 注意事項
-
-- 新規スクリプト作成前に、その出力を使う側のコードを必ず読め
-- 問題発生時は手を止めて原因特定。焦って修正するな
-- モデル更新後は必ず `systemctl --user restart aicheckers-backend`
-- **バグの原因を外部（キャッシュ、ユーザー）のせいにするな。コードに問題がある前提で調査せよ**
-- **APIをcurlでテストするな。Pythonでテストせよ**

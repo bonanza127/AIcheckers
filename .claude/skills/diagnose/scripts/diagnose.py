@@ -31,6 +31,8 @@ AI_CATEGORIES = [
     "novelai_aibooru_ai",
     "novelai_combined_ai",
     "pixai_ai",
+    "pixiv_novelai_v2_ai",
+    "twitter_novelai_v2_ai",
 ]
 
 REAL_CATEGORIES = [

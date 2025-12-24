@@ -11,22 +11,35 @@ export async function GET(request: NextRequest) {
   const trace = searchParams.get("trace") || "中程度のAttention集中";
   const time = searchParams.get("time") || "0.00";
 
-  // 3状態判定: AI / UNKNOWN / HUMAN
-  const verdictType = verdict.includes("AI")
-    ? "ai"
-    : verdict.includes("UNKNOWN")
-      ? "unknown"
-      : "human";
+  // 5段階判定
+  type VerdictType = "ai" | "high" | "middle" | "low" | "human";
+  const getVerdictType = (): VerdictType => {
+    if (verdict.includes("AI DETECTED")) return "ai";
+    if (verdict.includes("HIGH ALERT")) return "high";
+    if (verdict.includes("MIDDLE CAUTION")) return "middle";
+    if (verdict.includes("MINOR CAUTION") || verdict.includes("LOW")) return "low";
+    return "human";
+  };
+  const verdictType = getVerdictType();
 
-  // カラー定義
-  const colors = {
+  // カラー定義（5段階対応）
+  const colors: Record<VerdictType, { primary: string; glow: string }> = {
     ai: { primary: "#EF4444", glow: "rgba(239, 68, 68, 0.4)" },
-    unknown: { primary: "#F59E0B", glow: "rgba(245, 158, 11, 0.4)" },
-    human: { primary: "#10B981", glow: "rgba(16, 185, 129, 0.4)" },
+    high: { primary: "#EA580C", glow: "rgba(234, 88, 12, 0.4)" },
+    middle: { primary: "#EAB308", glow: "rgba(234, 179, 8, 0.4)" },
+    low: { primary: "#10B981", glow: "rgba(16, 185, 129, 0.4)" },
+    human: { primary: "#3B82F6", glow: "rgba(59, 130, 246, 0.4)" },
   };
   const color = colors[verdictType];
 
-  const possibilityLabel = verdictType === "ai" ? "AI POSSIBILITY" : verdictType === "unknown" ? "UNCERTAINTY" : "HUMAN POSSIBILITY";
+  const possibilityLabels: Record<VerdictType, string> = {
+    ai: "AI POSSIBILITY",
+    high: "HIGH SUSPICION",
+    middle: "UNCERTAIN",
+    low: "LOW SUSPICION",
+    human: "HUMAN POSSIBILITY",
+  };
+  const possibilityLabel = possibilityLabels[verdictType];
 
   return new ImageResponse(
     (

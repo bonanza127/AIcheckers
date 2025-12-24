@@ -1,0 +1,36 @@
+==================================================
+Training: CLS only (768 dims)
+==================================================
+Loading AI embeddings...
+  illustrious_ai: 4824 samples
+  pony_ai: 19857 samples
+  sdxl10_ai: 8916 samples
+  sd15_ai: 9985 samples
+  other_ai: 4555 samples
+  flux1d_ai: 1843 samples
+  novelai_ai: 1045 samples
+  pixai_ai: 1018 samples
+  novelai_aibooru_ai: 1283 samples
+  novelai_combined_ai: 4499 samples
+
+Loading Real embeddings...
+  danbooru_real: 49998 samples
+
+Total AI samples: 57825
+Total Real samples: 49998
+Feature dimension: 768
+
+Training on cuda
+Input dimension: 768
+Train: 97040, Val: 10783
+Epoch 5/30 - Loss: 0.0912 - Val Acc: 96.55%
+Epoch 10/30 - Loss: 0.0870 - Val Acc: 96.53%
+Epoch 15/30 - Loss: 0.0848 - Val Acc: 96.66%
+Epoch 20/30 - Loss: 0.0833 - Val Acc: 96.62%
+Epoch 25/30 - Loss: 0.0822 - Val Acc: 96.60%
+Epoch 30/30 - Loss: 0.0816 - Val Acc: 96.63%
+
+Best Validation Accuracy: 96.71%
+
+Model saved to /home/techne/aicheckers/models/dinov3_classifier_cls_only.pt
+Validation accuracy: 96.71%

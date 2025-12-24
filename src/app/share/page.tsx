@@ -8,17 +8,21 @@ type Props = {
   }>;
 };
 
-// 3状態判定ヘルパー
-function getVerdictType(verdict: string): "ai" | "unknown" | "human" {
-  if (verdict.includes("AI")) return "ai";
-  if (verdict.includes("UNKNOWN")) return "unknown";
+// 判定タイプヘルパー（5段階対応）
+function getVerdictType(verdict: string): "ai" | "high" | "middle" | "low" | "human" {
+  if (verdict.includes("AI DETECTED")) return "ai";
+  if (verdict.includes("HIGH ALERT")) return "high";
+  if (verdict.includes("MIDDLE CAUTION")) return "middle";
+  if (verdict.includes("MINOR CAUTION") || verdict.includes("LOW")) return "low";
   return "human";
 }
 
 // 短縮コードからverdictに変換
 function expandVerdict(v: string): string {
   if (v === "ai") return "AI DETECTED";
-  if (v === "u") return "UNKNOWN";
+  if (v === "hi") return "HIGH ALERT";
+  if (v === "mi") return "MIDDLE CAUTION";
+  if (v === "lo") return "MINOR CAUTION";
   if (v === "h") return "HUMAN CONFIRMED";
   return v;
 }
@@ -33,11 +37,14 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const verdictType = getVerdictType(verdict);
 
   const title = `${verdict} (${score}%) - AI Checkers`;
-  const description = verdictType === "ai"
-    ? `この画像はAI生成の可能性が${score}%です。AI Checkersで判定しました。`
-    : verdictType === "unknown"
-      ? `この画像は判定困難です（確信度${score}%）。AI Checkersで判定しました。`
-      : `この画像は人間作の可能性が${score}%です。AI Checkersで判定しました。`;
+  const descriptions: Record<typeof verdictType, string> = {
+    ai: `この画像はAI生成の可能性が${score}%です。AI Checkersで判定しました。`,
+    high: `この画像はAI生成の疑いが高いです（${score}%）。AI Checkersで判定しました。`,
+    middle: `この画像は判定が微妙です（${score}%）。AI Checkersで判定しました。`,
+    low: `この画像は人間作の可能性が高いです（${100 - parseInt(score)}%）。AI Checkersで判定しました。`,
+    human: `この画像は人間作の可能性が${100 - parseInt(score)}%です。AI Checkersで判定しました。`,
+  };
+  const description = descriptions[verdictType];
 
   const ogParams = new URLSearchParams({
     verdict,
@@ -79,15 +86,24 @@ export default async function SharePage({ searchParams }: Props) {
   const score = params.s || params.score || "98";
   const verdictType = getVerdictType(verdict);
 
-  // カラー定義
+  // カラー定義（5段階対応）
   const colorClasses = {
     ai: { bg: "bg-red-500/10", border: "border-red-500", text: "text-red-500" },
-    unknown: { bg: "bg-amber-500/10", border: "border-amber-500", text: "text-amber-500" },
-    human: { bg: "bg-green-500/10", border: "border-green-500", text: "text-green-500" },
+    high: { bg: "bg-orange-600/10", border: "border-orange-600", text: "text-orange-500" },
+    middle: { bg: "bg-yellow-500/10", border: "border-yellow-500", text: "text-yellow-400" },
+    low: { bg: "bg-green-500/10", border: "border-green-500", text: "text-green-500" },
+    human: { bg: "bg-blue-500/10", border: "border-blue-500", text: "text-blue-500" },
   };
   const colors = colorClasses[verdictType];
 
-  const confidenceLabel = verdictType === "ai" ? "AI生成" : verdictType === "unknown" ? "判定困難" : "人間作";
+  const confidenceLabels: Record<typeof verdictType, string> = {
+    ai: "AI生成",
+    high: "疑わしい",
+    middle: "判定困難",
+    low: "可能性低",
+    human: "人間作",
+  };
+  const confidenceLabel = confidenceLabels[verdictType];
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">

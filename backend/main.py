@@ -3,6 +3,7 @@ AIcheckers Backend API
 Moonlight (DINOv3 Linear Probe) のみ使用
 """
 
+import asyncio
 import io
 import os
 import time
@@ -109,6 +110,9 @@ if PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET:
 # 本番/開発のURL
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://aicheckers.net")
 FANBOX_CREATOR_ID = "aicheckers"  # マスターのFANBOXクリエイターID
+
+# Discord Webhook（マジックリンク経由スキャン通知）
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 VIP_DATA_PATH = Path("/home/techne/aicheckers/data/vip_users.json")
 USERS_DATA_PATH = Path("/home/techne/aicheckers/data/users.json")
 
@@ -322,6 +326,19 @@ def get_rate_limit_key(request: Request) -> tuple[str, bool, bool]:
     return ip, False, False
 
 
+def get_magic_link_email(request: Request) -> str | None:
+    """マジックリンク経由のリクエストならメールアドレスを返す、それ以外はNone"""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        payload = verify_jwt_token(token)
+        if payload:
+            user_id = payload.get("sub", "")
+            if user_id.startswith("magic_"):
+                return payload.get("email")
+    return None
+
+
 def check_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False) -> tuple[bool, int, int]:
     """レート制限チェック。(許可されているか, 残り回数, 上限) を返す"""
     # 管理者は無制限（-1で無限を示す）
@@ -351,6 +368,28 @@ def increment_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False)
     data = rate_limit_data[key]
     if data["tokens"] > 0:
         data["tokens"] -= 1
+
+
+async def send_discord_notification(email: str, ai_score: float, verdict: str, filename: str):
+    """マジックリンク経由のスキャン時にDiscord通知を送信"""
+    if not DISCORD_WEBHOOK_URL:
+        return
+    try:
+        async with httpx.AsyncClient() as client:
+            embed = {
+                "title": "Magic Link Scan",
+                "color": 0xFF6B6B if ai_score >= 50 else 0x4ECDC4,
+                "fields": [
+                    {"name": "User", "value": email, "inline": True},
+                    {"name": "Score", "value": f"{ai_score:.1f}%", "inline": True},
+                    {"name": "Verdict", "value": verdict, "inline": True},
+                    {"name": "File", "value": filename or "N/A", "inline": False},
+                ],
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            await client.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=5.0)
+    except Exception as e:
+        print(f"Discord notification failed: {e}")
 
 
 @app.get("/")
@@ -621,30 +660,30 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
         if concentration is not None and concentration > 0.40:
             trace_parts.append(f"特定パッチへの異常なAttention集中（{concentration*100:.0f}%）。局所的なAIアーティファクト、またはLoRAの痕跡を検知")
         elif concentration is not None and concentration > 0.30:
-            trace_parts.append("特定領域にリソースが偏る生成モデル特有の局所的バイアスを検出")
+            trace_parts.append("生成モデル特有の局所的バイアスを検出")
         # 中央集中に基づく分析
         if center_ratio is not None and center_ratio > 0.70:
-            trace_parts.append("中央領域への過剰なリソース配分。学習モデル特有の構図バイアスを検出")
+            trace_parts.append("中央領域に構図バイアスを検出")
         # 対称性に基づく分析
         if lr_symmetry is not None and lr_symmetry > 0.90:
-            trace_parts.append("高精度の左右対称性。手描きでは不可能な数学的対称性を特定")
+            trace_parts.append("手描きでは不可能な数学的対称性を特定")
 
         # パッチ解析に基づく痕跡
         if patch_trace_info is not None:
-            # 高スコア領域の検出
+            # 高スコア領域の検出（max-mean条件と統合）
             if patch_trace_info["max_score"] > 0.8 and patch_trace_info["high_regions"]:
                 top_region = patch_trace_info["high_regions"][0]
-                trace_parts.append(f"{top_region[0]}領域にAI生成特有のパターンを確認（信頼度{top_region[1]*100:.0f}%）。局所的な描画密度の不自然な偏りを特定")
-            # 局所的な異常（最大と平均の乖離）
-            if patch_trace_info["max_minus_mean"] > 0.4 and patch_trace_info["high_regions"]:
-                pos = patch_trace_info["high_regions"][0][0]
-                trace_parts.append(f"画像{pos}部に極めて強い生成痕跡を検出。周辺パッチとの統計的乖離からLoRA使用の蓋然性を識別")
+                if patch_trace_info["max_minus_mean"] > 0.4:
+                    # 局所的な異常が強い場合
+                    trace_parts.append(f"{top_region[0]}領域に強い生成痕跡を検出")
+                else:
+                    trace_parts.append(f"{top_region[0]}領域にAI生成特有のパターンを確認")
             # 分散異常
             if patch_trace_info["var_score"] > 0.15:
-                trace_parts.append("特定の描画レイヤーにおいてAIモデル固有のシグネチャーを捕捉。テクスチャの再現性に非人間的な一貫性を検出")
+                trace_parts.append("テクスチャに非人間的な一貫性を検出")
 
         if trace_parts:
-            detected_traces = "; ".join(trace_parts)
+            detected_traces = "。".join(trace_parts)
         else:
             detected_traces = "パッチ間の相関統計および高次元特徴量に基づき、非人間的な生成プロセスと断定"
     else:
@@ -663,7 +702,7 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
             trace_parts.append("特定領域への機械的な痕跡なし。画像全体にわたる自然な密度バランスと空間把握を確認")
 
         if trace_parts:
-            detected_traces = "; ".join(trace_parts)
+            detected_traces = "。".join(trace_parts)
         else:
             detected_traces = "ミクロ領域における有機的なテクスチャーと、躍動感ある描画シグネチャーを検出"
 
@@ -677,7 +716,7 @@ def get_verdict(ai_score: float) -> str:
     elif ai_score >= 60:
         return "HIGH ALERT"
     elif ai_score >= 40:
-        return "UNKNOWN"
+        return "MIDDLE CAUTION"
     elif ai_score >= 20:
         return "MINOR CAUTION"
     else:
@@ -901,6 +940,16 @@ async def analyze_image(
         # レート制限カウント増加
         increment_rate_limit(key, is_vip, is_admin)
         _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+
+        # マジックリンク経由ならDiscord通知（非同期でバックグラウンド実行）
+        magic_email = get_magic_link_email(request)
+        if magic_email:
+            asyncio.create_task(send_discord_notification(
+                magic_email,
+                response_data["ai_score"],
+                response_data["verdict"],
+                file.filename or ""
+            ))
 
         return JSONResponse(
             content=response_data,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
 import VipModal from "@/components/VipModal";
 
@@ -444,10 +445,12 @@ export default function Home() {
       reader.readAsDataURL(file);
     });
 
-    // phaseを最初に変更してチラつきを防ぐ
-    setPhase("scanning");
-    // バッチ処理中は前の結果を維持（次の結果で上書きされる）
-    // setResult(null); // コメントアウト：結果のチラつき防止
+    // 処理開始時にresultをクリア（前の結果が残らないように）
+    // flushSyncで即座にDOMに反映させ、PROCESSING表示を確実にする
+    flushSync(() => {
+      setResult(null);
+      setPhase("scanning");
+    });
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
 
@@ -608,7 +611,7 @@ export default function Home() {
       : aiScore >= 80 ? "AI DETECTED"
       : aiScore >= 60 ? "HIGH ALERT"
       : aiScore >= 40 ? "UNKNOWN"
-      : aiScore >= 20 ? "MINOR CAUTION"
+      : aiScore >= 20 ? "LOW CONFIDENCE"
       : "HUMAN CONFIRMED";
 
     setResult({
@@ -734,7 +737,7 @@ export default function Home() {
     const verdictText = result.aiScore >= 80 ? "AI DETECTED"
       : result.aiScore >= 60 ? "HIGH ALERT"
       : result.aiScore >= 40 ? "UNKNOWN"
-      : result.aiScore >= 20 ? "MINOR CAUTION"
+      : result.aiScore >= 20 ? "LOW CONFIDENCE"
       : "HUMAN CONFIRMED";
 
     const verdictEmoji = result.aiScore >= 80 ? "🤖"
@@ -753,7 +756,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
     const vParam = verdictText === "AI DETECTED" ? "ai"
       : verdictText === "HIGH ALERT" ? "ha"
       : verdictText === "UNKNOWN" ? "u"
-      : verdictText === "MINOR CAUTION" ? "mc"
+      : verdictText === "LOW CONFIDENCE" ? "lc"
       : "h";
     const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
@@ -777,35 +780,36 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
   };
 
   const getVerdictDisplay = () => {
-    // スキャン中でも、バッチ処理で前の結果があれば表示継続
-    if (phase === "scanning" && !result) {
+    // resultがnullの場合、スキャン中ならPROCESSINGを表示
+    if (!result) {
+      if (phase === "scanning" || phase === "complete") {
+        return {
+          text: "PROCESSING...",
+          className: "verdict-loading"
+        };
+      }
       return {
-        text: "PROCESSING...",
-        className: "verdict-loading"
+        text: "N/A",
+        className: "verdict-pending"
       };
     }
-    if (result) {
-      // レート制限エラーの場合
-      if (result.verdict === "RATE LIMITED") {
-        return { text: result.verdict, className: "verdict-unknown" };
-      }
-      // 5段階の判定表示
-      if (result.aiScore >= 80) {
-        return { text: result.verdict, className: "verdict-ai" };
-      } else if (result.aiScore >= 60) {
-        return { text: result.verdict, className: "verdict-high-alert" };
-      } else if (result.aiScore >= 40) {
-        return { text: result.verdict, className: "verdict-unknown" };
-      } else if (result.aiScore >= 20) {
-        return { text: result.verdict, className: "verdict-low-risk" };
-      } else {
-        return { text: result.verdict, className: "verdict-human" };
-      }
+    // result が存在する場合
+    // レート制限エラーの場合
+    if (result.verdict === "RATE LIMITED") {
+      return { text: result.verdict, className: "verdict-unknown" };
     }
-    return {
-      text: "N/A",
-      className: "verdict-pending"
-    };
+    // 5段階の判定表示
+    if (result.aiScore >= 80) {
+      return { text: result.verdict, className: "verdict-ai" };
+    } else if (result.aiScore >= 60) {
+      return { text: result.verdict, className: "verdict-high-alert" };
+    } else if (result.aiScore >= 40) {
+      return { text: result.verdict, className: "verdict-middle-caution" };
+    } else if (result.aiScore >= 20) {
+      return { text: result.verdict, className: "verdict-low-risk" };
+    } else {
+      return { text: result.verdict, className: "verdict-human" };
+    }
   };
 
   const verdictDisplay = getVerdictDisplay();
@@ -831,7 +835,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       verdict: item.aiScore >= 80 ? "AI DETECTED"
         : item.aiScore >= 60 ? "HIGH ALERT"
         : item.aiScore >= 40 ? "UNKNOWN"
-        : item.aiScore >= 20 ? "MINOR CAUTION"
+        : item.aiScore >= 20 ? "LOW CONFIDENCE"
         : "HUMAN CONFIRMED",
       confidence: item.score,
       processingTime: 0,
@@ -1049,12 +1053,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <p className="text-muted text-sm italic">解析履歴はありません。</p>
                 ) : (
                   history.map((item) => {
-                    // 5段階判定: AI(80+), H(60-79), ?(40-59), M(20-39), 人(0-19)
+                    // 5段階判定: AI(80+), H(60-79), M(40-59), L(20-39), 人(0-19)
                     const score = item.aiScore;
-                    const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-unknown" : score >= 20 ? "result-minor" : "result-human";
-                    const labelClass = score >= 80 ? "bg-danger text-white" : score >= 60 ? "bg-orange-500 text-white" : score >= 40 ? "bg-gray-500 text-white" : score >= 20 ? "bg-blue-500 text-white" : "bg-success text-white";
-                    const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "?" : score >= 20 ? "M" : "人";
-                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-400" : score >= 40 ? "text-gray-400" : score >= 20 ? "text-blue-400" : "text-success";
+                    const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-middle" : score >= 20 ? "result-low" : "result-human";
+                    const labelClass = score >= 80 ? "bg-danger text-white" : score >= 60 ? "bg-orange-600 text-white" : score >= 40 ? "bg-yellow-500 text-black" : score >= 20 ? "bg-success text-white" : "bg-blue-500 text-white";
+                    const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "M" : score >= 20 ? "L" : "人";
+                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-500" : score >= 40 ? "text-yellow-400" : score >= 20 ? "text-success" : "text-blue-400";
 
                     return (
                       <div

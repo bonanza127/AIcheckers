@@ -44,6 +44,8 @@
   --accent-light: #A78BFA;
   --success: #10B981;
   --danger: #EF4444;
+  --human-confirmed: #3B82F6;
+  --human-confirmed-bright: #60A5FA;
   --text-primary: #E6E9EE;
   --text-muted: #8B949E;
 }
@@ -273,11 +275,11 @@ body {
 }
 
 .progress-bar-fill.low-risk {
-  background-color: #60A5FA;
+  background-color: var(--success);
 }
 
 .progress-bar-fill.human {
-  background-color: var(--success);
+  background-color: var(--human-confirmed);
 }
 
 /* ============================================
@@ -304,13 +306,25 @@ body {
 }
 
 .queue-item.result-human {
-  border-color: var(--success) !important;
+  border-color: var(--human-confirmed) !important;
+  border-width: 2px;
+  opacity: 0.7;
+}
+
+.queue-item.result-high {
+  border-color: #EA580C !important;
+  border-width: 2px;
+  opacity: 0.7;
+}
+
+.queue-item.result-middle {
+  border-color: #EAB308 !important;
   border-width: 2px;
   opacity: 0.7;
 }
 
 .queue-item.result-unknown {
-  border-color: #F59E0B !important;
+  border-color: #6B7280 !important;
   border-width: 2px;
   opacity: 0.7;
 }
@@ -332,8 +346,8 @@ body {
 }
 
 .history-item.result-human {
-  border-color: var(--success);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+  border-color: var(--human-confirmed);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
 }
 
 .history-item.result-unknown {
@@ -342,13 +356,18 @@ body {
 }
 
 .history-item.result-high {
-  border-color: #F97316;
-  box-shadow: 0 0 8px rgba(249, 115, 22, 0.3);
+  border-color: #EA580C;
+  box-shadow: 0 0 8px rgba(234, 88, 12, 0.3);
 }
 
-.history-item.result-minor {
-  border-color: #3B82F6;
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+.history-item.result-middle {
+  border-color: #EAB308;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.3);
+}
+
+.history-item.result-low {
+  border-color: var(--success);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
 }
 
 .history-item:hover {
@@ -380,19 +399,23 @@ body {
 }
 
 .verdict-high-alert {
-  color: #F59E0B; /* 黄色 */
+  color: #EA580C; /* オレンジ（夕日色） */
+}
+
+.verdict-middle-caution {
+  color: #EAB308; /* 黄色 */
 }
 
 .verdict-unknown {
-  color: #9CA3AF; /* グレー */
+  color: #9CA3AF; /* グレー - レート制限等 */
 }
 
 .verdict-low-risk {
-  color: #60A5FA; /* 水色 */
+  color: var(--success); /* 緑 - LOW CONFIDENCE */
 }
 
 .verdict-human {
-  color: var(--success);
+  color: var(--human-confirmed); /* 青 - HUMAN CONFIRMED */
 }
 
 .verdict-loading {
