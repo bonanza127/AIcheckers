@@ -10,6 +10,7 @@ type AuthUser = {
   email: string;
   token: string;
   isVip: boolean;
+  isAdmin?: boolean;
 };
 
 type VipModalProps = {
@@ -523,8 +524,15 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
               <div className="flex items-center gap-2 text-sm">
                 <CheckCircle className="w-4 h-4 text-success" />
                 <span className="text-muted">ようこそ、</span>
-                <span className="text-amber-400 font-medium">{userName}</span>
+                <span className="text-amber-400 font-medium">
+                  {authUser?.isAdmin ? "管理者" : (userName || authUser?.name || "ゲスト")}
+                </span>
                 <span className="text-muted">さん</span>
+                {authUser?.isAdmin && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                    Admin
+                  </span>
+                )}
               </div>
 
               <p className="text-sm text-muted">

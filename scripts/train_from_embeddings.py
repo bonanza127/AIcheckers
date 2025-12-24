@@ -22,8 +22,8 @@ AI_CATEGORIES = [
     "pixai_ai",
     "novelai_aibooru_ai",
     # "novelai_pixiv_ai",  # 品質が低いため除外
-    # "twitter_novelai_ai",  # フィルタ済み版（1220枚）
-    "twitter_novelai_all_ai",  # 全2000枚（フィルタなし）
+    # "twitter_novelai_all_ai",  # 古い（重複多し）
+    "novelai_combined_ai",  # dedup済みPixiv+Twitter (4,499枚)
 ]
 
 # Realカテゴリ（0=Real）

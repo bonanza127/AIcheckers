@@ -27,7 +27,8 @@ AI_CATEGORIES = [
     "pixai_ai",
     "novelai_aibooru_ai",  # aibooruのみ追加（品質良）
     # "novelai_pixiv_ai",   # 除外（人間の絵が多数混入）
-    "twitter_novelai_all_ai",  # Twitter #NovelAI (2985枚)
+    # "twitter_novelai_all_ai",  # 古い（重複多し）
+    "novelai_combined_ai",  # dedup済みPixiv+Twitter (4,499枚)
 ]
 
 # Realカテゴリ（0=Real）

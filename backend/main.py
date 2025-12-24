@@ -1366,17 +1366,24 @@ async def auth_me(request: Request):
 
     user_id = payload.get("sub")
     email = payload.get("email")
+    jwt_name = payload.get("name", "")  # JWTに含まれる名前（マジックリンク用）
+    jwt_is_admin = payload.get("is_admin", False)
 
     user = users_db.get(user_id, {})
-    # ADMIN_EMAILSも自動的にVIP扱い
-    is_vip = email in vip_users or email in ADMIN_EMAILS
+    # ADMIN_EMAILSも自動的にVIP/管理者扱い
+    is_admin = jwt_is_admin or (email in ADMIN_EMAILS if email else False)
+    is_vip = email in vip_users or is_admin
+
+    # 名前はDBから取得、なければJWTから取得
+    name = user.get("name", "") or jwt_name
 
     return {
         "id": user_id,
         "email": email,
-        "name": user.get("name", ""),
+        "name": name,
         "provider": user.get("provider", ""),
-        "is_vip": is_vip
+        "is_vip": is_vip,
+        "is_admin": is_admin
     }
 
 
@@ -1513,6 +1520,7 @@ async def magic_link_login(token: str):
             {
                 "sub": user_id,
                 "email": email,
+                "name": name,  # 名前も埋め込み
                 "exp": exp,
                 "is_admin": is_admin,  # 管理者フラグを埋め込み
             },
@@ -1521,7 +1529,8 @@ async def magic_link_login(token: str):
         )
 
         # フロントエンドにリダイレクト（トークンをクエリパラメータで渡す）
-        redirect_url = f"https://aicheckers.net?magic_token={login_token}&name={name}&email={email}&is_vip=true"
+        is_admin_str = "true" if is_admin else "false"
+        redirect_url = f"https://aicheckers.net?magic_token={login_token}&name={name}&email={email}&is_vip=true&is_admin={is_admin_str}"
         return RedirectResponse(url=redirect_url)
 
     except jwt.ExpiredSignatureError:
