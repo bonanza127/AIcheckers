@@ -57,6 +57,7 @@ type AuthUser = {
   email: string;
   token: string;
   isVip: boolean;
+  isAdmin?: boolean;
 };
 
 export default function Home() {
@@ -122,8 +123,9 @@ export default function Home() {
       const name = params.get("name") || "Developer";
       const email = params.get("email") || "";
       const isVip = params.get("is_vip") === "true";
+      const isAdmin = params.get("is_admin") === "true";
 
-      setAuthUser({ name, email, token: magicToken, isVip });
+      setAuthUser({ name, email, token: magicToken, isVip, isAdmin });
       localStorage.setItem("auth_token", magicToken);
       setLogs(prev => [...prev, {
         type: "system" as const,
@@ -149,7 +151,8 @@ export default function Home() {
               name: data.name,
               email: data.email,
               token: savedToken,
-              isVip: data.is_vip
+              isVip: data.is_vip,
+              isAdmin: data.is_admin
             });
             // 成功ログを追加
             setLogs(prev => [...prev, {
@@ -208,7 +211,8 @@ export default function Home() {
               name: data.name,
               email: data.email,
               token: savedToken,
-              isVip: data.is_vip
+              isVip: data.is_vip,
+              isAdmin: data.is_admin
             });
           })
           .catch(() => {
@@ -1045,10 +1049,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <p className="text-muted text-sm italic">解析履歴はありません。</p>
                 ) : (
                   history.map((item) => {
-                    const resultClass = item.aiScore >= 80 ? "result-ai" : item.aiScore >= 50 ? "result-unknown" : "result-human";
-                    const labelClass = item.aiScore >= 80 ? "bg-danger text-white" : item.aiScore >= 50 ? "bg-gray-500 text-white" : "bg-success text-white";
-                    const labelText = item.aiScore >= 80 ? "AI" : item.aiScore >= 50 ? "?" : "人";
-                    const scoreClass = item.aiScore >= 80 ? "text-danger" : item.aiScore >= 50 ? "text-gray-400" : "text-success";
+                    // 5段階判定: AI(80+), H(60-79), ?(40-59), M(20-39), 人(0-19)
+                    const score = item.aiScore;
+                    const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-unknown" : score >= 20 ? "result-minor" : "result-human";
+                    const labelClass = score >= 80 ? "bg-danger text-white" : score >= 60 ? "bg-orange-500 text-white" : score >= 40 ? "bg-gray-500 text-white" : score >= 20 ? "bg-blue-500 text-white" : "bg-success text-white";
+                    const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "?" : score >= 20 ? "M" : "人";
+                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-400" : score >= 40 ? "text-gray-400" : score >= 20 ? "text-blue-400" : "text-success";
 
                     return (
                       <div
@@ -1182,9 +1188,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <Search className="w-4 h-4" />
                 <span>スキャン開始</span>
                 <span className="font-normal">
-                  - 残り{rateLimitRemaining === -1 ? "∞" : (rateLimitRemaining ?? "--")}/{rateLimitRemaining === -1 ? "∞" : (authUser?.isVip ? "240" : "24")}枚
+                  - 残り{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (rateLimitRemaining ?? "--")}/{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (authUser?.isVip ? "240" : "24")}枚
                 </span>
-                {rateLimitRemaining !== -1 && (
+                {!authUser?.isAdmin && rateLimitRemaining !== -1 && (
                   <span className="text-xs opacity-70 font-normal">
                     (1時間刻みで{authUser?.isVip ? "10" : "1"}枚回復)
                   </span>

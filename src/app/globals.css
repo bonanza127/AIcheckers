@@ -337,8 +337,18 @@ body {
 }
 
 .history-item.result-unknown {
-  border-color: #F59E0B;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+  border-color: #6B7280;
+  box-shadow: 0 0 8px rgba(107, 114, 128, 0.3);
+}
+
+.history-item.result-high {
+  border-color: #F97316;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.3);
+}
+
+.history-item.result-minor {
+  border-color: #3B82F6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
 }
 
 .history-item:hover {
