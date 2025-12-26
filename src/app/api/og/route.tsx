@@ -185,11 +185,11 @@ export async function GET(request: NextRequest) {
           <span
             style={{
               display: "flex",
-              fontSize: 80,
+              fontSize: 88,
               fontWeight: 900,
               color: color.primary,
               letterSpacing: "-0.02em",
-              textShadow: `0 0 15px ${color.primary}, 0 0 30px ${color.primary}, 0 4px 15px ${color.primary}`,
+              textShadow: `0 0 10px ${color.primary}, 0 0 25px ${color.primary}, 0 4px 10px ${color.primary}`,
               lineHeight: 1,
             }}
           >
