@@ -754,7 +754,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       : verdictText === "MIDDLE CAUTION" ? "mc"
       : verdictText === "LOW SIMILARITY" ? "ls"
       : "h";
-    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}`;
+    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
