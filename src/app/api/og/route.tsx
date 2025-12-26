@@ -76,23 +76,8 @@ export async function GET(request: NextRequest) {
             }}
           >
             <span style={{ display: "flex", color: "#6E7681" }}>by</span>
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                marginLeft: 12,
-                color: "#E6E9EE",
-                background: "linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(167, 139, 250, 0.2))",
-                padding: "8px 20px",
-                borderRadius: 8,
-                border: "1px solid rgba(139, 92, 246, 0.5)",
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="https://aicheckers.net/logo-transparent.png" width={36} height={36} alt="" style={{ display: "flex", marginRight: 8 }} />
-              <span style={{ display: "flex", color: "#A78BFA", fontWeight: 700 }}>AI</span>
-              <span style={{ display: "flex", marginLeft: 6 }}>チェッカー</span>
-            </span>
+            <span style={{ display: "flex", marginLeft: 12, color: "#A78BFA", fontWeight: 700 }}>AI</span>
+            <span style={{ display: "flex", marginLeft: 6, color: "#E6E9EE" }}>チェッカー</span>
           </div>
         </div>
 
@@ -204,7 +189,7 @@ export async function GET(request: NextRequest) {
               fontWeight: 800,
               color: color.primary,
               letterSpacing: "-0.02em",
-              textShadow: `0 4px 20px ${color.glow}, 0 0 60px ${color.glow}`,
+              textShadow: `0 4px 30px ${color.primary}`,
               lineHeight: 1,
             }}
           >
