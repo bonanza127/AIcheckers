@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
             }}
           >
             <span style={{ display: "flex", color: "#6E7681" }}>by</span>
-            <span style={{ display: "flex", marginLeft: 12, color: "#A78BFA", fontWeight: 700 }}>AI</span>
+            <span style={{ display: "flex", marginLeft: 12, color: "#EF4444", fontWeight: 700 }}>AI</span>
             <span style={{ display: "flex", marginLeft: 6, color: "#E6E9EE" }}>チェッカー</span>
           </div>
         </div>
@@ -185,11 +185,11 @@ export async function GET(request: NextRequest) {
           <span
             style={{
               display: "flex",
-              fontSize: 84,
+              fontSize: 80,
               fontWeight: 800,
               color: color.primary,
               letterSpacing: "-0.02em",
-              textShadow: `0 4px 30px ${color.primary}`,
+              textShadow: `0 4px 20px ${color.primary}`,
               lineHeight: 1,
             }}
           >
