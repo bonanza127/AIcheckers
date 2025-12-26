@@ -52,7 +52,7 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     time,
     ...(trace && { trace }),
   });
-  const ogImageUrl = `https://www.aicheckers.net/api/og?${ogParams.toString()}`;
+  const ogImageUrl = `https://aicheckers.net/api/og?${ogParams.toString()}`;
 
   return {
     title,
