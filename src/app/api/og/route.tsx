@@ -75,9 +75,9 @@ export async function GET(request: NextRequest) {
               marginLeft: 20,
             }}
           >
-            <span style={{ display: "flex", color: "#6E7681" }}>by</span>
-            <span style={{ display: "flex", marginLeft: 12, color: "#EF4444", fontWeight: 700 }}>AI</span>
-            <span style={{ display: "flex", marginLeft: 6, color: "#E6E9EE" }}>チェッカー</span>
+            <span style={{ display: "flex", color: "#6E7681", fontSize: 32 }}>by</span>
+            <span style={{ display: "flex", marginLeft: 12, color: "#EF4444", fontWeight: 700, fontSize: 36 }}>AI</span>
+            <span style={{ display: "flex", marginLeft: 6, color: "#E6E9EE", fontSize: 36 }}>チェッカー</span>
           </div>
         </div>
 
@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
               fontWeight: 900,
               color: color.primary,
               letterSpacing: "-0.02em",
-              textShadow: `0 0 20px ${color.primary}, 0 0 40px ${color.primary}, 0 4px 20px ${color.primary}`,
+              textShadow: `0 0 15px ${color.primary}, 0 0 30px ${color.primary}, 0 4px 15px ${color.primary}`,
               lineHeight: 1,
             }}
           >
