@@ -9,12 +9,6 @@
   <!-- Rounded square background -->
   <rect x="4" y="4" width="56" height="56" rx="12" fill="url(#g)"/>
 
-  <!-- Eye/lens shape -->
-  <ellipse cx="32" cy="28" rx="18" ry="14" fill="none" stroke="white" stroke-width="3"/>
-
-  <!-- Pupil -->
-  <circle cx="32" cy="28" r="6" fill="white"/>
-
-  <!-- Checkmark below -->
-  <path d="M20 44 L28 52 L44 36" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- AI text - large and bold -->
+  <text x="32" y="44" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="white">AI</text>
 </svg>
