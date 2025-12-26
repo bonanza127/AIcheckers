@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
           style={{
             display: "flex",
             alignItems: "center",
+            justifyContent: "center",
             borderBottom: "2px solid rgba(139, 92, 246, 0.3)",
             paddingBottom: 24,
             marginBottom: 24,
