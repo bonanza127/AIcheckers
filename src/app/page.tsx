@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { flushSync } from "react-dom";
 import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
 import VipModal from "@/components/VipModal";
 
@@ -445,12 +444,8 @@ export default function Home() {
       reader.readAsDataURL(file);
     });
 
-    // 処理開始時にresultをクリア（前の結果が残らないように）
-    // flushSyncで即座にDOMに反映させ、PROCESSING表示を確実にする
-    flushSync(() => {
-      setResult(null);
-      setPhase("scanning");
-    });
+    // 処理開始時にphaseをscanningに設定（resultは前の結果を維持し、一瞬表示される）
+    setPhase("scanning");
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
 
@@ -606,12 +601,13 @@ export default function Home() {
     ));
 
     // verdict: バックエンドのverdictを優先、なければフロントエンドで計算
+    // 5段階分類（低い順）: HUMAN CONFIRMED(青) < LOW SIMILARITY(緑) < MIDDLE CAUTION(黄) < HIGH ALERT(オレンジ) < AI DETECTED(赤)
     const verdict = rateLimitError ? "RATE LIMITED"
       : backendVerdict ? backendVerdict  // バックエンドのverdictを優先使用
       : aiScore >= 80 ? "AI DETECTED"
       : aiScore >= 60 ? "HIGH ALERT"
-      : aiScore >= 40 ? "UNKNOWN"
-      : aiScore >= 20 ? "LOW CONFIDENCE"
+      : aiScore >= 40 ? "MIDDLE CAUTION"
+      : aiScore >= 20 ? "LOW SIMILARITY"
       : "HUMAN CONFIRMED";
 
     setResult({
@@ -736,15 +732,15 @@ export default function Home() {
 
     const verdictText = result.aiScore >= 80 ? "AI DETECTED"
       : result.aiScore >= 60 ? "HIGH ALERT"
-      : result.aiScore >= 40 ? "UNKNOWN"
-      : result.aiScore >= 20 ? "LOW CONFIDENCE"
+      : result.aiScore >= 40 ? "MIDDLE CAUTION"
+      : result.aiScore >= 20 ? "LOW SIMILARITY"
       : "HUMAN CONFIRMED";
 
     const verdictEmoji = result.aiScore >= 80 ? "🤖"
-      : result.aiScore >= 60 ? "⚠️"
-      : result.aiScore >= 40 ? "❓"
-      : result.aiScore >= 20 ? "🔵"
-      : "✅";
+      : result.aiScore >= 60 ? "🟠"
+      : result.aiScore >= 40 ? "🟡"
+      : result.aiScore >= 20 ? "🟢"
+      : "🔵";
 
     const text = `【AI判定結果】
 ${verdictEmoji} ${verdictText}
@@ -752,13 +748,15 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
 #AIイラスト判定 #aicheckers`;
 
-    // 動的OGP付きのシェアURL（短縮のためtraceは省略）
+    // 動的OGP付きのシェアURL
     const vParam = verdictText === "AI DETECTED" ? "ai"
       : verdictText === "HIGH ALERT" ? "ha"
-      : verdictText === "UNKNOWN" ? "u"
-      : verdictText === "LOW CONFIDENCE" ? "lc"
+      : verdictText === "MIDDLE CAUTION" ? "mc"
+      : verdictText === "LOW SIMILARITY" ? "ls"
       : "h";
-    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}`;
+    // traceパラメータを追加（長すぎる場合は先頭40文字まで）
+    const traceParam = result.artifacts ? encodeURIComponent(result.artifacts.substring(0, 40)) : "";
+    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}${traceParam ? `&trace=${traceParam}` : ""}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
@@ -780,36 +778,24 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
   };
 
   const getVerdictDisplay = () => {
-    // resultがnullの場合、スキャン中ならPROCESSINGを表示
-    if (!result) {
-      if (phase === "scanning" || phase === "complete") {
-        return {
-          text: "PROCESSING...",
-          className: "verdict-loading"
-        };
+    // スキャン中は常にPROCESSING...を表示
+    if (phase === "scanning") {
+      return { text: "PROCESSING...", className: "verdict-loading" };
+    }
+    // スキャン完了時のみ結果を表示
+    if (result) {
+      if (result.verdict === "RATE LIMITED") {
+        return { text: result.verdict, className: "verdict-unknown" };
       }
-      return {
-        text: "N/A",
-        className: "verdict-pending"
-      };
+      // 5段階の判定表示（aiScoreから計算）
+      const score = result.aiScore;
+      if (score >= 80) return { text: "AI DETECTED", className: "verdict-ai" };
+      if (score >= 60) return { text: "HIGH ALERT", className: "verdict-high-alert" };
+      if (score >= 40) return { text: "MIDDLE CAUTION", className: "verdict-middle-caution" };
+      if (score >= 20) return { text: "LOW SIMILARITY", className: "verdict-low-risk" };
+      return { text: "HUMAN CONFIRMED", className: "verdict-human" };
     }
-    // result が存在する場合
-    // レート制限エラーの場合
-    if (result.verdict === "RATE LIMITED") {
-      return { text: result.verdict, className: "verdict-unknown" };
-    }
-    // 5段階の判定表示
-    if (result.aiScore >= 80) {
-      return { text: result.verdict, className: "verdict-ai" };
-    } else if (result.aiScore >= 60) {
-      return { text: result.verdict, className: "verdict-high-alert" };
-    } else if (result.aiScore >= 40) {
-      return { text: result.verdict, className: "verdict-middle-caution" };
-    } else if (result.aiScore >= 20) {
-      return { text: result.verdict, className: "verdict-low-risk" };
-    } else {
-      return { text: result.verdict, className: "verdict-human" };
-    }
+    return { text: "N/A", className: "verdict-pending" };
   };
 
   const verdictDisplay = getVerdictDisplay();
@@ -834,8 +820,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       humanScore: 100 - item.aiScore,
       verdict: item.aiScore >= 80 ? "AI DETECTED"
         : item.aiScore >= 60 ? "HIGH ALERT"
-        : item.aiScore >= 40 ? "UNKNOWN"
-        : item.aiScore >= 20 ? "LOW CONFIDENCE"
+        : item.aiScore >= 40 ? "MIDDLE CAUTION"
+        : item.aiScore >= 20 ? "LOW SIMILARITY"
         : "HUMAN CONFIRMED",
       confidence: item.score,
       processingTime: 0,
@@ -1056,7 +1042,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     // 5段階判定: AI(80+), H(60-79), M(40-59), L(20-39), 人(0-19)
                     const score = item.aiScore;
                     const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-middle" : score >= 20 ? "result-low" : "result-human";
-                    const labelClass = score >= 80 ? "bg-danger text-white" : score >= 60 ? "bg-orange-600 text-white" : score >= 40 ? "bg-yellow-500 text-black" : score >= 20 ? "bg-success text-white" : "bg-blue-500 text-white";
+                    const labelClass = score >= 80 ? "bg-danger text-black" : score >= 60 ? "bg-orange-600 text-black" : score >= 40 ? "bg-yellow-500 text-black" : score >= 20 ? "bg-success text-black" : "bg-blue-500 text-black";
                     const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "M" : score >= 20 ? "L" : "人";
                     const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-500" : score >= 40 ? "text-yellow-400" : score >= 20 ? "text-success" : "text-blue-400";
 

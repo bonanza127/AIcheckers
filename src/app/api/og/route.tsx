@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
 
   const verdict = searchParams.get("verdict") || "AI DETECTED";
   const score = searchParams.get("score") || "98";
-  const trace = searchParams.get("trace") || "中程度のAttention集中";
+  const trace = searchParams.get("trace") || "";
   const time = searchParams.get("time") || "0.00";
 
   // 5段階判定
@@ -32,14 +32,14 @@ export async function GET(request: NextRequest) {
   };
   const color = colors[verdictType];
 
-  const possibilityLabels: Record<VerdictType, string> = {
-    ai: "AI POSSIBILITY",
-    high: "HIGH SUSPICION",
-    middle: "UNCERTAIN",
-    low: "LOW SUSPICION",
-    human: "HUMAN POSSIBILITY",
+  // スコア表示用の色（本物のUIと同じ）
+  const scoreColors: Record<VerdictType, string> = {
+    ai: "#EF4444",      // text-danger
+    high: "#EAB308",    // text-yellow-500
+    middle: "#9CA3AF",  // text-gray-400
+    low: "#60A5FA",     // text-blue-400
+    human: "#10B981",   // text-success
   };
-  const possibilityLabel = possibilityLabels[verdictType];
 
   return new ImageResponse(
     (
@@ -133,16 +133,18 @@ export async function GET(request: NextRequest) {
         </div>
 
         {/* Trace */}
-        <div
-          style={{
-            display: "flex",
-            fontSize: 26,
-            color: "#8B949E",
-            marginBottom: 20,
-          }}
-        >
-          検出された痕跡: <span style={{ color: "#E6E9EE", marginLeft: 12, display: "flex" }}>{trace}</span>
-        </div>
+        {trace && (
+          <div
+            style={{
+              display: "flex",
+              fontSize: 26,
+              color: "#8B949E",
+              marginBottom: 20,
+            }}
+          >
+            検出された痕跡: <span style={{ color: "#E6E9EE", fontWeight: 700, marginLeft: 12, display: "flex" }}>{trace}</span>
+          </div>
+        )}
 
         {/* Progress Section */}
         <div style={{ display: "flex", flexDirection: "column", marginBottom: 36 }}>
@@ -154,10 +156,10 @@ export async function GET(request: NextRequest) {
               marginBottom: 12,
             }}
           >
-            <span style={{ display: "flex", fontSize: 20, color: color.primary, fontWeight: 600 }}>
-              {possibilityLabel}
+            <span style={{ display: "flex", fontSize: 22, color: "#EF4444", fontWeight: 600, textTransform: "uppercase" as const }}>
+              AI POSSIBILITY
             </span>
-            <span style={{ display: "flex", fontSize: 26, color: "#E6E9EE", fontWeight: 700 }}>
+            <span style={{ display: "flex", fontSize: 28, color: scoreColors[verdictType], fontWeight: 700 }}>
               {score}%
             </span>
           </div>
@@ -192,16 +194,17 @@ export async function GET(request: NextRequest) {
             flex: 1,
           }}
         >
-          <span style={{ display: "flex", fontSize: 28, color: "#8B949E", marginRight: 24 }}>
+          <span style={{ display: "flex", fontSize: 36, fontWeight: 500, color: "#8B949E", marginRight: 24, textTransform: "uppercase" as const }}>
             CLASSIFICATION:
           </span>
           <span
             style={{
               display: "flex",
-              fontSize: 96,
-              fontWeight: 900,
+              fontSize: 84,
+              fontWeight: 800,
               color: color.primary,
-              textShadow: `0 0 40px ${color.glow}`,
+              letterSpacing: "-0.02em",
+              textShadow: `0 4px 20px ${color.glow}, 0 0 60px ${color.glow}`,
               lineHeight: 1,
             }}
           >

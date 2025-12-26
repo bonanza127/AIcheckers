@@ -710,7 +710,15 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
 
 
 def get_verdict(ai_score: float) -> str:
-    """AIスコアに基づいてverdict（判定結果）を返す"""
+    """AIスコアに基づいてverdict（判定結果）を返す
+
+    5段階分類（低い順）:
+    - HUMAN CONFIRMED (0-20%): 青
+    - LOW SIMILARITY (20-40%): 緑
+    - MIDDLE CAUTION (40-60%): 黄色
+    - HIGH ALERT (60-80%): オレンジ
+    - AI DETECTED (80-100%): 赤
+    """
     if ai_score >= 80:
         return "AI DETECTED"
     elif ai_score >= 60:
@@ -718,7 +726,7 @@ def get_verdict(ai_score: float) -> str:
     elif ai_score >= 40:
         return "MIDDLE CAUTION"
     elif ai_score >= 20:
-        return "MINOR CAUTION"
+        return "LOW SIMILARITY"
     else:
         return "HUMAN CONFIRMED"
 

@@ -20,9 +20,9 @@ function getVerdictType(verdict: string): "ai" | "high" | "middle" | "low" | "hu
 // 短縮コードからverdictに変換
 function expandVerdict(v: string): string {
   if (v === "ai") return "AI DETECTED";
-  if (v === "hi") return "HIGH ALERT";
-  if (v === "mi") return "MIDDLE CAUTION";
-  if (v === "lo") return "MINOR CAUTION";
+  if (v === "ha") return "HIGH ALERT";
+  if (v === "mc") return "MIDDLE CAUTION";
+  if (v === "ls") return "LOW SIMILARITY";
   if (v === "h") return "HUMAN CONFIRMED";
   return v;
 }
@@ -52,7 +52,7 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     time,
     ...(trace && { trace }),
   });
-  const ogImageUrl = `https://www.aicheckers.net/api/og?${ogParams.toString()}`;
+  const ogImageUrl = `https://aicheckers.net/api/og?${ogParams.toString()}`;
 
   return {
     title,

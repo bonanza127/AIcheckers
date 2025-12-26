@@ -331,18 +331,24 @@ def main():
     parser.add_argument("--cls-only", action="store_true",
                         help="Use CLS only (768 dims) instead of CLS+patch_stats (774 dims)")
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output path (default: models/dinov3_classifier.pt)")
     args = parser.parse_args()
 
     use_patch_stats = not args.cls_only
-    mode_str = "CLS + patch_stats (774 dims)" if use_patch_stats else "CLS only (768 dims)"
+    mode_str = "CLS + patch_stats (775 dims)" if use_patch_stats else "CLS only (768 dims)"
 
     print("=" * 50)
-    print(f"Linear Probe Training: {mode_str}")
+    print(f"Linear Probe Training: {mode_str}, {args.epochs} epochs")
     print("=" * 50)
 
-    # Backup existing model first
-    output_path = OUTPUT_PATH if use_patch_stats else OUTPUT_PATH.with_name("dinov3_classifier_cls_only.pt")
-    if output_path.exists():
+    # 出力パス決定
+    if args.output:
+        output_path = Path(args.output)
+    else:
+        output_path = OUTPUT_PATH if use_patch_stats else OUTPUT_PATH.with_name("dinov3_classifier_cls_only.pt")
+    # 既存のデフォルトモデルを上書きする場合のみバックアップ
+    if output_path.exists() and args.output is None:
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = output_path.with_name(f"dinov3_classifier_backup_{timestamp}.pt")
