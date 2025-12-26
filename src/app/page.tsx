@@ -748,15 +748,13 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
 #AIイラスト判定 #aicheckers`;
 
-    // 動的OGP付きのシェアURL
+    // 動的OGP付きのシェアURL（短縮パラメータ使用）
     const vParam = verdictText === "AI DETECTED" ? "ai"
       : verdictText === "HIGH ALERT" ? "ha"
       : verdictText === "MIDDLE CAUTION" ? "mc"
       : verdictText === "LOW SIMILARITY" ? "ls"
       : "h";
-    // traceパラメータを追加（長すぎる場合は先頭40文字まで）
-    const traceParam = result.artifacts ? encodeURIComponent(result.artifacts.substring(0, 40)) : "";
-    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}${traceParam ? `&trace=${traceParam}` : ""}`;
+    const shareUrl = `https://www.aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
