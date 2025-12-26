@@ -186,10 +186,10 @@ export async function GET(request: NextRequest) {
             style={{
               display: "flex",
               fontSize: 80,
-              fontWeight: 800,
+              fontWeight: 900,
               color: color.primary,
               letterSpacing: "-0.02em",
-              textShadow: `0 4px 20px ${color.primary}`,
+              textShadow: `0 0 20px ${color.primary}, 0 0 40px ${color.primary}, 0 4px 20px ${color.primary}`,
               lineHeight: 1,
             }}
           >
