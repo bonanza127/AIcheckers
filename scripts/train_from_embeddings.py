@@ -26,6 +26,7 @@ AI_CATEGORIES = [
     "novelai_combined_ai",  # dedup済みPixiv+Twitter (4,499枚)
     "pixiv_novelai_v2_ai",  # Pixiv NovelAI dedup済み (8,859枚)
     "twitter_novelai_v2_ai",  # Twitter NovelAI dedup済み (12,262枚)
+    "novelai_artist_tagged_ai",  # AIBooru アーティストタグ付き (846枚)
 ]
 
 # Realカテゴリ（0=Real）
