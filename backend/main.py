@@ -22,7 +22,7 @@ import torch.nn as nn
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from PIL import Image
 from pydantic import BaseModel
 from transformers import AutoImageProcessor, AutoModel
@@ -60,8 +60,8 @@ ADMIN_EMAILS = {"hokhok7676@gmail.com", "dlsite-trial@aicheckers.net"}
 # Test Time Augmentation (TTA): 水平反転で2回推論し平均化
 TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
 
-# Temperature Scaling: 過信を防ぎ確率を平滑化（検証データで調整）
-TEMPERATURE = float(os.getenv("TEMPERATURE", "1.5"))
+# Temperature Scaling: ECE最適化済み（2025-01-01検証: T=1.1が最良）
+TEMPERATURE = float(os.getenv("TEMPERATURE", "1.1"))
 
 # IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
@@ -116,6 +116,10 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 VIP_DATA_PATH = Path("/home/techne/aicheckers/data/vip_users.json")
 USERS_DATA_PATH = Path("/home/techne/aicheckers/data/users.json")
 
+# Enterprise API設定
+ENTERPRISE_KEYS_PATH = Path("/home/techne/aicheckers/data/enterprise_keys.json")
+ENTERPRISE_USAGE_PATH = Path("/home/techne/aicheckers/data/enterprise_usage.json")
+
 # ユーザーデータ管理
 def load_users() -> dict:
     if USERS_DATA_PATH.exists():
@@ -160,6 +164,65 @@ def save_vip_users(data: dict):
 
 vip_users: dict = {}  # 起動時にロード
 
+# Enterprise APIキー管理
+def load_enterprise_keys() -> dict:
+    """Enterprise APIキーをロード"""
+    if ENTERPRISE_KEYS_PATH.exists():
+        with open(ENTERPRISE_KEYS_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_enterprise_keys(data: dict):
+    """Enterprise APIキーを保存"""
+    ENTERPRISE_KEYS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(ENTERPRISE_KEYS_PATH, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def load_enterprise_usage() -> dict:
+    """Enterprise API使用量をロード"""
+    if ENTERPRISE_USAGE_PATH.exists():
+        with open(ENTERPRISE_USAGE_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_enterprise_usage(data: dict):
+    """Enterprise API使用量を保存"""
+    ENTERPRISE_USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(ENTERPRISE_USAGE_PATH, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def generate_api_key() -> str:
+    """Enterprise APIキーを生成 (aicheckers_ent_xxxxxx)"""
+    return f"aicheckers_ent_{secrets.token_hex(24)}"
+
+
+def track_enterprise_usage(api_key: str, endpoint: str):
+    """Enterprise API使用量を記録"""
+    global enterprise_usage
+    month_key = datetime.now().strftime("%Y-%m")
+
+    if api_key not in enterprise_usage:
+        enterprise_usage[api_key] = {}
+    if month_key not in enterprise_usage[api_key]:
+        enterprise_usage[api_key][month_key] = {"total": 0, "endpoints": {}}
+
+    enterprise_usage[api_key][month_key]["total"] += 1
+    if endpoint not in enterprise_usage[api_key][month_key]["endpoints"]:
+        enterprise_usage[api_key][month_key]["endpoints"][endpoint] = 0
+    enterprise_usage[api_key][month_key]["endpoints"][endpoint] += 1
+
+    # 100リクエストごとにファイル保存（パフォーマンス考慮）
+    if enterprise_usage[api_key][month_key]["total"] % 100 == 0:
+        save_enterprise_usage(enterprise_usage)
+
+
+enterprise_keys: dict = {}  # 起動時にロード
+enterprise_usage: dict = {}  # 起動時にロード
+
 DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
 EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
@@ -170,6 +233,7 @@ HF_TOKEN = "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"
 async def lifespan(app: FastAPI):
     """起動時にMoonlight (DINOv3) をロード"""
     global device, dinov3_model, dinov3_processor, dinov3_classifier, use_patch_stats, vip_users, users_db
+    global enterprise_keys, enterprise_usage
 
     # ユーザーデータをロード
     users_db = load_users()
@@ -178,6 +242,11 @@ async def lifespan(app: FastAPI):
     # VIPユーザーリストをロード
     vip_users = load_vip_users()
     print(f"Loaded {len(vip_users)} VIP users")
+
+    # Enterprise APIキー・使用量をロード
+    enterprise_keys = load_enterprise_keys()
+    enterprise_usage = load_enterprise_usage()
+    print(f"Loaded {len(enterprise_keys)} enterprise API keys")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -217,6 +286,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # クリーンアップ
+    # Enterprise使用量を保存
+    save_enterprise_usage(enterprise_usage)
     del dinov3_model, dinov3_processor, dinov3_classifier
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -243,7 +314,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"],
     max_age=3600,
 )
@@ -300,6 +371,29 @@ def _recover_tokens(ip: str, is_vip: bool = False) -> None:
         tokens_to_recover = hours_passed * recovery_amount
         data["tokens"] = min(max_tokens, data["tokens"] + tokens_to_recover)
         data["last_recovery"] = current_hour
+
+
+def verify_enterprise_api_key(request: Request) -> dict | None:
+    """Enterprise APIキーを検証。有効なら企業情報を返す、無効ならNone。"""
+    api_key = request.headers.get("X-API-Key", "")
+    if not api_key or not api_key.startswith("aicheckers_ent_"):
+        return None
+
+    key_info = enterprise_keys.get(api_key)
+    if not key_info:
+        return None
+
+    # 有効期限チェック（設定されている場合）
+    expires_at = key_info.get("expires_at")
+    if expires_at:
+        if datetime.fromisoformat(expires_at) < datetime.now():
+            return None
+
+    # 無効化されていないかチェック
+    if key_info.get("revoked", False):
+        return None
+
+    return {**key_info, "api_key": api_key}
 
 
 def get_rate_limit_key(request: Request) -> tuple[str, bool, bool]:
@@ -398,6 +492,12 @@ async def root():
         "status": "ok",
         "model": "Moonlight"
     }
+
+
+@app.get("/robots.txt")
+async def robots_txt():
+    """検索エンジンのクロールを拒否"""
+    return PlainTextResponse("User-agent: *\nDisallow: /")
 
 
 @app.get("/health")
@@ -885,18 +985,27 @@ async def analyze_image(
 ):
     """
     画像を解析してAI生成かどうかを判定（Moonlightのみ）
-    """
-    # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
-    key, is_vip, is_admin = get_rate_limit_key(request)
 
-    # レート制限チェック
-    allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
-    if not allowed:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": f"上限（{limit}枚）に達しました。1時間ごとに回復します。"},
-            headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
-        )
+    Enterprise API: X-API-Keyヘッダーで認証（レート制限なし）
+    """
+    # Enterprise APIキー認証チェック（優先）
+    enterprise_info = verify_enterprise_api_key(request)
+    is_enterprise = enterprise_info is not None
+
+    if is_enterprise:
+        # Enterprise APIはレート制限なし
+        remaining, limit = -1, -1
+        track_enterprise_usage(enterprise_info["api_key"], "/analyze")
+    else:
+        # 通常ユーザーのレート制限
+        key, is_vip, is_admin = get_rate_limit_key(request)
+        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"上限（{limit}枚）に達しました。1時間ごとに回復します。"},
+                headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
+            )
 
     # ファイル形式チェック
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -912,9 +1021,12 @@ async def analyze_image(
         # キャッシュチェック
         if image_hash in result_cache:
             cached = result_cache[image_hash]
-            # キャッシュヒット時もレート制限カウント増加
-            increment_rate_limit(key, is_vip, is_admin)
-            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+            # キャッシュヒット時もレート制限カウント増加（Enterprise以外）
+            if not is_enterprise:
+                increment_rate_limit(key, is_vip, is_admin)
+                _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+            else:
+                remaining_after, limit_after = -1, -1
             return JSONResponse(
                 content={**cached, "cached": True, "filename": file.filename},
                 headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
@@ -945,9 +1057,12 @@ async def analyze_image(
         cache_data = {k: v for k, v in response_data.items() if k != "filename"}
         result_cache[image_hash] = cache_data
 
-        # レート制限カウント増加
-        increment_rate_limit(key, is_vip, is_admin)
-        _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+        # レート制限カウント増加（Enterprise以外）
+        if not is_enterprise:
+            increment_rate_limit(key, is_vip, is_admin)
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+        else:
+            remaining_after, limit_after = -1, -1
 
         # マジックリンク経由ならDiscord通知（非同期でバックグラウンド実行）
         magic_email = get_magic_link_email(request)
@@ -997,18 +1112,27 @@ def extract_twitter_image_url(url: str) -> str:
 async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
     """
     URLから画像を取得して解析（Moonlightのみ）
-    """
-    # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
-    key, is_vip, is_admin = get_rate_limit_key(request)
 
-    # レート制限チェック
-    allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
-    if not allowed:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": f"上限（{limit}枚）に達しました。1時間ごとに回復します。"},
-            headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
-        )
+    Enterprise API: X-API-Keyヘッダーで認証（レート制限なし）
+    """
+    # Enterprise APIキー認証チェック（優先）
+    enterprise_info = verify_enterprise_api_key(request)
+    is_enterprise = enterprise_info is not None
+
+    if is_enterprise:
+        # Enterprise APIはレート制限なし
+        remaining, limit = -1, -1
+        track_enterprise_usage(enterprise_info["api_key"], "/analyze-url")
+    else:
+        # 通常ユーザーのレート制限
+        key, is_vip, is_admin = get_rate_limit_key(request)
+        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"上限（{limit}枚）に達しました。1時間ごとに回復します。"},
+                headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
+            )
 
     url = body.url.strip()
 
@@ -1051,8 +1175,11 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         image_hash = get_image_hash(contents)
         if image_hash in result_cache:
             cached = result_cache[image_hash]
-            increment_rate_limit(key, is_vip, is_admin)
-            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+            if not is_enterprise:
+                increment_rate_limit(key, is_vip, is_admin)
+                _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+            else:
+                remaining_after, limit_after = -1, -1
             filename = url.split("/")[-1].split("?")[0] or "image_from_url"
             return JSONResponse(
                 content={**cached, "cached": True, "filename": filename, "source_url": body.url},
@@ -1089,9 +1216,12 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
         cache_data = {k: v for k, v in response_data.items() if k not in ("filename", "source_url")}
         result_cache[image_hash] = cache_data
 
-        # レート制限カウント増加
-        increment_rate_limit(key, is_vip, is_admin)
-        _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+        # レート制限カウント増加（Enterprise以外）
+        if not is_enterprise:
+            increment_rate_limit(key, is_vip, is_admin)
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+        else:
+            remaining_after, limit_after = -1, -1
 
         return JSONResponse(
             content=response_data,
@@ -1675,6 +1805,159 @@ async def paypal_execute(paymentId: str, PayerID: str, email: str = ""):
     except Exception as e:
         print(f"PayPal execute error: {e}")
         return RedirectResponse(f"{FRONTEND_URL}?vip=error&message=payment_failed")
+
+
+# ==================== Enterprise API管理 ====================
+
+class CreateEnterpriseKeyRequest(BaseModel):
+    company_name: str
+    contact_email: str
+    plan: str = "standard"  # standard, unlimited
+    expires_days: int = 365  # デフォルト1年
+
+
+@app.post("/admin/enterprise/create-key")
+async def create_enterprise_key(request: Request, body: CreateEnterpriseKeyRequest):
+    """Enterprise APIキーを発行（管理者のみ）"""
+    # 管理者認証
+    key, is_vip, is_admin = get_rate_limit_key(request)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="管理者権限が必要です")
+
+    global enterprise_keys
+
+    # APIキー生成
+    api_key = generate_api_key()
+    created_at = datetime.now()
+    expires_at = created_at + timedelta(days=body.expires_days) if body.expires_days > 0 else None
+
+    key_info = {
+        "company_name": body.company_name,
+        "contact_email": body.contact_email,
+        "plan": body.plan,
+        "created_at": created_at.isoformat(),
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "revoked": False,
+    }
+
+    enterprise_keys[api_key] = key_info
+    save_enterprise_keys(enterprise_keys)
+
+    print(f"Enterprise key created for: {body.company_name} ({body.contact_email})")
+
+    return {
+        "api_key": api_key,
+        **key_info
+    }
+
+
+@app.get("/admin/enterprise/list-keys")
+async def list_enterprise_keys(request: Request):
+    """発行済みEnterprise APIキー一覧（管理者のみ）"""
+    key, is_vip, is_admin = get_rate_limit_key(request)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="管理者権限が必要です")
+
+    result = []
+    for api_key, info in enterprise_keys.items():
+        # APIキーは先頭と末尾のみ表示
+        masked_key = api_key[:20] + "..." + api_key[-8:]
+        result.append({
+            "api_key_masked": masked_key,
+            "api_key_full": api_key,  # 管理者には全体を表示
+            **info
+        })
+
+    return {"keys": result}
+
+
+@app.post("/admin/enterprise/revoke-key/{api_key}")
+async def revoke_enterprise_key(request: Request, api_key: str):
+    """Enterprise APIキーを無効化（管理者のみ）"""
+    key, is_vip, is_admin = get_rate_limit_key(request)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="管理者権限が必要です")
+
+    if api_key not in enterprise_keys:
+        raise HTTPException(status_code=404, detail="APIキーが見つかりません")
+
+    enterprise_keys[api_key]["revoked"] = True
+    enterprise_keys[api_key]["revoked_at"] = datetime.now().isoformat()
+    save_enterprise_keys(enterprise_keys)
+
+    return {"status": "revoked", "api_key": api_key}
+
+
+@app.get("/admin/enterprise/usage/{api_key}")
+async def get_enterprise_usage(request: Request, api_key: str, month: str = None):
+    """Enterprise APIキーの使用量を取得（管理者のみ）"""
+    key, is_vip, is_admin = get_rate_limit_key(request)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="管理者権限が必要です")
+
+    if api_key not in enterprise_keys:
+        raise HTTPException(status_code=404, detail="APIキーが見つかりません")
+
+    if month is None:
+        month = datetime.now().strftime("%Y-%m")
+
+    usage = enterprise_usage.get(api_key, {}).get(month, {"total": 0, "endpoints": {}})
+
+    return {
+        "api_key": api_key[:20] + "..." + api_key[-8:],
+        "company_name": enterprise_keys[api_key].get("company_name"),
+        "month": month,
+        "usage": usage
+    }
+
+
+@app.get("/admin/enterprise/usage-all")
+async def get_all_enterprise_usage(request: Request, month: str = None):
+    """全Enterprise APIキーの使用量サマリー（管理者のみ）"""
+    key, is_vip, is_admin = get_rate_limit_key(request)
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="管理者権限が必要です")
+
+    if month is None:
+        month = datetime.now().strftime("%Y-%m")
+
+    result = []
+    for api_key, info in enterprise_keys.items():
+        usage = enterprise_usage.get(api_key, {}).get(month, {"total": 0, "endpoints": {}})
+        result.append({
+            "api_key_masked": api_key[:20] + "..." + api_key[-8:],
+            "company_name": info.get("company_name"),
+            "plan": info.get("plan"),
+            "revoked": info.get("revoked", False),
+            "month": month,
+            "total_requests": usage.get("total", 0),
+        })
+
+    # 使用量順にソート
+    result.sort(key=lambda x: x["total_requests"], reverse=True)
+
+    return {"month": month, "usage": result}
+
+
+@app.get("/enterprise/verify")
+async def verify_enterprise_key_endpoint(request: Request):
+    """Enterprise APIキーの有効性を確認（企業向け）"""
+    enterprise_info = verify_enterprise_api_key(request)
+    if not enterprise_info:
+        raise HTTPException(status_code=401, detail="無効なAPIキーです")
+
+    # 使用量を取得
+    api_key = enterprise_info["api_key"]
+    month = datetime.now().strftime("%Y-%m")
+    usage = enterprise_usage.get(api_key, {}).get(month, {"total": 0, "endpoints": {}})
+
+    return {
+        "valid": True,
+        "company_name": enterprise_info.get("company_name"),
+        "plan": enterprise_info.get("plan"),
+        "expires_at": enterprise_info.get("expires_at"),
+        "current_month_usage": usage.get("total", 0)
+    }
 
 
 if __name__ == "__main__":

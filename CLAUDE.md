@@ -13,6 +13,30 @@
 | API | https://api.aicheckers.net (Cloudflare Tunnel → localhost:8000) |
 | 速度 | 70-120ms (TTA有効時) |
 
+### Enterprise API
+| 項目 | 詳細 |
+|------|------|
+| 認証 | `X-API-Key: aicheckers_ent_xxx...` ヘッダー |
+| レート制限 | なし |
+| ドキュメント | `docs/enterprise_api.md` |
+| キー発行 | `/admin/enterprise/create-key` (管理者のみ) |
+| 使用量確認 | `/admin/enterprise/usage-all` (管理者のみ) |
+| データ保存 | `data/enterprise_keys.json`, `data/enterprise_usage.json` |
+
+**企業向けAPIキー発行手順:**
+```bash
+# 1. 管理者アカウントでサイトにログイン → JWTトークンを取得
+# 2. 以下を実行（company_name, contact_emailを適宜変更）
+curl -X POST https://api.aicheckers.net/admin/enterprise/create-key \
+  -H "Authorization: Bearer YOUR_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"company_name": "株式会社Example", "contact_email": "api@example.co.jp", "plan": "standard", "expires_days": 365}'
+
+# レスポンスにapi_keyが含まれる → これを企業に渡す
+```
+
+**VIP/管理者との共存:** Enterprise APIは`X-API-Key`ヘッダーがある場合のみ。従来のJWT認証（VIP/管理者デモ版）はそのまま動作する。
+
 ### よく使うコマンド
 ```bash
 # 診断（テスト）- 必ずこれを使う
@@ -25,8 +49,8 @@ systemctl --user restart aicheckers-backend
 # 重複削除
 python3 scripts/dedup_images.py --dir /path/to/images --threshold 9
 
-# Embedding抽出
-python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name
+# Embedding抽出（劣化Augmentation推奨）
+python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name --degradation-prob 0.5
 
 # 学習
 python3 scripts/train_from_embeddings.py
@@ -120,6 +144,21 @@ TTA + Temperature Scaling (T=1.5)
 | 4 | embed_var_mean | 埋め込み分散の平均 |
 | 5 | count_high_score | スコア≥0.8のパッチ割合 |
 | 6 | v_high_sim_85 | 垂直方向の高類似度パッチ比率 |
+
+### 劣化Augmentation (2025-01-01 採用)
+画質バイアス除去のため、Embedding抽出時に確率的に劣化を適用。
+
+| 劣化タイプ | パラメータ |
+|------------|------------|
+| JPEG圧縮 | quality 30-70 |
+| ガウシアンノイズ | std 5-25 |
+| ダウンサンプリング | scale 50-80% |
+
+**効果** (A/Bテスト結果):
+- AI検出率: +2.68%
+- Human正解率: +0.22%
+
+**使用方法**: `--degradation-prob 0.5` をextract_embeddings_v2.pyに指定
 
 ---
 
