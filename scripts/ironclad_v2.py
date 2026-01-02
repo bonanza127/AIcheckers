@@ -103,7 +103,7 @@ class IroncladPoisoner:
         return image_tensor
 
     def poison(self, image_tensor: torch.Tensor, iterations: int = 50,
-               normalize_resolution: bool = False) -> torch.Tensor:
+               normalize_resolution: bool = False, progress_callback=None) -> torch.Tensor:
         """
         メイン処理: ポイズニング + 署名埋め込み
 
@@ -161,7 +161,7 @@ class IroncladPoisoner:
         sig_pattern = self._generate_signature_pattern(LH.shape, image_salt).to(device)
 
         # 6. Untargeted Semantic Attack (LLに対して実施)
-        LL_poisoned = self._untargeted_semantic_attack(LL, iterations)
+        LL_poisoned = self._untargeted_semantic_attack(LL, iterations, progress_callback)
 
         # 7. 署名埋め込み (LH/HL) - 知覚マスク適用
         perturbation = sig_pattern * self.strength_mid * mask_mid
@@ -190,7 +190,7 @@ class IroncladPoisoner:
 
         return torch.clamp(poisoned_rgb, 0, 1)
 
-    def _untargeted_semantic_attack(self, LL: torch.Tensor, steps: int = 50) -> torch.Tensor:
+    def _untargeted_semantic_attack(self, LL: torch.Tensor, steps: int = 50, progress_callback=None) -> torch.Tensor:
         """
         Untargeted Attack: VAE潜在空間で元画像との類似度を最小化
         - ターゲット概念の指定不要
@@ -216,7 +216,7 @@ class IroncladPoisoner:
         optimized_LL = LL.clone().requires_grad_(True)
         optimizer = torch.optim.Adam([optimized_LL], lr=0.01)
 
-        for _ in range(steps):
+        for step in range(steps):
             upscaled_opt = F.interpolate(
                 optimized_LL, size=(original_size, original_size), mode='bilinear', align_corners=False
             )
@@ -240,6 +240,10 @@ class IroncladPoisoner:
                 perturbation = optimized_LL - LL
                 perturbation = torch.clamp(perturbation, -self.strength_low, self.strength_low)
                 optimized_LL.data = LL + perturbation
+
+            # 進捗コールバック
+            if progress_callback:
+                progress_callback(step + 1, steps)
 
         return optimized_LL.detach()
 

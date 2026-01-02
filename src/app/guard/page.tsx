@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
+import { flushSync } from "react-dom";
+import { Upload, Trash2, Cpu, Shield, History, Plus, Download } from "lucide-react";
 import VipModal from "@/components/VipModal";
 import HamburgerMenu from "@/components/HamburgerMenu";
 
@@ -38,18 +39,16 @@ type DetectionResult = {
   confidence: number;
   processingTime: number;
   artifacts: string;
-  attentionMap?: string; // Base64エンコードされたヒートマップ
+  attentionMap?: string;
 };
 
 type HistoryItem = {
   id: string;
   name: string;
-  preview: string;
-  isAI: boolean;
-  score: number;
-  aiScore: number;
-  attentionMap?: string;
-  artifacts?: string; // detected_traces を保存
+  preview: string; // 元画像のプレビュー
+  protectedImage: string; // 保護済み画像（Base64 PNG）
+  ssim: number;
+  processingTime: number;
   timestamp: Date;
 };
 
@@ -78,12 +77,13 @@ export default function Home() {
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
+  // ガードモードではヒートマップ不使用
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
   const [urlInput, setUrlInput] = useState("");
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
+  const [guardProgress, setGuardProgress] = useState({ current: 0, total: 0 });
   const [timeUntilReset, setTimeUntilReset] = useState("--:--:--");
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -445,7 +445,7 @@ export default function Home() {
       reader.readAsDataURL(file);
     });
 
-    // 処理開始時にphaseをscanningに設定（resultは前の結果を維持し、一瞬表示される）
+    // 処理開始時にphaseをscanningに設定
     setPhase("scanning");
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
@@ -453,41 +453,20 @@ export default function Home() {
     // ファイルサイズを取得
     const fileSizeKB = (file.size / 1024).toFixed(1);
 
-    addLog(`解析開始: [${displayIndex}/${total}] ファイル: ${file.name}...`, "heading");
+    addLog(`防壁構築開始: [${displayIndex}/${total}] ${file.name}`, "heading");
     addLog(`画像データ読み込み完了 (${fileSizeKB}KB)`, "process");
 
-    // 演出用のログを段階的に表示
-    const analysisLogs = [
-      { delay: 400, message: "前処理: リサイズ → 224×224px", type: "detail" as const },
-      { delay: 800, message: "Vision Transformer エンコーディング開始...", type: "process" as const },
-      { delay: 1200, message: "パッチ分析: 196パッチを解析中...", type: "detail" as const },
-      { delay: 1800, message: "高周波アーティファクト検出...", type: "detail" as const },
-      { delay: 2400, message: "テクスチャパターン分析...", type: "detail" as const },
-      { delay: 3000, message: "アテンションマップ生成完了", type: "process" as const },
-    ];
-
-    // 演出ログを非同期で追加
-    analysisLogs.forEach(({ delay, message, type }) => {
-      setTimeout(() => addLog(`> ${message}`, type), delay);
-    });
-
-    // API呼び出しと最低3.5秒の演出時間を並行実行
-    const minScanTime = 3500 + Math.random() * 1500;
-    const scanDelayPromise = new Promise(r => setTimeout(r, minScanTime));
-
-    // API呼び出し
+    // API呼び出し（SSEストリーミング /guard-stream エンドポイント）
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("model", selectedModel);
 
-    let aiScore: number;
-    let humanScore: number;
-    let isAI: boolean;
+    let protectedImage: string | undefined;
     let processingTime: number;
-    let artifacts: string;
-    let attentionMap: string | undefined;
+    let ssim: number;
     let rateLimitError = false;
-    let backendVerdict: string | undefined;
+
+    // 進捗リセット
+    setGuardProgress({ current: 0, total: 0 });
 
     try {
       const apiUrl = getApiUrl();
@@ -495,160 +474,170 @@ export default function Home() {
       if (authUser?.token) {
         headers["Authorization"] = `Bearer ${authUser.token}`;
       }
-      const [response] = await Promise.all([
-        fetch(`${apiUrl}/analyze`, {
-          method: "POST",
-          body: formData,
-          headers,
-        }),
-        scanDelayPromise
-      ]);
 
-      // レート制限ヘッダーを読み取り
-      const remaining = response.headers.get("X-RateLimit-Remaining");
-      if (remaining !== null) {
-        setRateLimitRemaining(parseInt(remaining, 10));
-      }
+      const response = await fetch(`${apiUrl}/guard-stream`, {
+        method: "POST",
+        body: formData,
+        headers,
+      });
 
       if (!response.ok) {
         if (response.status === 429) {
           const errorData = await response.json().catch(() => ({ detail: "レート制限に達しました" }));
           throw new Error(`RATE_LIMITED:${errorData.detail || "レート制限に達しました"}`);
         }
+        if (response.status === 503) {
+          throw new Error("Ironcladモジュールが利用できません");
+        }
         throw new Error(`API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      // SSEストリームを読み取り
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-      aiScore = Math.round(data.ai_score);
-      humanScore = Math.round(data.human_score);
-      isAI = aiScore >= 80; // 80%以上でAI判定
-      processingTime = data.processing_time;
-      attentionMap = data.attention_map; // Attention Mapを取得
-      backendVerdict = data.verdict; // バックエンドのverdictを取得
-
-      // detected_tracesがあればそれを優先、なければforensic_logsから生成
-      const detectedTraces: string = data.detected_traces || "";
-      const forensicLogs: string[] = data.forensic_logs || [];
-
-      if (forensicLogs.length > 0) {
-        // バックエンドからのforensic_logsを使用
-        forensicLogs.forEach((log: string) => {
-          const logType = log.includes("判定") ? (aiScore >= 80 ? "error" : aiScore >= 50 ? "info" : "process") : "detail";
-          addLog(`> ${log}`, logType);
-        });
+      if (!reader) {
+        throw new Error("ストリームを開始できませんでした");
       }
 
-      // 検出された痕跡の設定（優先順位: detected_traces > forensic_logs > フォールバック）
-      if (detectedTraces) {
-        artifacts = detectedTraces;
-      } else if (forensicLogs.length > 0) {
-        const traces = forensicLogs.filter(l => !l.startsWith("判定")).slice(0, 2);
-        artifacts = traces.length > 0 ? traces.join(" / ") : forensicLogs[0];
-      } else {
-        // フォールバック: 従来のロジック
-        if (aiScore >= 80) {
-          addLog("> 検出: 均一すぎるテクスチャパターン", "detail");
-          addLog("> 検出: 不自然なエッジ処理の痕跡", "detail");
-          addLog("> 警告: AI生成の特徴が顕著", "error");
-          artifacts = "均一テクスチャ、不自然なエッジ処理";
-        } else if (aiScore >= 50) {
-          addLog("> 検出: AI/人間の特徴が混在", "detail");
-          addLog("> 警告: 判定が困難な領域", "info");
-          addLog("> 推奨: 追加の検証が必要", "info");
-          artifacts = "特徴混在 - 追加検証を推奨";
-        } else {
-          addLog("> 検出: 有機的な筆致の揺らぎ", "detail");
-          addLog("> 検出: 自然なテクスチャ分布", "detail");
-          addLog("> 確認: AI生成の痕跡なし", "process");
-          artifacts = "有機的筆致、自然なテクスチャ";
+      let buffer = "";
+      let lastProgress = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSEメッセージは \n\n で区切られる
+        const messages = buffer.split("\n\n");
+        // 最後のメッセージは不完全な可能性があるのでバッファに戻す
+        buffer = messages.pop() || "";
+
+        for (const message of messages) {
+          const lines = message.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const jsonStr = line.slice(6);
+                const data = JSON.parse(jsonStr);
+
+                if (data.type === "progress") {
+                  // flushSyncで即座にDOMを更新（Reactのバッチングを回避）
+                  flushSync(() => {
+                    setGuardProgress({ current: data.current, total: data.total });
+                  });
+                  // 進捗ログ（10ステップごと）
+                  if (data.current % 10 === 0 && data.current !== lastProgress) {
+                    addLog(`> Semantic Attack: ${data.current}/${data.total} iterations...`, "detail");
+                    lastProgress = data.current;
+                  }
+                } else if (data.type === "complete") {
+                  protectedImage = data.protected_image;
+                  processingTime = data.processing_time;
+                  ssim = data.ssim;
+
+                  setGuardProgress({ current: data.iterations, total: data.iterations });
+                  addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
+                  addLog("> Ironclad署名埋込完了", "process");
+                  addLog("> 防壁構築完了 - 画像は保護されました", "result");
+                } else if (data.type === "error") {
+                  throw new Error(data.message);
+                }
+              } catch {
+                // JSON パースエラー - ログ出力してスキップ
+                console.error("SSE parse error for line:", line.substring(0, 100));
+              }
+            }
+          }
         }
       }
 
-      addLog("> Attention Map生成完了", "process");
-      addLog("> 推論完了", "process");
+      // ストリーム終了後、残りのバッファを処理
+      if (buffer.trim()) {
+        const lines = buffer.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === "complete") {
+                protectedImage = data.protected_image;
+                processingTime = data.processing_time;
+                ssim = data.ssim;
+                setGuardProgress({ current: data.iterations, total: data.iterations });
+                addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
+                addLog("> Ironclad署名埋込完了", "process");
+                addLog("> 防壁構築完了 - 画像は保護されました", "result");
+              } else if (data.type === "error") {
+                throw new Error(data.message);
+              }
+            } catch {
+              // 無視
+            }
+          }
+        }
+      }
+
+      if (!protectedImage) {
+        throw new Error("保護画像の生成に失敗しました");
+      }
 
     } catch (error) {
-      await scanDelayPromise; // エラー時も演出時間を確保
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       if (errorMessage.startsWith("RATE_LIMITED:")) {
-        // レート制限エラー
         const detail = errorMessage.replace("RATE_LIMITED:", "");
         addLog(`ERROR: ${detail}`, "error");
         rateLimitError = true;
-        aiScore = 0;
-        humanScore = 0;
-        isAI = false;
-        processingTime = (Date.now() - fileStartTime) / 1000;
-        artifacts = detail;
-        attentionMap = undefined;
       } else {
-        // その他のエラー
-        addLog(`ERROR: API接続失敗 - ${error}`, "error");
-        aiScore = 50;
-        humanScore = 50;
-        isAI = false;
-        processingTime = (Date.now() - fileStartTime) / 1000;
-        artifacts = "API接続エラー";
-        attentionMap = undefined;
+        addLog(`ERROR: ${errorMessage}`, "error");
       }
+      processingTime = (Date.now() - fileStartTime) / 1000;
+      ssim = 0;
     }
 
-    // キューのステータス更新（3段階 + レート制限）
-    const queueStatus = rateLimitError ? "unknown" as const : aiScore >= 80 ? "ai" as const : aiScore >= 50 ? "unknown" as const : "human" as const;
+    // キューのステータス更新
+    const queueStatus = rateLimitError ? "unknown" as const : protectedImage ? "human" as const : "unknown" as const;
     setQueue(prev => prev.map(item =>
       item.id === queueItemId ? { ...item, status: queueStatus } : item
     ));
 
-    // verdict: バックエンドのverdictを優先、なければフロントエンドで計算
-    // 5段階分類（低い順）: HUMAN CONFIRMED(青) < LOW SIMILARITY(緑) < MIDDLE CAUTION(黄) < HIGH ALERT(オレンジ) < AI DETECTED(赤)
-    const verdict = rateLimitError ? "RATE LIMITED"
-      : backendVerdict ? backendVerdict  // バックエンドのverdictを優先使用
-      : aiScore >= 80 ? "AI DETECTED"
-      : aiScore >= 60 ? "HIGH ALERT"
-      : aiScore >= 40 ? "MIDDLE CAUTION"
-      : aiScore >= 20 ? "LOW SIMILARITY"
-      : "HUMAN CONFIRMED";
-
+    // 結果を設定（ガードモード用の表示）
     setResult({
-      isAI,
-      aiScore,
-      humanScore,
-      verdict,
-      confidence: isAI ? aiScore : humanScore,
+      isAI: false,
+      aiScore: 0,
+      humanScore: 100,
+      verdict: rateLimitError ? "RATE LIMITED" : protectedImage ? "PROTECTED" : "ERROR",
+      confidence: 100,
       processingTime,
-      artifacts,
-      attentionMap
+      artifacts: "Ironclad V3.1 / DWT署名 / 知覚マスキング",
+      attentionMap: undefined
     });
 
-    // Add to history（メモリのみ、元画像保持）
-    setHistory(prev => [{
-      id: `history-${Date.now()}`,
-      name: file.name,
-      preview: imageUrl,
-      isAI,
-      score: isAI ? aiScore : humanScore,
-      aiScore,
-      attentionMap,
-      artifacts,
-      timestamp: new Date()
-    }, ...prev].slice(0, 100));
+    // 履歴に追加（保護済み画像を含む）
+    if (protectedImage) {
+      setHistory(prev => [{
+        id: `history-${Date.now()}`,
+        name: file.name,
+        preview: imageUrl,
+        protectedImage: protectedImage,
+        ssim,
+        processingTime,
+        timestamp: new Date()
+      }, ...prev].slice(0, 100));
+    }
 
-    // Remove from queue after scan complete
+    // Remove from queue after complete
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
 
     setPhase("complete");
     const logMessage = rateLimitError
       ? "エラー: レート制限に達しました"
-      : aiScore >= 80
-        ? `最終判定: AI生成の可能性が高い (${aiScore}%)`
-        : aiScore >= 50
-          ? `最終判定: 判定困難 (${aiScore}%)`
-          : `最終判定: 人間による創作物 (${aiScore}%)`;
-    addLog(logMessage, rateLimitError ? "error" : "result");
+      : protectedImage
+        ? `防壁構築完了: ${processingTime.toFixed(2)}秒`
+        : "エラー: 防壁構築に失敗しました";
+    addLog(logMessage, rateLimitError || !protectedImage ? "error" : "result");
 
-    // レート制限エラーを返す（バッチ中断用）
     return { rateLimitError };
   };
 
@@ -780,22 +769,17 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
   const getVerdictDisplay = () => {
     // スキャン中は常にPROCESSING...を表示
     if (phase === "scanning") {
-      return { text: "PROCESSING...", className: "verdict-loading" };
+      return { text: "構築中...", className: "verdict-loading" };
     }
     // スキャン完了時のみ結果を表示
     if (result) {
       if (result.verdict === "RATE LIMITED") {
         return { text: result.verdict, className: "verdict-unknown" };
       }
-      // 5段階の判定表示（aiScoreから計算）
-      const score = result.aiScore;
-      if (score >= 80) return { text: "AI DETECTED", className: "verdict-ai" };
-      if (score >= 60) return { text: "HIGH ALERT", className: "verdict-high-alert" };
-      if (score >= 40) return { text: "MIDDLE CAUTION", className: "verdict-middle-caution" };
-      if (score >= 20) return { text: "LOW SIMILARITY", className: "verdict-low-risk" };
-      return { text: "HUMAN CONFIRMED", className: "verdict-human" };
+      // ガードページでは常に「完了」表示（紫色）
+      return { text: "PROTECTED", className: "verdict-protected" };
     }
-    return { text: "N/A", className: "verdict-pending" };
+    return { text: "待機中", className: "verdict-pending" };
   };
 
   const verdictDisplay = getVerdictDisplay();
@@ -809,26 +793,81 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
   const handleHistoryClick = (item: HistoryItem) => {
     setSelectedHistoryId(item.id);
     setSelectedQueueId(null); // Clear queue selection
-    setShowHeatmap(true); // Attention Mapをデフォルト表示
     setCurrentImage(item.preview);
     setCurrentFileName(item.name);
-    // 保存されたartifactsを使用、なければフォールバック
-    const fallbackArtifacts = item.aiScore >= 80 ? "均一テクスチャ、不自然なエッジ処理" : item.aiScore >= 50 ? "特徴混在 - 追加検証を推奨" : "有機的筆致、自然なテクスチャ";
     setResult({
-      isAI: item.isAI,
-      aiScore: item.aiScore,
-      humanScore: 100 - item.aiScore,
-      verdict: item.aiScore >= 80 ? "AI DETECTED"
-        : item.aiScore >= 60 ? "HIGH ALERT"
-        : item.aiScore >= 40 ? "MIDDLE CAUTION"
-        : item.aiScore >= 20 ? "LOW SIMILARITY"
-        : "HUMAN CONFIRMED",
-      confidence: item.score,
-      processingTime: 0,
-      artifacts: item.artifacts || fallbackArtifacts,
-      attentionMap: item.attentionMap
+      isAI: false,
+      aiScore: 0,
+      humanScore: 100,
+      verdict: "PROTECTED",
+      confidence: 100,
+      processingTime: item.processingTime,
+      artifacts: "Ironclad V3.1 / DWT署名 / 知覚マスキング",
+      attentionMap: undefined
     });
     setPhase("complete");
+  };
+
+  // 個別ダウンロード
+  const downloadSingleImage = (item: HistoryItem) => {
+    if (!item.protectedImage) return;
+
+    const link = document.createElement("a");
+    link.href = `data:image/png;base64,${item.protectedImage}`;
+    // ファイル名から拡張子を除去して _protected.png を付与
+    const baseName = item.name.replace(/\.[^/.]+$/, "");
+    link.download = `${baseName}_protected.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addLog(`ダウンロード: ${link.download}`, "info");
+  };
+
+  // まとめてダウンロード（ZIP形式）
+  const downloadAllImages = async () => {
+    const protectedItems = history.filter(item => item.protectedImage);
+    if (protectedItems.length === 0) {
+      addLog("ダウンロードできる画像がありません", "error");
+      return;
+    }
+
+    addLog(`一括ダウンロード開始: ${protectedItems.length}件`, "process");
+
+    // JSZipを動的にインポート（CDNから）
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+
+      protectedItems.forEach((item, index) => {
+        const baseName = item.name.replace(/\.[^/.]+$/, "");
+        const fileName = `${baseName}_protected.png`;
+        // Base64をバイナリに変換
+        const binaryString = atob(item.protectedImage);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        zip.file(fileName, bytes);
+      });
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `protected_images_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      addLog(`一括ダウンロード完了: ${protectedItems.length}件をZIPで保存`, "result");
+    } catch {
+      // JSZipがない場合は個別にダウンロード
+      addLog("ZIP作成に失敗。個別ダウンロードを実行中...", "info");
+      protectedItems.forEach((item, index) => {
+        setTimeout(() => downloadSingleImage(item), index * 500);
+      });
+    }
   };
 
   return (
@@ -836,14 +875,17 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       {/* Header */}
       <header className="site-header sticky top-0 z-40 p-4">
         <div className="container mx-auto flex justify-between items-center">
-          {/* 左: メニュー + ロゴ */}
+          {/* 左: ロゴ + メニュー */}
           <div className="flex items-center gap-0">
-            <HamburgerMenu />
+            <HamburgerMenu variant="guard" />
             <img src="/logo-transparent.png" alt="AI Checkers" className="w-14 h-14" />
             <h2 className="text-2xl font-bold tracking-tight">
-              AIチェッカー
+              AIイラストガード
               <span className="text-sm font-light text-muted">　//　</span>
-              <a href="/how-it-works" className="text-sm font-medium text-muted hover:text-foreground hover:bg-white/5 px-2 py-1 rounded transition-all border border-transparent hover:border-gray-700">
+              <a
+                href="/guard/how-it-works"
+                className="text-sm font-medium text-muted hover:text-accent hover:bg-accent/5 px-2 py-1 rounded transition-all border border-transparent hover:border-accent/30"
+              >
                 How it works?
               </a>
             </h2>
@@ -882,13 +924,13 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       <main className="flex-grow container mx-auto px-4 py-8">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
-          <h1 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した、日本のためのAIイラストチェッカー</h1>
+          <h1 className="text-4xl font-extrabold mb-3 tracking-tight">AIイラストガードが無断学習からあなたの作品を守る</h1>
           <p className="text-muted text-lg">
-            AIが生成したアニメ画像を学習し、ファインチューニングしたViTが生成画像の痕跡を解析。<br />
-            人間的な筆致の有無を検出し、生成画像を<span className="text-accent font-bold">98.35%の精度</span><sup className="text-xs text-muted">*</sup>で判別します。
+            人間の目には見えないノイズを混ぜることにより、作風の模倣を防ぐAIポイズニングの最新版。<br />
+            複数の技法をかけ合わせた<span className="text-accent font-bold">Ironclad V3</span>により、生成AIの学習を顕著に妨害します。
           </p>
           <p className="text-xs text-muted mt-2">
-            * 学習済みモデルの精度。画像は一万枚で検証。
+            ※ 作品の質を下げないよう、防壁は最小限のノイズで構成されています
           </p>
         </div>
 
@@ -908,24 +950,25 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     <div className="relative w-full">
                       <div className={`active-image-container w-full h-72 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
                         <img
-                          src={showHeatmap && result?.attentionMap && phase === "complete" ? `data:image/png;base64,${result.attentionMap}` : previewImage}
-                          alt={showHeatmap && phase === "complete" ? "Attention Heatmap" : "Active Scan"}
+                          src={previewImage}
+                          alt="Guard Scan"
                           className="max-w-full max-h-full object-contain"
                         />
                       </div>
-                      {/* Heatmap Toggle Button - 常に表示 */}
-                      {result?.attentionMap && (
-                        <button
-                          onClick={() => setShowHeatmap(!showHeatmap)}
-                          className={`absolute top-2 right-2 p-2 rounded-lg transition-all ${showHeatmap
-                            ? "bg-accent text-white"
-                            : "bg-black/50 text-white hover:bg-accent/70"
-                            }`}
-                          title={showHeatmap ? "オリジナル画像を表示" : "Attention Mapを表示"}
-                        >
-                          {showHeatmap ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      )}
+                      {/* 選択中の履歴アイテムがあればダウンロードボタンを表示 */}
+                      {selectedHistoryId && (() => {
+                        const selectedItem = history.find(h => h.id === selectedHistoryId);
+                        return selectedItem?.protectedImage ? (
+                          <button
+                            onClick={() => downloadSingleImage(selectedItem)}
+                            className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1.5 text-xs font-medium bg-accent/90 hover:bg-accent text-white rounded shadow-lg transition-colors"
+                            title="保護済み画像をダウンロード"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            ダウンロード
+                          </button>
+                        ) : null;
+                      })()}
                     </div>
                   ) : (
                     <div className="scan-placeholder w-full h-72 flex flex-col items-center justify-center">
@@ -936,7 +979,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   {previewFileName && (
                     <div className="flex items-center justify-center gap-2 mt-3">
                       <p className="text-sm text-muted truncate font-mono">{previewFileName}</p>
-                      {showHeatmap && <span className="text-xs text-accent font-semibold">[ATTENTION MAP]</span>}
+                      {phase === "complete" && <span className="text-xs text-accent font-semibold">[PROTECTED]</span>}
                     </div>
                   )}
                 </div>
@@ -969,53 +1012,51 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                 </svg>
               </button>
-              <h3 className="text-xl font-bold border-b-2 border-accent pb-2 mb-4 uppercase tracking-widest">
-                最終判定
+              <h3 className="text-xl font-bold border-b-2 border-accent pb-2 mb-4 tracking-wide">
+                防壁構築
               </h3>
 
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
-              <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
+              <div className="flex flex-wrap justify-between items-center mb-4 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">Moonlight V1.3</span></span>
-                <span>ロジック: <span className="text-dim font-bold">カスケード方式</span></span>
+                <span>使用モデル: <span className="text-accent font-bold">Ironclad V3.1</span></span>
+                <span>ロジック: DWT + 知覚マスキング</span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
 
-              {/* Row 2: Detected Artifacts */}
-              <div className="flex items-start gap-2 text-sm text-muted mb-4">
-                <span className="font-medium whitespace-nowrap">検出された痕跡:</span>
-                <span className="font-bold text-text-primary">{result?.artifacts || "待機中..."}</span>
-              </div>
-
-              {/* AI Possibility Bar */}
+              {/* Progress Bar - Ironcladと同期 */}
               <div className="mb-6">
                 <div className="flex justify-between text-base mb-1">
-                  <span className="font-semibold uppercase text-danger">
-                    AI POSSIBILITY
+                  <span className="font-semibold uppercase text-accent">
+                    {phase === "scanning" && guardProgress.total > 0
+                      ? `Processing: ${guardProgress.current}/${guardProgress.total}`
+                      : "Now loading"}
                   </span>
-                  <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
-                    (result?.aiScore ?? 0) >= 60 ? "text-yellow-500" :
-                    (result?.aiScore ?? 0) >= 40 ? "text-gray-400" :
-                    (result?.aiScore ?? 0) >= 20 ? "text-blue-400" : "text-success"
-                    }`}>
-                    {result?.aiScore ?? 0}%
+                  <span className="font-bold text-accent">
+                    {phase === "complete"
+                      ? "100"
+                      : phase === "scanning" && guardProgress.total > 0
+                        ? Math.round((guardProgress.current / guardProgress.total) * 100)
+                        : 0}%
                   </span>
                 </div>
                 <div className="progress-bar-bg">
                   <div
-                    className={`progress-bar-fill ${(result?.aiScore ?? 0) >= 80 ? "ai" :
-                      (result?.aiScore ?? 0) >= 60 ? "high-alert" :
-                      (result?.aiScore ?? 0) >= 40 ? "unknown" :
-                      (result?.aiScore ?? 0) >= 20 ? "low-risk" : "human"
-                      }`}
-                    style={{ width: `${result?.aiScore ?? 0}%` }}
+                    className="progress-bar-fill guard-progress"
+                    style={{
+                      width: `${phase === "complete"
+                        ? 100
+                        : phase === "scanning" && guardProgress.total > 0
+                          ? (guardProgress.current / guardProgress.total) * 100
+                          : 0}%`
+                    }}
                   />
                 </div>
               </div>
 
-              {/* Classification Result */}
+              {/* Status Result */}
               <div className="flex justify-between items-end border-t border-gray-700 pt-4">
-                <span className="text-2xl font-medium text-muted uppercase">CLASSFICATION:</span>
+                <span className="text-2xl font-medium text-muted uppercase">STATUS:</span>
                 <span className={`verdict-display ${verdictDisplay.className}`}>
                   {verdictDisplay.text}
                 </span>
@@ -1033,44 +1074,42 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <History className="w-4 h-4" />
                   履歴
                 </span>
-                <span className="text-sm font-normal text-muted">({history.length}件)</span>
+                <div className="flex items-center gap-2">
+                  {history.length > 0 && (
+                    <button
+                      onClick={downloadAllImages}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10 rounded transition-colors border border-accent/30 hover:border-accent"
+                      title="すべてダウンロード (ZIP)"
+                    >
+                      <Download className="w-3 h-3" />
+                      一括DL
+                    </button>
+                  )}
+                  <span className="text-sm font-normal text-muted">({history.length}件)</span>
+                </div>
               </h3>
               <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
                 {history.length === 0 ? (
-                  <p className="text-muted text-sm italic">解析履歴はありません。</p>
+                  <p className="text-muted text-sm italic">保護履歴はありません。</p>
                 ) : (
-                  history.map((item) => {
-                    // 5段階判定: AI(80+), H(60-79), M(40-59), L(20-39), 人(0-19)
-                    const score = item.aiScore;
-                    const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-middle" : score >= 20 ? "result-low" : "result-human";
-                    const labelClass = score >= 80 ? "bg-danger text-black" : score >= 60 ? "bg-orange-600 text-black" : score >= 40 ? "bg-yellow-500 text-black" : score >= 20 ? "bg-success text-black" : "bg-blue-500 text-black";
-                    const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "M" : score >= 20 ? "L" : "人";
-                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-500" : score >= 40 ? "text-yellow-400" : score >= 20 ? "text-success" : "text-blue-400";
-
-                    return (
-                      <div
-                        key={item.id}
+                  history.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`history-item relative group cursor-pointer border-accent shadow-[0_0_8px_rgba(139,92,246,0.4)] ${selectedHistoryId === item.id ? "ring-2 ring-accent ring-offset-2 ring-offset-card-bg" : ""}`}
+                      title={`${item.name} - 保護完了`}
+                    >
+                      <img
+                        src={item.preview}
+                        alt={item.name}
                         onClick={() => handleHistoryClick(item)}
-                        className={`history-item relative group cursor-pointer ${resultClass} ${selectedHistoryId === item.id ? "ring-2 ring-accent ring-offset-2 ring-offset-card-bg" : ""}`}
-                        title={`${item.name} - ${item.aiScore}%`}
-                      >
-                        <img
-                          src={item.preview}
-                          alt={item.name}
-                          className="w-12 h-12 object-cover rounded"
-                        />
-                        {/* AI/Human/Unknown Label */}
-                        <div className={`absolute -top-1 -right-1 px-1.5 py-0.5 text-[8px] font-bold uppercase rounded ${labelClass}`}>
-                          {labelText}
-                        </div>
-                        {/* Hover overlay */}
-                        <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[9px] text-white p-1 transition-opacity rounded">
-                          <span className="truncate w-full text-center">{item.name.substring(0, 8)}...</span>
-                          <span className={scoreClass}>{item.aiScore}%</span>
-                        </div>
+                        className="w-12 h-12 object-cover rounded cursor-pointer"
+                      />
+                      {/* 完了ラベル - 紫 */}
+                      <div className="absolute -top-1 -right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-gradient-to-r from-purple-500 to-violet-400 text-white shadow-md">
+                        完
                       </div>
-                    );
-                  })
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -1176,8 +1215,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 disabled={!canExecute}
                 className="flex-grow primary-button flex items-center justify-center gap-2"
               >
-                <Search className="w-4 h-4" />
-                <span>スキャン開始</span>
+                <Shield className="w-4 h-4" />
+                <span>防壁を構築</span>
                 <span className="font-normal">
                   - 残り{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (rateLimitRemaining ?? "--")}/{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (authUser?.isVip ? "240" : "24")}枚
                 </span>

@@ -282,6 +282,16 @@ body {
   background-color: var(--human-confirmed);
 }
 
+.progress-bar-fill.guard-progress {
+  background: linear-gradient(90deg, var(--accent), #a855f7);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+}
+
+.progress-bar-fill.guard-progress-gold {
+  background: linear-gradient(90deg, #D4AF37, #F5D061, #C9A227);
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.6);
+}
+
 /* ============================================
    QUEUE ITEMS
    ============================================ */
@@ -416,6 +426,10 @@ body {
 
 .verdict-human {
   color: var(--human-confirmed); /* 青 - HUMAN CONFIRMED */
+}
+
+.verdict-protected {
+  color: var(--accent); /* 紫 - PROTECTED (ガード用) */
 }
 
 .verdict-loading {

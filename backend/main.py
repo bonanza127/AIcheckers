@@ -22,7 +22,7 @@ import torch.nn as nn
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 from transformers import AutoImageProcessor, AutoModel
@@ -39,6 +39,15 @@ try:
 except ImportError:
     SIGNATURE_DETECTION_ENABLED = False
     detect_human_signature = None
+
+# Ironclad V3.1 ポイズニング（オプショナル）
+try:
+    from scripts.ironclad_v2 import IroncladPoisoner, image_to_tensor, tensor_to_image
+    IRONCLAD_ENABLED = True
+    ironclad_poisoner = None  # 遅延初期化
+except ImportError:
+    IRONCLAD_ENABLED = False
+    ironclad_poisoner = None
 
 
 class URLAnalyzeRequest(BaseModel):
@@ -1061,6 +1070,254 @@ async def analyze_image(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.post("/guard")
+async def guard_image(
+    request: Request,
+    file: UploadFile = File(...),
+    iterations: int = Form(default=30),
+    strength: float = Form(default=0.06)
+):
+    """
+    画像にIronclad V3.1ポイズニングを適用して保護する
+
+    Returns:
+        - protected_image: Base64エンコードされた保護済みPNG画像
+        - processing_time: 処理時間（秒）
+        - ssim: 元画像との構造類似性（品質指標）
+    """
+    global ironclad_poisoner
+
+    if not IRONCLAD_ENABLED:
+        raise HTTPException(status_code=503, detail="Ironclad module not available")
+
+    # Enterprise APIキー認証チェック（優先）
+    enterprise_info = verify_enterprise_api_key(request)
+    is_enterprise = enterprise_info is not None
+
+    if is_enterprise:
+        remaining, limit = -1, -1
+        track_enterprise_usage(enterprise_info["api_key"], "/guard")
+    else:
+        key, is_vip, is_admin = get_rate_limit_key(request)
+        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"上限（{limit}枚）に達しました。1時間ごとに回復します。"},
+                headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"}
+            )
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image.")
+
+    try:
+        start_time = time.time()
+
+        # 画像読み込み
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert("RGB")
+
+        # Ironcladポイズナーの遅延初期化
+        if ironclad_poisoner is None:
+            ironclad_poisoner = IroncladPoisoner(
+                secret_key="AICHECKERS_GUARD_KEY",
+                device=str(device)
+            )
+
+        # 強度設定
+        ironclad_poisoner.strength_mid = strength
+
+        # テンソル変換
+        img_tensor = image_to_tensor(image)
+
+        # ポイズニング実行
+        poisoned_tensor = ironclad_poisoner.poison(img_tensor, iterations=iterations)
+
+        # PIL画像に変換
+        poisoned_image = tensor_to_image(poisoned_tensor)
+
+        # SSIM計算（品質検証）
+        from skimage.metrics import structural_similarity as ssim
+        import numpy as np
+        orig_arr = np.array(image)
+        pois_arr = np.array(poisoned_image.resize(image.size))
+        ssim_value = ssim(orig_arr, pois_arr, channel_axis=2, data_range=255)
+
+        # Base64エンコード
+        buffer = io.BytesIO()
+        poisoned_image.save(buffer, format="PNG", quality=95)
+        protected_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        processing_time = time.time() - start_time
+
+        # レート制限カウント増加
+        if not is_enterprise:
+            increment_rate_limit(key, is_vip, is_admin)
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+        else:
+            remaining_after, limit_after = -1, -1
+
+        return JSONResponse(
+            content={
+                "protected_image": protected_base64,
+                "processing_time": round(processing_time, 3),
+                "ssim": round(ssim_value, 4),
+                "filename": file.filename,
+                "protection_applied": "Ironclad V3.1",
+                "iterations": iterations,
+                "strength": strength
+            },
+            headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Guard processing failed: {str(e)}")
+
+
+@app.post("/guard-stream")
+async def guard_image_stream(
+    request: Request,
+    file: UploadFile = File(...),
+    iterations: int = Form(default=30),
+    strength: float = Form(default=0.06)
+):
+    """
+    SSEストリーミング版: リアルタイム進捗付きでIroncladポイズニングを実行
+    """
+    global ironclad_poisoner
+
+    if not IRONCLAD_ENABLED:
+        raise HTTPException(status_code=503, detail="Ironclad module not available")
+
+    # Enterprise/レート制限チェック
+    enterprise_info = verify_enterprise_api_key(request)
+    is_enterprise = enterprise_info is not None
+
+    if is_enterprise:
+        track_enterprise_usage(enterprise_info["api_key"], "/guard-stream")
+    else:
+        key, is_vip, is_admin = get_rate_limit_key(request)
+        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"上限（{limit}枚）に達しました")
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Invalid file type")
+
+    contents = await file.read()
+    filename = file.filename
+
+    async def generate():
+        import queue
+        import threading
+
+        progress_queue = queue.Queue()
+        result_holder = {"result": None, "error": None}
+
+        def progress_callback(current, total):
+            progress_queue.put({"type": "progress", "current": current, "total": total})
+
+        def process_in_thread():
+            global ironclad_poisoner
+            try:
+                start_time = time.time()
+
+                image = Image.open(io.BytesIO(contents)).convert("RGB")
+
+                if ironclad_poisoner is None:
+                    ironclad_poisoner = IroncladPoisoner(
+                        secret_key="AICHECKERS_GUARD_KEY",
+                        device=str(device)
+                    )
+
+                ironclad_poisoner.strength_mid = strength
+                img_tensor = image_to_tensor(image)
+
+                # プログレスコールバック付きでポイズニング実行
+                poisoned_tensor = ironclad_poisoner.poison(
+                    img_tensor,
+                    iterations=iterations,
+                    progress_callback=progress_callback
+                )
+
+                poisoned_image = tensor_to_image(poisoned_tensor)
+
+                # SSIM計算
+                from skimage.metrics import structural_similarity as ssim
+                orig_arr = np.array(image)
+                pois_arr = np.array(poisoned_image.resize(image.size))
+                ssim_value = ssim(orig_arr, pois_arr, channel_axis=2, data_range=255)
+
+                # Base64エンコード
+                buffer = io.BytesIO()
+                poisoned_image.save(buffer, format="PNG", quality=95)
+                protected_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+                processing_time = time.time() - start_time
+
+                result_holder["result"] = {
+                    "protected_image": protected_base64,
+                    "processing_time": round(processing_time, 3),
+                    "ssim": round(ssim_value, 4),
+                    "filename": filename,
+                    "protection_applied": "Ironclad V3.1",
+                    "iterations": iterations,
+                    "strength": strength
+                }
+            except Exception as e:
+                result_holder["error"] = str(e)
+            finally:
+                progress_queue.put({"type": "done"})
+
+        # バックグラウンドスレッドで処理開始
+        thread = threading.Thread(target=process_in_thread)
+        thread.start()
+
+        # SSEイベントを送信（パディング追加でブラウザバッファをフラッシュ）
+        # ブラウザは通常2-4KB程度バッファリングするため、短いメッセージは届かない
+        padding = " " * 2048  # 2KBパディング
+
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.1)
+                if msg["type"] == "progress":
+                    # パディング付きでブラウザのバッファを即座にフラッシュ
+                    yield f"data: {json.dumps(msg)}\n\n:{padding}\n\n"
+                    await asyncio.sleep(0)
+                elif msg["type"] == "done":
+                    break
+            except queue.Empty:
+                # Keep-alive
+                yield f": keepalive{padding}\n\n"
+                await asyncio.sleep(0)
+
+        thread.join()
+
+        # 最終結果を送信
+        if result_holder["error"]:
+            yield f"data: {json.dumps({'type': 'error', 'message': result_holder['error']})}\n\n"
+        else:
+            # レート制限更新
+            if not is_enterprise:
+                increment_rate_limit(key)
+            yield f"data: {json.dumps({'type': 'complete', **result_holder['result']})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Content-Type": "text/event-stream; charset=utf-8"
+        }
+    )
 
 
 def extract_twitter_image_url(url: str) -> str:
