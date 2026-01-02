@@ -31,17 +31,6 @@ type QueueItem = {
   status: "wait" | "processing" | "ai" | "human" | "unknown";
 };
 
-type DetectionResult = {
-  isAI: boolean;
-  aiScore: number;
-  humanScore: number;
-  verdict: string;
-  confidence: number;
-  processingTime: number;
-  artifacts: string;
-  attentionMap?: string;
-};
-
 type HistoryItem = {
   id: string;
   name: string;
@@ -69,7 +58,7 @@ export default function Home() {
   const [logs, setLogs] = useState<LogEntry[]>([
     { message: "SYSTEM INITIALIZED. Ready for batch submission.", type: "system" },
   ]);
-  const [result, setResult] = useState<DetectionResult | null>(null);
+  // Guard モードでは DetectionResult は使用しない（保護専用）
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [isScanning, setIsScanning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -80,8 +69,9 @@ export default function Home() {
   // ガードモードではヒートマップ不使用
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
-  const [urlInput, setUrlInput] = useState("");
-  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+  // Guard モードでは URL 入力は使用しない
+  const urlInput = "";
+  const isLoadingUrl = false;
   const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
   const [guardProgress, setGuardProgress] = useState({ current: 0, total: 0 });
   const [timeUntilReset, setTimeUntilReset] = useState("--:--:--");
@@ -344,93 +334,8 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [handleFiles]);
 
-  const handleUrlSubmit = useCallback(async () => {
-    if (!urlInput.trim()) return;
-
-    setIsLoadingUrl(true);
-    addLog(`URL解析開始: ${urlInput}`, "process");
-
-    try {
-      const apiUrl = getApiUrl();
-      const headers: HeadersInit = { "Content-Type": "application/json" };
-      if (authUser?.token) {
-        headers["Authorization"] = `Bearer ${authUser.token}`;
-      }
-      const response = await fetch(`${apiUrl}/analyze-url`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ url: urlInput, model: selectedModel })
-      });
-
-      // レート制限ヘッダーを読み取り
-      const remaining = response.headers.get("X-RateLimit-Remaining");
-      if (remaining !== null) {
-        setRateLimitRemaining(parseInt(remaining, 10));
-      }
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "URL解析に失敗しました");
-      }
-
-      const data = await response.json();
-
-      // 結果を表示
-      const detectionResult: DetectionResult = {
-        isAI: data.is_ai,
-        aiScore: data.ai_score,
-        humanScore: data.human_score,
-        verdict: data.verdict,
-        confidence: data.confidence,
-        processingTime: data.processing_time,
-        artifacts: data.detected_traces || "分析完了",
-        attentionMap: data.attention_map
-      };
-
-      setResult(detectionResult);
-      setPhase("complete");
-      setCurrentFileName(data.filename || "URL Image");
-
-      // 画像プレビューを設定（attention_mapがあればそれを使用）
-      if (data.attention_map) {
-        setCurrentImage(`data:image/png;base64,${data.attention_map}`);
-      }
-
-      // ログ出力
-      addLog("═══════════════════════════════════════", "heading");
-      addLog(`[ANALYZED] URL: ${urlInput}`, "heading");
-      addLog("═══════════════════════════════════════", "heading");
-      addLog(`[MODEL] ${data.model_used.toUpperCase()}`, "info");
-      addLog(`[VERDICT] ${data.verdict}`, detectionResult.isAI ? "error" : "result");
-      addLog(`[SCORE] AI: ${data.ai_score.toFixed(1)}% | Human: ${data.human_score.toFixed(1)}%`, "detail");
-
-      if (data.forensic_logs) {
-        data.forensic_logs.forEach((log: string) => addLog(`  ${log}`, "detail"));
-      }
-
-      // 履歴に追加（メモリのみ、元画像保持）
-      const historyItem: HistoryItem = {
-        id: `url-${Date.now()}`,
-        name: data.filename || "URL Image",
-        preview: data.attention_map ? `data:image/png;base64,${data.attention_map}` : "",
-        isAI: data.is_ai,
-        score: data.ai_score,
-        aiScore: data.ai_score,
-        attentionMap: data.attention_map,
-        artifacts: data.detected_traces,
-        timestamp: new Date()
-      };
-      setHistory(prev => [historyItem, ...prev].slice(0, 100));
-
-      setUrlInput("");
-      addLog(`URL解析完了: ${data.processing_time.toFixed(3)}秒`, "result");
-
-    } catch (error) {
-      addLog(`ERROR: ${error instanceof Error ? error.message : "URL解析に失敗しました"}`, "error");
-    } finally {
-      setIsLoadingUrl(false);
-    }
-  }, [urlInput, selectedModel, addLog]);
+  // Guard モードでは URL 解析機能は使用しない（ダミー関数）
+  const handleUrlSubmit = useCallback(async () => {}, []);
 
   const processFile = async (file: File, queueItemId: string, displayIndex: number, total: number) => {
     const fileStartTime = Date.now();
@@ -461,7 +366,7 @@ export default function Home() {
     formData.append("file", file);
 
     let protectedImage: string | undefined;
-    let processingTime: number;
+    let processingTime: number = 0;
     let ssim: number;
     let rateLimitError = false;
 
@@ -602,18 +507,6 @@ export default function Home() {
       item.id === queueItemId ? { ...item, status: queueStatus } : item
     ));
 
-    // 結果を設定（ガードモード用の表示）
-    setResult({
-      isAI: false,
-      aiScore: 0,
-      humanScore: 100,
-      verdict: rateLimitError ? "RATE LIMITED" : protectedImage ? "PROTECTED" : "ERROR",
-      confidence: 100,
-      processingTime,
-      artifacts: "Ironclad V3.1 / DWT署名 / 知覚マスキング",
-      attentionMap: undefined
-    });
-
     // 履歴に追加（保護済み画像を含む）
     if (protectedImage) {
       setHistory(prev => [{
@@ -686,7 +579,6 @@ export default function Home() {
     setCurrentImage(null);
     setCurrentFileName("");
     setPhase("idle");
-    setResult(null);
     setBatchProgress({ current: 0, total: 0 });
     setElapsedTime(0);
     setStartTime(null);
@@ -716,36 +608,17 @@ export default function Home() {
     }
   };
 
-  // X（Twitter）に結果を共有（動的OGP対応）
+  // X（Twitter）に結果を共有（Guard モード用）
   const shareToX = () => {
-    if (!result) return;
+    if (phase !== "complete" || history.length === 0) return;
 
-    const verdictText = result.aiScore >= 80 ? "AI DETECTED"
-      : result.aiScore >= 60 ? "HIGH ALERT"
-      : result.aiScore >= 40 ? "MIDDLE CAUTION"
-      : result.aiScore >= 20 ? "LOW SIMILARITY"
-      : "HUMAN CONFIRMED";
+    const text = `【AI学習防止ガード】
+🛡️ PROTECTED
+Ironclad V3.1で画像を保護しました
 
-    const verdictEmoji = result.aiScore >= 80 ? "🤖"
-      : result.aiScore >= 60 ? "🟠"
-      : result.aiScore >= 40 ? "🟡"
-      : result.aiScore >= 20 ? "🟢"
-      : "🔵";
+#AIイラストガード #aicheckers`;
 
-    const text = `【AI判定結果】
-${verdictEmoji} ${verdictText}
-AI Possibility: ${result.aiScore.toFixed(1)}%
-
-#AIイラスト判定 #aicheckers`;
-
-    // 動的OGP付きのシェアURL（短縮パラメータ使用）
-    const vParam = verdictText === "AI DETECTED" ? "ai"
-      : verdictText === "HIGH ALERT" ? "ha"
-      : verdictText === "MIDDLE CAUTION" ? "mc"
-      : verdictText === "LOW SIMILARITY" ? "ls"
-      : "h";
-    const traceParam = result.artifacts ? `&trace=${encodeURIComponent(result.artifacts)}` : "";
-    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}${traceParam}`;
+    const shareUrl = "https://aicheckers.net/guard";
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");
@@ -772,10 +645,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       return { text: "構築中...", className: "verdict-loading" };
     }
     // スキャン完了時のみ結果を表示
-    if (result) {
-      if (result.verdict === "RATE LIMITED") {
-        return { text: result.verdict, className: "verdict-unknown" };
-      }
+    if (phase === "complete") {
       // ガードページでは常に「完了」表示（紫色）
       return { text: "PROTECTED", className: "verdict-protected" };
     }
@@ -795,16 +665,6 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
     setSelectedQueueId(null); // Clear queue selection
     setCurrentImage(item.preview);
     setCurrentFileName(item.name);
-    setResult({
-      isAI: false,
-      aiScore: 0,
-      humanScore: 100,
-      verdict: "PROTECTED",
-      confidence: 100,
-      processingTime: item.processingTime,
-      artifacts: "Ironclad V3.1 / DWT署名 / 知覚マスキング",
-      attentionMap: undefined
-    });
     setPhase("complete");
   };
 
@@ -1004,7 +864,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             <div className="card-panel p-6 relative">
               <button
                 onClick={shareToX}
-                disabled={!result}
+                disabled={phase !== "complete" || history.length === 0}
                 className="absolute top-3 right-3 p-1.5 text-muted hover:text-white hover:drop-shadow-[0_0_6px_rgba(255,255,255,0.5)] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 title="Xで結果を共有"
               >
@@ -1192,7 +1052,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <input
                   type="text"
                   value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
+                  onChange={() => {}}
                   onKeyDown={(e) => e.key === "Enter" && !isLoadingUrl && handleUrlSubmit()}
                   placeholder="画像URLを貼り付け（Twitter/Pixiv等）"
                   className="flex-1 px-3 py-2 rounded-lg bg-card-bg border border-border text-text-primary placeholder-muted text-sm focus:outline-none focus:border-accent"
