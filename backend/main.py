@@ -27,6 +27,19 @@ from PIL import Image
 from pydantic import BaseModel
 from transformers import AutoImageProcessor, AutoModel
 
+# 共通モジュール（パッチ統計計算、署名検出）
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from lib.patch_stats import compute_patch_stats_inference
+
+# 署名検出（オプショナル - モジュールがない場合はスキップ）
+try:
+    from lib.signature import detect_human_signature
+    SIGNATURE_DETECTION_ENABLED = True
+except ImportError:
+    SIGNATURE_DETECTION_ENABLED = False
+    detect_human_signature = None
+
 
 class URLAnalyzeRequest(BaseModel):
     url: str
@@ -226,7 +239,7 @@ enterprise_usage: dict = {}  # 起動時にロード
 DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
 EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
-HF_TOKEN = "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"
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 
 @asynccontextmanager
@@ -519,59 +532,8 @@ async def health_check(request: Request):
 
 
 def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear, return_scores: bool = False):
-    """
-    パッチ埋め込みから統計量を計算（推論時用）
-
-    Args:
-        patch_embeddings: (1, 196, 768) パッチ埋め込み
-        classifier: 768→2の分類器（パッチスコア計算用）
-        return_scores: Trueの場合、パッチスコア配列も返す
-
-    Returns:
-        return_scores=False: (1, 7) パッチ統計量
-        return_scores=True: ((1, 7) パッチ統計量, (196,) パッチAIスコア)
-    """
-    import torch.nn.functional as F
-
-    HIGH_SCORE_THRESHOLD = 0.8
-    HIGH_SIM_THRESHOLD = 0.85
-    grid_size = 14
-
-    with torch.no_grad():
-        # パッチごとのAIスコアを計算（768次元入力）
-        # 775次元分類器の場合は先頭768次元のみ使用
-        weight = classifier.weight[:, :768]  # (2, 768)
-        bias = classifier.bias
-        flat_patches = patch_embeddings.reshape(-1, 768)  # (196, 768)
-        logits = torch.mm(flat_patches, weight.t()) + bias  # (196, 2)
-        probs = torch.softmax(logits, dim=1)
-        ai_scores = probs[:, 1]  # (196,)
-
-        # 統計量計算
-        patch_mean = ai_scores.mean()
-        patch_max = ai_scores.max()
-        patch_var = ai_scores.var()
-        max_minus_mean = patch_max - patch_mean
-        embed_var_mean = patch_embeddings[0].var(dim=0).mean()
-        count_high_score = (ai_scores >= HIGH_SCORE_THRESHOLD).float().mean()
-
-        # v_high_sim_85: 垂直方向の高類似度パッチ比率
-        patch_emb = patch_embeddings[0]  # (196, 768)
-        patches_grid = patch_emb.reshape(grid_size, grid_size, -1)  # (14, 14, 768)
-        v_sims = []
-        for row in range(grid_size - 1):
-            for col in range(grid_size):
-                current = patches_grid[row, col]
-                down = patches_grid[row + 1, col]
-                sim = F.cosine_similarity(current.unsqueeze(0), down.unsqueeze(0)).item()
-                v_sims.append(sim)
-        v_high_sim_85 = torch.tensor(sum(1 for s in v_sims if s > HIGH_SIM_THRESHOLD) / len(v_sims), device=patch_embeddings.device)
-
-        stats = torch.stack([patch_mean, patch_max, patch_var, max_minus_mean, embed_var_mean, count_high_score, v_high_sim_85])
-
-        if return_scores:
-            return stats.unsqueeze(0), ai_scores  # (1, 7), (196,)
-        return stats.unsqueeze(0)  # (1, 7)
+    """パッチ統計量計算（共通モジュールへの委譲）"""
+    return compute_patch_stats_inference(patch_embeddings, classifier, return_scores)
 
 
 def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor, ai_prob: float, head_attentions: np.ndarray = None, patch_scores: np.ndarray = None) -> tuple:
@@ -962,6 +924,20 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     if tta_log:
         forensic_logs.insert(0, tta_log)
 
+    # Human Signature 検出（オプショナル）
+    human_verified = False
+    signature_correlation = None
+    if SIGNATURE_DETECTION_ENABLED and detect_human_signature:
+        try:
+            sig_result = detect_human_signature(image, normalize_resolution=True)
+            human_verified = sig_result["detected"]
+            signature_correlation = sig_result["correlation"]
+            if human_verified:
+                forensic_logs.append(f"✓ Human Verified署名を検出 (相関: {signature_correlation:.3f})")
+                detected_traces.append("human_signature")
+        except Exception as e:
+            print(f"Signature detection failed: {e}")
+
     ai_score = ai_prob * 100
     human_score = 100 - ai_score
 
@@ -974,6 +950,8 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         "attention_map": attention_heatmap,
         "forensic_logs": forensic_logs,
         "detected_traces": detected_traces,
+        "human_verified": human_verified,
+        "signature_correlation": round(signature_correlation, 4) if signature_correlation else None,
     }
 
 
