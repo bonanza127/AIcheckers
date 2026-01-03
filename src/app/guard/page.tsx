@@ -784,7 +784,7 @@ Ironclad V3.1で画像を保護しました
       <main className="flex-grow container mx-auto px-4 py-8">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
-          <h1 className="text-4xl font-extrabold mb-3 tracking-tight">AIイラストガードが<br className="hidden sm:inline" />あなたの作品を無断学習から守ります</h1>
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight whitespace-nowrap">AIイラストガードがあなたの作品を無断学習から守ります</h1>
           <p className="text-muted text-lg">
             人間の目には見えないノイズを混ぜることにより、作風の模倣を防ぐAIポイズニングの最新版。<br />
             複数の技法をかけ合わせた<span className="text-accent font-bold">Ironclad V3</span>により、生成AIの学習を顕著に妨害します。
