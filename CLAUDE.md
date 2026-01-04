@@ -52,8 +52,10 @@ python3 scripts/dedup_images.py --dir /path/to/images --threshold 9
 # Embedding抽出（劣化Augmentation推奨）
 python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name --degradation-prob 0.5
 
-# 学習
-python3 scripts/train_from_embeddings.py
+# 学習（オプション例）
+python3 scripts/train_from_embeddings.py                    # 通常
+python3 scripts/train_from_embeddings.py --no-em            # EM無効（推奨）
+python3 scripts/train_from_embeddings.py --label-smoothing 0.1  # Label Smoothing
 ```
 
 ---
@@ -62,9 +64,22 @@ python3 scripts/train_from_embeddings.py
 
 1. **curlでAPIをテストしない** - レート制限でエラーになる
 2. **新しいテストスクリプトを作らない** - `diagnose`スキルを使う
-3. **パッチ統計計算を独自実装しない** - 不整合の原因になる
+3. **パッチ統計計算を独自実装しない** - `lib/patch_stats.py`を使う
 4. **バグの原因を外部のせいにしない** - コードに問題がある前提で調査
 5. **Validation Accuracy（96%+）を最終精度と誤解しない**
+6. **Modal CLIを直接実行しない** - タイムアウトループの原因になる（下記参照）
+
+### Modal連携の注意事項
+
+**問題**: `modal run`等を直接実行すると「Request timed out. Retrying in 0 seconds…」の無限ループに陥る
+
+**対策**:
+1. **バックグラウンド実行**: `run_in_background=true`で実行し、`TaskOutput`で結果取得
+2. **ローカル優先**: GTX 1660で動作可能なタスク（LoRA学習以外）はローカルで実行
+3. **スクリプト側でタイムアウト制御**: Modal関数に`@app.function(timeout=600)`を設定
+4. **環境変数**: `export MODAL_CLIENT_TIMEOUT=300`でタイムアウト延長
+
+**推奨**: LoRA学習等の重いタスクのみModalを使用し、それ以外はローカル実行
 
 ---
 
@@ -105,6 +120,11 @@ python3 scripts/train_from_embeddings.py
 |--------|------|
 | `train` | 学習ワークフロー全体 |
 | `diagnose` | モデル診断・テスト |
+
+### lib/ - 共通モジュール
+| ファイル | 用途 |
+|----------|------|
+| `patch_stats.py` | パッチ統計量計算（backend/main.py, extract_embeddings_v2.pyで使用） |
 
 ### models/
 | ファイル | 説明 |
@@ -263,3 +283,133 @@ models/baseline_before_gate/
 | DLsite検証用 | dlsite-trial@aicheckers.net |
 
 **設定**: `backend/main.py` の `ADMIN_EMAILS`
+
+---
+
+## AIイラストガード（保護ツール研究）
+
+LoRA学習を妨害するための摂動技術を研究中。
+
+---
+
+### 現在のベスト: SAP v3 (2025-01-04)
+
+**スクリプト**: `scripts/sap_v3.py`
+
+```bash
+# 1枚テスト（約1分）
+modal run scripts/sap_v3.py --test --warp-magnitude 0.01 --iterations 50
+
+# バッチ攻撃
+modal run scripts/sap_v3.py --attack
+```
+
+#### 攻撃構成
+
+| 攻撃 | 手法 | 効果 |
+|------|------|------|
+| **VAE攻撃** | latent cos sim最小化 | 構造情報の破壊 |
+| **CLIPネガティブ誘導** | "low quality, blurry, noise"に近づける | 低品質タグとの結合 |
+| **CLIP概念混乱** | 元画像から離脱 + 無関係概念へ誘導 | 意味情報の汚染 |
+| **適応型マスク** | エッジ5%、平坦1%（Sobel） | 視認性を維持しつつ攻撃強化 |
+| **Micro-Warping** | 幾何学的変形（kornia elastic） | LightShed等の浄化耐性 |
+
+#### ベンチマーク結果
+
+| 指標 | 値 | 評価 |
+|------|-----|------|
+| LPIPS | 0.0445 | ✅ 視覚差ほぼなし |
+| VAE Cos Sim | **0.81** | ✅ 構造乖離 |
+| CLIP to Original | **-0.26** | ✅ 負の値＝完全離脱 |
+| CLIP to Negative | 0.28 | ✅ 低品質概念に接近 |
+| 処理時間 | **56秒** | ✅ 1分以内 |
+
+#### ネガティブ概念リスト
+```python
+NEGATIVE_CONCEPTS = [
+    "low quality, worst quality, blurry",
+    "jpeg artifacts, noise, grainy",
+    "text, watermark, signature",
+    "error, glitch, corrupted",
+]
+```
+
+#### 混乱概念リスト
+```python
+CONFUSION_CONCEPTS = [
+    "a photograph of mountains and trees",
+    "3d render of geometric shapes",
+    "satellite image of earth",
+    "medical x-ray scan",
+    "infrared thermal image",
+]
+```
+
+---
+
+### スクリプト一覧
+
+| スクリプト | 用途 | 状態 |
+|------------|------|------|
+| `sap_v3.py` | **現行ベスト** - VAE+CLIP+Warping統合 | ✅ 使用中 |
+| `sap_v2.py` | VAE+CLIP+Warping（旧版） | 参考用 |
+| `highfreq_attack.py` | エッジ適応VAE攻撃 | 参考用 |
+| `vae_latent_attack.py` | VAE latent攻撃のみ | 参考用 |
+| `test_single_attack.py` | 1枚テスト用 | デバッグ用 |
+
+---
+
+### 開発履歴
+
+1. **highfreq_attack.py** - エッジ適応 + VAE攻撃（Cos Sim 0.92程度）
+2. **sap_v2.py** - CLIP攻撃追加 + Micro-Warping
+3. **sap_v3.py** - ネガティブ概念誘導 + 概念混乱追加（Cos Sim 0.81、CLIP離脱-0.26）
+
+---
+
+### Micro-Warping パラメータ
+
+| パラメータ | 推奨値 | 説明 |
+|------------|--------|------|
+| warp_magnitude | 0.01 | 変形強度（0.01でぼやけなし） |
+| kernel_size | (63, 63) | ぼかしカーネル |
+| sigma | (12.0, 12.0) | ガウシアンσ |
+
+**注意**: magnitude 0.015以上だと視覚的にぼやける
+
+---
+
+### 参考論文
+
+#### FastProtect (CVPR 2025) ★★★最推奨
+- **論文**: https://arxiv.org/abs/2412.11423
+- **開発**: NAVER WEBTOON AI
+- **課題**: コード未公開（TBA）。公開待ち。
+
+#### PAP (NeurIPS 2024)
+- **論文**: https://arxiv.org/abs/2408.10571
+- **弱点**: JPEG圧縮に弱い
+
+#### StyleGuard (NeurIPS 2025)
+- **論文**: https://arxiv.org/abs/2505.18766
+- **注意**: LoRAに対して効果が限定的
+
+---
+
+### Modal実験フォルダ
+
+| フォルダ | 内容 |
+|----------|------|
+| train_normal | オリジナル画像 |
+| train_sap_v2 | SAP v2攻撃済み |
+| train_sap_v3 | SAP v3攻撃済み（最新） |
+| train_hf_stealth | エッジ5% + 平坦1%攻撃済み（旧） |
+
+---
+
+### 今後の研究課題
+
+1. **実際のLoRA学習テスト**: SAP v3攻撃画像でLoRA学習→生成品質の検証
+2. **浄化耐性テスト**: LightShed、DiffPure等での浄化後も攻撃が残るか
+3. **JPEG耐性**: SNS投稿時の再圧縮への耐性
+4. **FastProtect統合**: コード公開後に高速化手法を取り込む
