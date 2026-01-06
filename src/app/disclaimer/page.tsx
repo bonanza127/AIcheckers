@@ -28,7 +28,7 @@ export default function Disclaimer() {
         <div className="text-center mb-10">
           <AlertTriangle className="w-16 h-16 text-accent mx-auto mb-4" />
           <h1 className="text-3xl font-bold">免責事項</h1>
-          <p className="text-muted mt-2">AIチェッカーのご利用について</p>
+
         </div>
 
         <div className="space-y-8 text-muted leading-relaxed">
