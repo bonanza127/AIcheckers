@@ -1,185 +1,115 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { User, Shield, ChevronLeft } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "仕組み | AIイラストガード",
-  description: "AIイラストガードがどのようにAI学習から作品を保護するかを解説します。",
+  title: "よくある質問 | AIイラストガード",
+  description: "AIイラストガードに関するよくある質問（FAQ）です。",
 };
 
-export default function GuardHowItWorks() {
+// FAQ Data
+const faqData = [
+  {
+    q: "AIポイズニングとは？",
+    a: "画像に微細な敵対的ノイズを混ぜることにより、AIの学習を妨害する技術です。"
+  },
+  {
+    q: "NightshadeとかGlazeっていうのは聞いたことあるけど、それと何が違うの？",
+    a: "原理は同じですが、使用している技術の数と世代が異なります。\n\n2025年8月にLightshadeという技術が登場したことにより、Nightshadeは完全に無効化、その他のGlazeやMist2といったポイズニング技術も併せて突破されてしまうことがわかりました。\n\nそこでラストガードでは、それ以降に登場した複数の最新技術を組み合わせ、単一手法に依存しない多層的な防御を構築しています。"
+  },
+  {
+    q: "実際の効果は？",
+    a: "LoRA学習阻害という意味では顕著な効果があります。特に個人で特定の絵師を狙い撃ちするような輩には効果てきめんです。"
+  },
+  {
+    q: "一度使えば効果は永続するの？",
+    a: "多少のリサイズには耐性がありますが、何度もリサイズしたり画像を加工したりすると効果が減衰する場合があります。"
+  },
+  {
+    q: "自分の作品はすでにAI学習されてしまっていると思うのだけど…",
+    a: "イラストガードにはLoRA学習を破壊するセマンティック（AIの錯覚を引き起こす)攻撃がふくまれているため、毒の混じった画像を学習させればさせるほど、既存の学習結果を悪化させる可能性が高いです。「もう遅い」と感じている方にこそ、お試しいただきたい技術です。"
+  },
+  {
+    q: "でも結局、また新しい技術がでたら、いまのバリアは突破されちゃうんじゃないの？",
+    a: "そのとおりです。ゲームにおけるチートとその対策のように、攻撃側と防御側は常にいたちごっこのため、新技術の登場によって、既存のバリアが効かなくなる可能性は大いにあります。\n\nしかし当サイトのMoonknightは、”絶対の防御力”を目指すのではなく、”めちゃめちゃ剥がすのが面倒な納豆のフィルム”のような盾として設計されています。これにより、技術力と根性のある一部のヘンタイ以外には学習を断念される効果があると踏んでいます。"
+  }
+];
+
+export default function FAQ() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
-      <header className="site-header border-b border-gray-700">
+      <header className="site-header border-b border-gray-700/50 backdrop-blur-md sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/guard" className="flex items-center gap-1.5 hover:opacity-80">
-            <img src="/logo-transparent.png" alt="AI Checkers" className="w-10 h-10" />
-            <span className="text-2xl font-bold text-foreground">AIイラストガード</span>
+          <Link href="/guard" className="flex items-center gap-1.5 hover:opacity-80 transition-opacity">
+            <span className="text-xl font-bold bg-gradient-to-r from-accent to-purple-400 bg-clip-text text-transparent">AIイラストガード</span>
           </Link>
-          <nav className="text-sm text-muted">
-            <Link href="/guard" className="hover:text-accent">← ガードへ戻る</Link>
+          <nav className="text-sm">
+            <Link href="/guard" className="flex items-center gap-1 text-muted hover:text-white transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+              戻る
+            </Link>
           </nav>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12 max-w-3xl">
-        <h1 className="text-4xl font-extrabold mb-10 text-center">
-          <span className="bg-gradient-to-r from-accent via-purple-400 to-accent bg-clip-text text-transparent">How it works?</span>
-        </h1>
+      <main className="flex-grow container mx-auto px-4 py-8 max-w-2xl">
+        <div className="text-center mb-10">
+          <h1 className="text-2xl font-bold mb-2">よくある質問</h1>
+          <p className="text-muted text-sm">FAQ</p>
+        </div>
 
-        {/* Section 1: Problem Statement */}
-        <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">無断学習の問題</h2>
-          <p className="text-muted leading-relaxed">
-            生成AIの急速な発展により、インターネット上に公開されたイラストがAIの学習データとして無断で使用されるケースが増加しています。
-          </p>
-          <p className="text-muted leading-relaxed mt-3">
-            一度学習されたデータは取り消すことが難しく、自分の作風や技術が無断で模倣される可能性があります。
-          </p>
-          <p className="text-muted leading-relaxed mt-3">
-            そこで、このような状況に対策を講じるべく、<span className="text-accent font-bold">AI学習を妨害する防壁技術「MoonKnight」</span>を開発しました。
-          </p>
-        </section>
-
-        {/* Section 2: Technology Overview */}
-        <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">MoonKnight V3 について</h2>
-          <p className="text-muted leading-relaxed">
-            MoonKnightは、画像に人間の目には見えない微細なノイズパターンを埋め込むことで、AI画像生成器の学習効果を大幅に低減する技術です。
-          </p>
-          <p className="text-muted leading-relaxed mt-3">
-            この技術は、<span className="text-accent font-bold">離散ウェーブレット変換（DWT）</span>と<span className="text-accent font-bold">知覚マスキング</span>を組み合わせることで、
-            画質を損なうことなく効果的な防壁を構築します。
-          </p>
-        </section>
-
-        {/* Section 3: Protection Flow */}
-        <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">防壁構築の仕組み</h2>
-
-          {/* Processing Diagram */}
-          <div className="bg-gray-800/30 rounded-lg p-6 mb-6">
-            <div className="space-y-6">
-              {/* Step 1: DWT Transform */}
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">1</div>
-                <div className="flex-1">
-                  <p className="font-bold text-foreground">DWT変換（離散ウェーブレット変換）</p>
-                  <p className="text-muted text-sm mt-1">画像を周波数成分に分解し、LL（低周波）・LH・HL・HH（高周波）のサブバンドに分離します。</p>
-                  <div className="mt-2 text-xs font-mono text-accent/70">
-                    Image → LL / LH / HL / HH
-                  </div>
+        <div className="space-y-8">
+          {faqData.map((item, index) => (
+            <div key={index} className="space-y-4">
+              {/* Question (User) */}
+              <div className="flex gap-3 justify-start">
+                <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0 mt-1">
+                  <User className="w-4 h-4 text-gray-300" />
+                </div>
+                <div className="bg-gray-800 rounded-2xl rounded-tl-none px-5 py-3 max-w-[85%] shadow-sm">
+                  <p className="text-sm md:text-base font-medium text-white">{item.q}</p>
                 </div>
               </div>
 
-              {/* Step 2: Perceptual Masking */}
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">2</div>
-                <div className="flex-1">
-                  <p className="font-bold text-foreground">知覚マスキング（JND計算）</p>
-                  <p className="text-muted text-sm mt-1">人間の視覚特性に基づいて「Just Noticeable Difference（JND）」閾値を計算。人間が知覚できないレベルの変化量を特定します。</p>
+              {/* Answer (System) */}
+              <div className="flex gap-3 justify-end">
+                <div className="bg-accent/20 border border-accent/20 rounded-2xl rounded-tr-none px-5 py-3 max-w-[90%] md:max-w-[85%] shadow-sm">
+                  {item.a.split('\n').map((line, i) => (
+                    <p key={i} className={`text-sm md:text-base text-gray-200 ${line === "" ? "h-2" : ""}`}>
+                      {line}
+                    </p>
+                  ))}
                 </div>
-              </div>
-
-              {/* Step 3: Noise Injection */}
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">3</div>
-                <div className="flex-1">
-                  <p className="font-bold text-foreground">学習妨害パターン生成</p>
-                  <p className="text-muted text-sm mt-1">高周波帯域（HH/LH/HL）に、AI学習を妨害する特殊なノイズパターンを生成。このパターンは人間には見えませんが、AIの学習プロセスを大きく乱します。</p>
-                </div>
-              </div>
-
-              {/* Step 4: Signature Embedding */}
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">4</div>
-                <div className="flex-1">
-                  <p className="font-bold text-foreground">署名埋込</p>
-                  <p className="text-muted text-sm mt-1">MoonKnight署名を画像に埋め込み、保護済みであることを証明可能にします。</p>
-                </div>
-              </div>
-
-              {/* Step 5: Inverse DWT */}
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">5</div>
-                <div className="flex-1">
-                  <p className="font-bold text-foreground">逆DWT変換 & 品質検証</p>
-                  <p className="text-muted text-sm mt-1">変換を逆適用して画像を再構成。SSIM（構造類似性指標）が0.99以上を維持していることを確認し、画質劣化がないことを保証します。</p>
+                <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center shrink-0 mt-1 border border-accent/30">
+                  <Shield className="w-4 h-4 text-accent" />
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          ))}
+        </div>
 
-        {/* Section 4: Effectiveness */}
-        <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">防壁の効果</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">学習効果の低減</p>
-              <p className="text-muted text-sm mt-1">保護された画像をAIが学習しても、元の作風を正確に再現することが困難になります。</p>
-            </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">画質維持</p>
-              <p className="text-muted text-sm mt-1">SSIM 0.99以上を維持し、人間の目には変化が分かりません。</p>
-            </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">保護証明</p>
-              <p className="text-muted text-sm mt-1">MoonKnight署名により、画像が保護済みであることを確認できます。</p>
-            </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">SNS対応</p>
-              <p className="text-muted text-sm mt-1">JPEG再圧縮やリサイズに対しても一定の耐性があります。</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Section 5: Limitations */}
-        <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">制限事項</h2>
-          <p className="text-muted leading-relaxed">
-            MoonKnightは強力な防壁を提供しますが、以下の点にご注意ください：
-          </p>
-          <ul className="list-none mt-4 space-y-2 text-muted">
-            <li className="flex items-start gap-2">
-              <span className="text-gray-500 mt-1">•</span>
-              <span>100%の保護を保証するものではありません</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-gray-500 mt-1">•</span>
-              <span>既に学習されたデータを取り消すことはできません</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-gray-500 mt-1">•</span>
-              <span>極端な画像処理（大幅なリサイズ等）で効果が低下する場合があります</span>
-            </li>
-          </ul>
-
-          <div className="mt-6 p-4 bg-gray-800/30 rounded-lg border-l-4 border-accent">
-            <p className="text-foreground font-medium">予防的な対策として</p>
-            <p className="text-muted text-sm mt-2">
-              本サービスは、AI学習に対する<span className="text-foreground">予防的な対策</span>を提供します。
-              作品を公開する前に保護を適用することで、<span className="text-accent font-bold">将来的なリスクを軽減</span>することができます。
-            </p>
-          </div>
-        </section>
-
-        {/* Back Link */}
-        <div className="text-center pt-8 border-t border-gray-700">
+        {/* CTA Area */}
+        <div className="mt-16 text-center">
           <Link
             href="/guard"
-            className="inline-block px-8 py-3 bg-gradient-to-r from-accent to-purple-500 text-white font-bold rounded-lg hover:from-accent/90 hover:to-purple-500/90 transition-all shadow-lg shadow-accent/20"
+            className="inline-flex items-center justify-center px-8 py-3 bg-white text-black font-bold rounded-full hover:bg-gray-200 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] active:scale-95"
           >
-            作品を保護する →
+            さっそく保護する
           </Link>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="site-footer p-4 mt-12">
+      <footer className="site-footer p-6 mt-auto border-t border-gray-800">
         <div className="container mx-auto text-center text-xs text-muted">
-          <p><a href="/disclaimer" className="hover:underline">免責事項</a> | &copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="hover:underline">お問い合わせ</a></p>
+          <p className="flex justify-center gap-4">
+            <Link href="/guard/disclaimer" className="hover:text-white transition-colors">利用規約</Link>
+            <Link href="/disclaimer" className="hover:text-white transition-colors">免責事項</Link>
+            <a href="mailto:contact@aicheckers.net" className="hover:text-white transition-colors">お問い合わせ</a>
+          </p>
+          <p className="mt-4 text-gray-600">&copy; 2026 AI Checkers</p>
         </div>
       </footer>
     </div>

@@ -788,7 +788,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                 href="/guard/how-it-works"
                 className="text-sm font-medium text-muted hover:text-accent hover:bg-accent/5 px-2 py-1 rounded transition-all border border-transparent hover:border-accent/30"
               >
-                How it works?
+                よくある質問
               </a>
             </h2>
           </div>
