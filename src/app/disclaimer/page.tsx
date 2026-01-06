@@ -77,62 +77,7 @@ export default function Disclaimer() {
             </p>
           </section>
 
-          <hr className="border-gray-700 my-10" />
 
-          {/* Guard Disclaimer */}
-          <section>
-            <h2 className="text-2xl font-bold mb-6 text-foreground text-center">AIイラストガード 免責事項</h2>
-
-            <div className="space-y-8">
-              <section>
-                <h3 className="text-xl font-bold mb-3 text-foreground">1. 保護機能について</h3>
-                <p>
-                  本サービスが提供する画像保護機能は、機械学習モデルに対する妨害を目的としたものであり、
-                  100%の保護を保証するものではありません。本サービスの使用、または期待した効果が得られなかったことによって生じたいかなる損害についても、当サービスは一切の責任を負いません。
-                  （本サービスの仕様によって生じたいかなる損害についても、当サービスは責任を負いかねます）
-                </p>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-bold mb-3 text-foreground">2. 画質への影響</h3>
-                <p>
-                  保護強度に応じて、画像に微細なノイズ等の視覚的変化が生じる場合があります。
-                </p>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-bold mb-3 text-foreground">3. 利用目的</h3>
-                <p>
-                  本サービスは、画像をAI学習から保護するためのツールとして提供しています。
-                  本サービスを用いた誹謗中傷、権利侵害の主張、その他の悪意ある目的での使用を禁止します。
-                </p>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-bold mb-3 text-foreground">4. アップロード画像</h3>
-                <p>
-                  アップロードされた画像は保護処理のみに使用され、サーバーに保存されることはありません。
-                  ただし、違法なコンテンツのアップロードは固くお断りいたします。
-                </p>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-bold mb-3 text-foreground">5. サービスの変更・停止</h3>
-                <p>
-                  当サービスは、予告なくサービス内容の変更、または提供を停止することがあります。
-                  これによって生じた損害について、当サービスは責任を負いません。
-                </p>
-              </section>
-
-              <section>
-                <h3 className="text-xl font-bold mb-3 text-foreground">6. 著作権</h3>
-                <p>
-                  本サイトのコンテンツ（テキスト、画像、ロゴ等）の著作権は当サービスに帰属します。
-                  無断転載・複製を禁じます。
-                </p>
-              </section>
-            </div>
-          </section>
         </div>
 
         {/* Back Link */}
