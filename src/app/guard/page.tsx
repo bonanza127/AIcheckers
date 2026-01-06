@@ -228,10 +228,12 @@ export default function Home() {
         });
         if (response.ok) {
           const data = await response.json();
-          // Moonlight (status: "healthy") がオンラインならOK
-          setBackendOnline(data.status === "healthy");
-          // 残りトークン数を取得
-          if (data.rate_limit?.remaining !== undefined) {
+          // Moonlight (status: "healthy") or "online"
+          setBackendOnline(data.status === "healthy" || data.status === "online");
+          // Guard用残りトークン数を取得 (なければChecker用)
+          if (data.rate_limit?.guard_remaining !== undefined) {
+            setRateLimitRemaining(data.rate_limit.guard_remaining);
+          } else if (data.rate_limit?.remaining !== undefined) {
             setRateLimitRemaining(data.rate_limit.remaining);
           }
         } else {
@@ -335,7 +337,7 @@ export default function Home() {
   }, [handleFiles]);
 
   // Guard モードでは URL 解析機能は使用しない（ダミー関数）
-  const handleUrlSubmit = useCallback(async () => {}, []);
+  const handleUrlSubmit = useCallback(async () => { }, []);
 
   const processFile = async (file: File, queueItemId: string, displayIndex: number, total: number) => {
     const fileStartTime = Date.now();
@@ -392,7 +394,7 @@ export default function Home() {
           throw new Error(`RATE_LIMITED:${errorData.detail || "レート制限に達しました"}`);
         }
         if (response.status === 503) {
-          throw new Error("Ironcladモジュールが利用できません");
+          throw new Error("MoonKnightモジュールが利用できません");
         }
         throw new Error(`API error: ${response.status}`);
       }
@@ -444,7 +446,7 @@ export default function Home() {
 
                   setGuardProgress({ current: data.iterations, total: data.iterations });
                   addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                  addLog("> Ironclad署名埋込完了", "process");
+                  addLog("> MoonKnight保護完了", "process");
                   addLog("> 防壁構築完了 - 画像は保護されました", "result");
                 } else if (data.type === "error") {
                   throw new Error(data.message);
@@ -471,7 +473,7 @@ export default function Home() {
                 ssim = data.ssim;
                 setGuardProgress({ current: data.iterations, total: data.iterations });
                 addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                addLog("> Ironclad署名埋込完了", "process");
+                addLog("> MoonKnight保護完了", "process");
                 addLog("> 防壁構築完了 - 画像は保護されました", "result");
               } else if (data.type === "error") {
                 throw new Error(data.message);
@@ -614,7 +616,7 @@ export default function Home() {
 
     const text = `【AI学習防止ガード】
 🛡️ PROTECTED
-Ironclad V3.1で画像を保護しました
+MoonKnight V3 (旧FastProtect) で画像を保護しました
 
 #AIイラストガード #aicheckers`;
 
@@ -766,13 +768,12 @@ Ironclad V3.1で画像を保護しました
             <button
               onClick={() => setIsVipModalOpen(true)}
               disabled={isAuthLoading}
-              className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${
-                isAuthLoading
-                  ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
-                  : authUser
-                    ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-                    : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
-              }`}
+              className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${isAuthLoading
+                ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
+                : authUser
+                  ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+                  : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
+                }`}
             >
               {isAuthLoading ? "..." : "VIP"}
             </button>
@@ -787,7 +788,7 @@ Ironclad V3.1で画像を保護しました
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight whitespace-nowrap">AIイラストガードがあなたの作品を無断学習から守ります</h1>
           <p className="text-muted text-lg">
             人間の目には見えないノイズを混ぜることにより、作風の模倣を防ぐAIポイズニングの最新版。<br />
-            複数の技法をかけ合わせた<span className="text-accent font-bold">Ironclad V3</span>により、生成AIの学習を顕著に妨害します。
+            複数の技法をかけ合わせた<span className="text-accent font-bold">MoonKnight V3</span>により、生成AIの学習を顕著に妨害します。
           </p>
           <p className="text-xs text-muted mt-2">
             ※ 作品の質を下げないよう、防壁は最小限のノイズで構成されています
@@ -879,12 +880,12 @@ Ironclad V3.1で画像を保護しました
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-4 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">Ironclad V3.1</span></span>
+                <span>使用モデル: <span className="text-accent font-bold">MoonKnight V3</span></span>
                 <span>ロジック: DWT + 知覚マスキング</span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
 
-              {/* Progress Bar - Ironcladと同期 */}
+              {/* Progress Bar - MoonKnightと同期 */}
               <div className="mb-6">
                 <div className="flex justify-between text-base mb-1">
                   <span className="font-semibold uppercase text-accent">
@@ -1052,7 +1053,7 @@ Ironclad V3.1で画像を保護しました
                 <input
                   type="text"
                   value={urlInput}
-                  onChange={() => {}}
+                  onChange={() => { }}
                   onKeyDown={(e) => e.key === "Enter" && !isLoadingUrl && handleUrlSubmit()}
                   placeholder="画像URLを貼り付け（Twitter/Pixiv等）"
                   className="flex-1 px-3 py-2 rounded-lg bg-card-bg border border-border text-text-primary placeholder-muted text-sm focus:outline-none focus:border-accent"
@@ -1078,11 +1079,11 @@ Ironclad V3.1で画像を保護しました
                 <Shield className="w-4 h-4" />
                 <span>防壁を構築</span>
                 <span className="font-normal">
-                  - 残り{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (rateLimitRemaining ?? "--")}/{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (authUser?.isVip ? "240" : "24")}枚
+                  - 残り{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (rateLimitRemaining ?? "--")}/{(authUser?.isAdmin || rateLimitRemaining === -1) ? "∞" : (authUser?.isVip ? "30" : "3")}枚
                 </span>
                 {!authUser?.isAdmin && rateLimitRemaining !== -1 && (
                   <span className="text-xs opacity-70 font-normal">
-                    (1時間刻みで{authUser?.isVip ? "10" : "1"}枚回復)
+                    (8時間刻みで{authUser?.isVip ? "5" : "1"}枚回復)
                   </span>
                 )}
               </button>

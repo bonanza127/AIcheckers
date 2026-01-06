@@ -239,7 +239,7 @@ export default function Home() {
         if (response.ok) {
           const data = await response.json();
           // Moonlight (status: "healthy") がオンラインならOK
-          setBackendOnline(data.status === "healthy");
+          setBackendOnline(data.status === "healthy" || data.status === "online");
           // 残りトークン数を取得
           if (data.rate_limit?.remaining !== undefined) {
             setRateLimitRemaining(data.rate_limit.remaining);
@@ -605,11 +605,11 @@ export default function Home() {
     // 5段階分類（低い順）: HUMAN CONFIRMED(青) < LOW SIMILARITY(緑) < MIDDLE CAUTION(黄) < HIGH ALERT(オレンジ) < AI DETECTED(赤)
     const verdict = rateLimitError ? "RATE LIMITED"
       : backendVerdict ? backendVerdict  // バックエンドのverdictを優先使用
-      : aiScore >= 80 ? "AI DETECTED"
-      : aiScore >= 60 ? "HIGH ALERT"
-      : aiScore >= 40 ? "MIDDLE CAUTION"
-      : aiScore >= 20 ? "LOW SIMILARITY"
-      : "HUMAN CONFIRMED";
+        : aiScore >= 80 ? "AI DETECTED"
+          : aiScore >= 60 ? "HIGH ALERT"
+            : aiScore >= 40 ? "MIDDLE CAUTION"
+              : aiScore >= 20 ? "LOW SIMILARITY"
+                : "HUMAN CONFIRMED";
 
     setResult({
       isAI,
@@ -733,15 +733,15 @@ export default function Home() {
 
     const verdictText = result.aiScore >= 80 ? "AI DETECTED"
       : result.aiScore >= 60 ? "HIGH ALERT"
-      : result.aiScore >= 40 ? "MIDDLE CAUTION"
-      : result.aiScore >= 20 ? "LOW SIMILARITY"
-      : "HUMAN CONFIRMED";
+        : result.aiScore >= 40 ? "MIDDLE CAUTION"
+          : result.aiScore >= 20 ? "LOW SIMILARITY"
+            : "HUMAN CONFIRMED";
 
     const verdictEmoji = result.aiScore >= 80 ? "🤖"
       : result.aiScore >= 60 ? "🟠"
-      : result.aiScore >= 40 ? "🟡"
-      : result.aiScore >= 20 ? "🟢"
-      : "🔵";
+        : result.aiScore >= 40 ? "🟡"
+          : result.aiScore >= 20 ? "🟢"
+            : "🔵";
 
     const text = `【AI判定結果】
 ${verdictEmoji} ${verdictText}
@@ -752,9 +752,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
     // 動的OGP付きのシェアURL（短縮パラメータ使用）
     const vParam = verdictText === "AI DETECTED" ? "ai"
       : verdictText === "HIGH ALERT" ? "ha"
-      : verdictText === "MIDDLE CAUTION" ? "mc"
-      : verdictText === "LOW SIMILARITY" ? "ls"
-      : "h";
+        : verdictText === "MIDDLE CAUTION" ? "mc"
+          : verdictText === "LOW SIMILARITY" ? "ls"
+            : "h";
     const traceParam = result.artifacts ? `&trace=${encodeURIComponent(result.artifacts)}` : "";
     const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}${traceParam}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
@@ -820,9 +820,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       humanScore: 100 - item.aiScore,
       verdict: item.aiScore >= 80 ? "AI DETECTED"
         : item.aiScore >= 60 ? "HIGH ALERT"
-        : item.aiScore >= 40 ? "MIDDLE CAUTION"
-        : item.aiScore >= 20 ? "LOW SIMILARITY"
-        : "HUMAN CONFIRMED",
+          : item.aiScore >= 40 ? "MIDDLE CAUTION"
+            : item.aiScore >= 20 ? "LOW SIMILARITY"
+              : "HUMAN CONFIRMED",
       confidence: item.score,
       processingTime: 0,
       artifacts: item.artifacts || fallbackArtifacts,
@@ -864,13 +864,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
             <button
               onClick={() => setIsVipModalOpen(true)}
               disabled={isAuthLoading}
-              className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${
-                isAuthLoading
+              className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${isAuthLoading
                   ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
                   : authUser
                     ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
                     : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
-              }`}
+                }`}
             >
               {isAuthLoading ? "..." : "VIP"}
             </button>
@@ -995,8 +994,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   </span>
                   <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
                     (result?.aiScore ?? 0) >= 60 ? "text-yellow-500" :
-                    (result?.aiScore ?? 0) >= 40 ? "text-gray-400" :
-                    (result?.aiScore ?? 0) >= 20 ? "text-blue-400" : "text-success"
+                      (result?.aiScore ?? 0) >= 40 ? "text-gray-400" :
+                        (result?.aiScore ?? 0) >= 20 ? "text-blue-400" : "text-success"
                     }`}>
                     {result?.aiScore ?? 0}%
                   </span>
@@ -1005,8 +1004,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <div
                     className={`progress-bar-fill ${(result?.aiScore ?? 0) >= 80 ? "ai" :
                       (result?.aiScore ?? 0) >= 60 ? "high-alert" :
-                      (result?.aiScore ?? 0) >= 40 ? "unknown" :
-                      (result?.aiScore ?? 0) >= 20 ? "low-risk" : "human"
+                        (result?.aiScore ?? 0) >= 40 ? "unknown" :
+                          (result?.aiScore ?? 0) >= 20 ? "low-risk" : "human"
                       }`}
                     style={{ width: `${result?.aiScore ?? 0}%` }}
                   />

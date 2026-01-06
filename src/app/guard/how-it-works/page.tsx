@@ -38,15 +38,15 @@ export default function GuardHowItWorks() {
             一度学習されたデータは取り消すことが難しく、自分の作風や技術が無断で模倣される可能性があります。
           </p>
           <p className="text-muted leading-relaxed mt-3">
-            そこで、このような状況に対策を講じるべく、<span className="text-accent font-bold">AI学習を妨害する防壁技術「Ironclad」</span>を開発しました。
+            そこで、このような状況に対策を講じるべく、<span className="text-accent font-bold">AI学習を妨害する防壁技術「MoonKnight」</span>を開発しました。
           </p>
         </section>
 
         {/* Section 2: Technology Overview */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">Ironclad V3.1 について</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">MoonKnight V3 について</h2>
           <p className="text-muted leading-relaxed">
-            Ironcladは、画像に人間の目には見えない微細なノイズパターンを埋め込むことで、AI画像生成器の学習効果を大幅に低減する技術です。
+            MoonKnightは、画像に人間の目には見えない微細なノイズパターンを埋め込むことで、AI画像生成器の学習効果を大幅に低減する技術です。
           </p>
           <p className="text-muted leading-relaxed mt-3">
             この技術は、<span className="text-accent font-bold">離散ウェーブレット変換（DWT）</span>と<span className="text-accent font-bold">知覚マスキング</span>を組み合わせることで、
@@ -96,7 +96,7 @@ export default function GuardHowItWorks() {
                 <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">4</div>
                 <div className="flex-1">
                   <p className="font-bold text-foreground">署名埋込</p>
-                  <p className="text-muted text-sm mt-1">Ironclad署名を画像に埋め込み、保護済みであることを証明可能にします。</p>
+                  <p className="text-muted text-sm mt-1">MoonKnight署名を画像に埋め込み、保護済みであることを証明可能にします。</p>
                 </div>
               </div>
 
@@ -126,7 +126,7 @@ export default function GuardHowItWorks() {
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
               <p className="font-bold text-foreground">保護証明</p>
-              <p className="text-muted text-sm mt-1">Ironclad署名により、画像が保護済みであることを確認できます。</p>
+              <p className="text-muted text-sm mt-1">MoonKnight署名により、画像が保護済みであることを確認できます。</p>
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
               <p className="font-bold text-foreground">SNS対応</p>
@@ -139,7 +139,7 @@ export default function GuardHowItWorks() {
         <section className="mb-12">
           <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">制限事項</h2>
           <p className="text-muted leading-relaxed">
-            Ironcladは強力な防壁を提供しますが、以下の点にご注意ください：
+            MoonKnightは強力な防壁を提供しますが、以下の点にご注意ください：
           </p>
           <ul className="list-none mt-4 space-y-2 text-muted">
             <li className="flex items-start gap-2">

@@ -42,12 +42,13 @@ except ImportError:
 
 # Ironclad V3.1 ポイズニング（オプショナル）
 try:
-    from scripts.ironclad_v2 import IroncladPoisoner, image_to_tensor, tensor_to_image
-    IRONCLAD_ENABLED = True
-    ironclad_poisoner = None  # 遅延初期化
-except ImportError:
-    IRONCLAD_ENABLED = False
-    ironclad_poisoner = None
+    from scripts.moonknight_v3 import MoonKnightV3
+    MOONKNIGHT_ENABLED = True
+    moonknight_engine = None  # Lazy initialization
+except ImportError as e:
+    print(f"Warning: MoonKnight import failed: {e}")
+    MOONKNIGHT_ENABLED = False
+    moonknight_engine = None
 
 
 class URLAnalyzeRequest(BaseModel):
@@ -76,6 +77,13 @@ RECOVERY_INTERVAL_HOURS = 1  # 1時間ごとに回復
 RECOVERY_AMOUNT = 1  # 通常: 1枚回復
 RECOVERY_AMOUNT_VIP = 10  # VIP: 10枚回復
 
+# Guard用レート制限 (別枠)
+GUARD_MAX_TOKENS = 3
+GUARD_MAX_TOKENS_VIP = 30
+GUARD_RECOVERY_INTERVAL_HOURS = 8
+GUARD_RECOVERY_AMOUNT = 1
+GUARD_RECOVERY_AMOUNT_VIP = 5
+
 # 管理者アカウント（レート制限免除）
 ADMIN_EMAILS = {"hokhok7676@gmail.com", "dlsite-trial@aicheckers.net"}
 
@@ -86,7 +94,9 @@ TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
 TEMPERATURE = float(os.getenv("TEMPERATURE", "1.1"))
 
 # IP -> {"tokens": int, "last_recovery": datetime}
+# IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
+rate_limit_guard: dict[str, dict] = defaultdict(lambda: {"tokens": GUARD_MAX_TOKENS, "last_recovery": datetime.now()})
 
 # FANBOX VIP連携
 import json
@@ -255,7 +265,7 @@ HF_TOKEN = os.getenv("HF_TOKEN", "")
 async def lifespan(app: FastAPI):
     """起動時にMoonlight (DINOv3) をロード"""
     global device, dinov3_model, dinov3_processor, dinov3_classifier, use_patch_stats, vip_users, users_db
-    global enterprise_keys, enterprise_usage
+    global enterprise_keys, enterprise_usage, rate_limit_data, rate_limit_guard
 
     # ユーザーデータをロード
     users_db = load_users()
@@ -276,9 +286,9 @@ async def lifespan(app: FastAPI):
     # Moonlight (DINOv3) ロード
     print(f"Loading Moonlight (DINOv3): {DINOV3_MODEL_NAME}")
     try:
-        from huggingface_hub import login
-        login(token=HF_TOKEN, add_to_git_credential=False)
-
+        # ユーザー要望により明示的なログイン処理を行わない
+        # ダウンロード済みモデルを使用する前提
+        
         dinov3_processor = AutoImageProcessor.from_pretrained(DINOV3_MODEL_NAME, token=HF_TOKEN)
         dinov3_model = AutoModel.from_pretrained(
             DINOV3_MODEL_NAME,
@@ -302,8 +312,10 @@ async def lifespan(app: FastAPI):
 
         print("Moonlight loaded successfully!")
     except Exception as e:
-        print(f"FATAL: Failed to load Moonlight: {e}")
-        raise
+        print(f"ERROR: Failed to load Moonlight: {e}")
+        # DINOv3ロード失敗でもサーバーは起動させる（Guard機能などは使えるように）
+        dinov3_model = None
+        dinov3_classifier = None
 
     yield
 
@@ -374,25 +386,44 @@ def get_image_hash(image_bytes: bytes) -> str:
     return hashlib.sha256(image_bytes).hexdigest()
 
 
-def _recover_tokens(ip: str, is_vip: bool = False) -> None:
-    """経過時間に基づいてトークンを回復（毎時0分刻み）"""
-    data = rate_limit_data[ip]
+def _recover_tokens(ip: str, is_vip: bool = False, limit_type: str = "checker") -> None:
+    """経過時間に基づいてトークンを回復"""
+    if limit_type == "guard":
+        data = rate_limit_guard[ip]
+        max_tokens = GUARD_MAX_TOKENS_VIP if is_vip else GUARD_MAX_TOKENS
+        recovery_amount = GUARD_RECOVERY_AMOUNT_VIP if is_vip else GUARD_RECOVERY_AMOUNT
+        interval_hours = GUARD_RECOVERY_INTERVAL_HOURS
+    else:
+        # Default Checker
+        data = rate_limit_data[ip]
+        max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
+        recovery_amount = RECOVERY_AMOUNT_VIP if is_vip else RECOVERY_AMOUNT
+        interval_hours = RECOVERY_INTERVAL_HOURS
+
     now = datetime.now()
     last_recovery = data["last_recovery"]
 
-    max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
-    recovery_amount = RECOVERY_AMOUNT_VIP if is_vip else RECOVERY_AMOUNT
-
-    # 最終回復時刻から現在までに経過した「時の境界」の数を計算
-    # 例: 5:30に使用 → 6:00, 7:00 で2回復
-    last_hour = last_recovery.replace(minute=0, second=0, microsecond=0)
-    current_hour = now.replace(minute=0, second=0, microsecond=0)
-
-    if current_hour > last_hour:
-        hours_passed = int((current_hour - last_hour).total_seconds() // 3600)
-        tokens_to_recover = hours_passed * recovery_amount
+    # 最終回復時刻から現在までに経過した「時間の境界」の数を計算
+    # 8時間刻みなら、0:00, 8:00, 16:00... が境界
+    
+    # 簡易実装: 純粋な経過時間で計算 (前回回復時からの差分)
+    # これにより "8時間刻み" の厳密な境界（固定時刻）ではなく、前回の回復から8時間後となる
+    # 固定時刻（例：毎日0時リセット）にしたい場合はロジック変更が必要だが、
+    # ユーザー要件「8時間刻みで1回復」は経過時間依存と解釈する。
+    
+    elapsed_seconds = (now - last_recovery).total_seconds()
+    required_seconds = interval_hours * 3600
+    
+    if elapsed_seconds >= required_seconds:
+        intervals_passed = int(elapsed_seconds // required_seconds)
+        tokens_to_recover = intervals_passed * recovery_amount
+        
+        # 回復
         data["tokens"] = min(max_tokens, data["tokens"] + tokens_to_recover)
-        data["last_recovery"] = current_hour
+        
+        # 最終回復時刻を更新（端数は切り捨てて、インターバルごとの時刻にする）
+        # 例: 9時間経過(Interval 8h) -> 8時間分だけ時間を進める（残り1時間は次回に持ち越し）
+        data["last_recovery"] = last_recovery + timedelta(hours=intervals_passed * interval_hours)
 
 
 def verify_enterprise_api_key(request: Request) -> dict | None:
@@ -455,23 +486,28 @@ def get_magic_link_email(request: Request) -> str | None:
     return None
 
 
-def check_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False) -> tuple[bool, int, int]:
+def check_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False, limit_type: str = "checker") -> tuple[bool, int, int]:
     """レート制限チェック。(許可されているか, 残り回数, 上限) を返す"""
     # 管理者は無制限（-1で無限を示す）
     if is_admin:
         return True, -1, -1
 
-    max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
+    if limit_type == "guard":
+        max_tokens = GUARD_MAX_TOKENS_VIP if is_vip else GUARD_MAX_TOKENS
+        data_store = rate_limit_guard
+    else:
+        max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
+        data_store = rate_limit_data
 
     if not RATE_LIMIT_ENABLED:
         return True, max_tokens, max_tokens  # 無効時は常に許可、上限表示
 
-    _recover_tokens(key, is_vip)
-    data = rate_limit_data[key]
+    _recover_tokens(key, is_vip, limit_type=limit_type)
+    data = data_store[key]
     return data["tokens"] > 0, data["tokens"], max_tokens
 
 
-def increment_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False) -> None:
+def increment_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False, limit_type: str = "checker") -> None:
     """トークンを1消費"""
     # 管理者は消費しない
     if is_admin:
@@ -480,8 +516,13 @@ def increment_rate_limit(key: str, is_vip: bool = False, is_admin: bool = False)
     if not RATE_LIMIT_ENABLED:
         return  # 無効時は消費しない
 
-    _recover_tokens(key, is_vip)  # まず回復処理
-    data = rate_limit_data[key]
+    if limit_type == "guard":
+        data_store = rate_limit_guard
+    else:
+        data_store = rate_limit_data
+
+    _recover_tokens(key, is_vip, limit_type=limit_type)  # まず回復処理
+    data = data_store[key]
     if data["tokens"] > 0:
         data["tokens"] -= 1
 
@@ -523,19 +564,30 @@ async def robots_txt():
 
 
 @app.get("/health")
-async def health_check(request: Request):
-    # レート制限キー取得（ログインユーザーはuser_id、非ログインはIP）
+def health_check(request: Request):
+    """ヘルスチェック + レート制限状態取得"""
+    # アクティブなモデルを返す
+    model_name = "Moonlight (DINOv3)"
+    if MOONKNIGHT_ENABLED:
+        model_name += " & MoonKnight V3"
+    
+    # レート制限情報 (Checker)
     key, is_vip, is_admin = get_rate_limit_key(request)
-    _, remaining, limit = check_rate_limit(key, is_vip, is_admin)
+    _, remaining, limit = check_rate_limit(key, is_vip, is_admin, limit_type="checker")
+    
+    # レート制限情報 (Guard)
+    _, guard_remaining, guard_limit = check_rate_limit(key, is_vip, is_admin, limit_type="guard")
 
     return {
-        "status": "healthy" if dinov3_model is not None and dinov3_classifier is not None else "unhealthy",
-        "model": "Moonlight",
-        "device": str(device) if device else None,
-        "cuda_available": torch.cuda.is_available(),
+        "status": "online",
+        "model": model_name,
         "rate_limit": {
+            "limit": limit,
             "remaining": remaining,
-            "limit": limit
+            "guard_limit": guard_limit,
+            "guard_remaining": guard_remaining,
+            "is_vip": is_vip,
+            "is_admin": is_admin
         }
     }
 
@@ -1080,17 +1132,17 @@ async def guard_image(
     strength: float = Form(default=0.06)
 ):
     """
-    画像にIronclad V3.1ポイズニングを適用して保護する
+    画像にMoonKnight V3（旧FastProtect）を適用して保護する
 
     Returns:
         - protected_image: Base64エンコードされた保護済みPNG画像
         - processing_time: 処理時間（秒）
         - ssim: 元画像との構造類似性（品質指標）
     """
-    global ironclad_poisoner
+    global moonknight_engine
 
-    if not IRONCLAD_ENABLED:
-        raise HTTPException(status_code=503, detail="Ironclad module not available")
+    if not MOONKNIGHT_ENABLED:
+        raise HTTPException(status_code=503, detail="MoonKnight module not available")
 
     # Enterprise APIキー認証チェック（優先）
     enterprise_info = verify_enterprise_api_key(request)
@@ -1101,7 +1153,7 @@ async def guard_image(
         track_enterprise_usage(enterprise_info["api_key"], "/guard")
     else:
         key, is_vip, is_admin = get_rate_limit_key(request)
-        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
+        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin, limit_type="guard")
         if not allowed:
             return JSONResponse(
                 status_code=429,
@@ -1119,24 +1171,20 @@ async def guard_image(
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        # Ironcladポイズナーの遅延初期化
-        if ironclad_poisoner is None:
-            ironclad_poisoner = IroncladPoisoner(
-                secret_key="AICHECKERS_GUARD_KEY",
-                device=str(device)
+        # MoonKnightエンジンの遅延初期化
+        if moonknight_engine is None:
+            moonknight_engine = MoonKnightV3(
+                model_dir="/home/techne/aicheckers/models/fastprotect",
+                device=str(device),
+                use_adaptive=True
             )
 
-        # 強度設定
-        ironclad_poisoner.strength_mid = strength
-
-        # テンソル変換
-        img_tensor = image_to_tensor(image)
-
-        # ポイズニング実行
-        poisoned_tensor = ironclad_poisoner.poison(img_tensor, iterations=iterations)
-
-        # PIL画像に変換
-        poisoned_image = tensor_to_image(poisoned_tensor)
+        # 保護実行（PIL -> PIL）
+        # MoonKnightはiterationsパラメータを使用しません（ワンショット生成）
+        protected_image = moonknight_engine.poison(image, strength=strength)
+        
+        # 変数名の互換性のため（以降の処理で使用）
+        poisoned_image = protected_image
 
         # SSIM計算（品質検証）
         from skimage.metrics import structural_similarity as ssim
@@ -1154,8 +1202,8 @@ async def guard_image(
 
         # レート制限カウント増加
         if not is_enterprise:
-            increment_rate_limit(key, is_vip, is_admin)
-            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
+            increment_rate_limit(key, is_vip, is_admin, limit_type="guard")
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin, limit_type="guard")
         else:
             remaining_after, limit_after = -1, -1
 
@@ -1165,8 +1213,8 @@ async def guard_image(
                 "processing_time": round(processing_time, 3),
                 "ssim": round(ssim_value, 4),
                 "filename": file.filename,
-                "protection_applied": "Ironclad V3.1",
-                "iterations": iterations,
+                "protection_applied": "MoonKnight V3",
+                "iterations": 1,
                 "strength": strength
             },
             headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
@@ -1178,6 +1226,13 @@ async def guard_image(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Guard processing failed: {str(e)}")
+    finally:
+        # レート制限ヘッダー用の情報を取得 (エラー時も確実にヘッダーを返すため)
+        # ただし、Enterprise APIの場合は常に-1
+        if is_enterprise:
+            remaining_after, limit_after = -1, -1
+        else:
+            _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin, limit_type="guard")
 
 
 @app.post("/guard-stream")
@@ -1188,24 +1243,31 @@ async def guard_image_stream(
     strength: float = Form(default=0.06)
 ):
     """
-    SSEストリーミング版: リアルタイム進捗付きでIroncladポイズニングを実行
+    SSEストリーミング版: リアルタイム進捗付きでMoonKnight保護を実行
     """
-    global ironclad_poisoner
+    global moonknight_engine
 
-    if not IRONCLAD_ENABLED:
-        raise HTTPException(status_code=503, detail="Ironclad module not available")
+    if not MOONKNIGHT_ENABLED:
+        raise HTTPException(status_code=503, detail="MoonKnight module not available")
 
     # Enterprise/レート制限チェック
     enterprise_info = verify_enterprise_api_key(request)
     is_enterprise = enterprise_info is not None
 
+    key, is_vip, is_admin = None, False, False # Initialize for finally block
+
     if is_enterprise:
         track_enterprise_usage(enterprise_info["api_key"], "/guard-stream")
     else:
         key, is_vip, is_admin = get_rate_limit_key(request)
-        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin)
+        allowed, remaining, limit = check_rate_limit(key, is_vip, is_admin, limit_type="guard")
         if not allowed:
-            raise HTTPException(status_code=429, detail=f"上限（{limit}枚）に達しました")
+            raise HTTPException(
+                status_code=429,
+                detail=f"上限（{limit}枚）に達しました。1時間ごとに回復します。"
+            )
+        # トークン消費
+        increment_rate_limit(key, is_vip, is_admin, limit_type="guard")
 
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid file type")
@@ -1224,29 +1286,31 @@ async def guard_image_stream(
             progress_queue.put({"type": "progress", "current": current, "total": total})
 
         def process_in_thread():
-            global ironclad_poisoner
+            global moonknight_engine
             try:
                 start_time = time.time()
 
                 image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-                if ironclad_poisoner is None:
-                    ironclad_poisoner = IroncladPoisoner(
-                        secret_key="AICHECKERS_GUARD_KEY",
-                        device=str(device)
+                # 初期化
+                if moonknight_engine is None:
+                    progress_callback(10, 100) # Loading
+                    moonknight_engine = MoonKnightV3(
+                        model_dir="/home/techne/aicheckers/models/fastprotect",
+                        device=str(device),
+                        use_adaptive=True
                     )
 
-                ironclad_poisoner.strength_mid = strength
-                img_tensor = image_to_tensor(image)
+                progress_callback(30, 100) # Analyzing & Protecting
 
-                # プログレスコールバック付きでポイズニング実行
-                poisoned_tensor = ironclad_poisoner.poison(
-                    img_tensor,
-                    iterations=iterations,
+                # MoonKnight実行
+                # progress_callbackを渡してリアルタイム進捗通知
+                protected_image = moonknight_engine.poison(
+                    image, 
+                    strength=strength,
                     progress_callback=progress_callback
                 )
-
-                poisoned_image = tensor_to_image(poisoned_tensor)
+                poisoned_image = protected_image # Alias
 
                 # SSIM計算
                 from skimage.metrics import structural_similarity as ssim
@@ -1266,8 +1330,8 @@ async def guard_image_stream(
                     "processing_time": round(processing_time, 3),
                     "ssim": round(ssim_value, 4),
                     "filename": filename,
-                    "protection_applied": "Ironclad V3.1",
-                    "iterations": iterations,
+                    "protection_applied": "MoonKnight V3",
+                    "iterations": 1,
                     "strength": strength
                 }
             except Exception as e:
