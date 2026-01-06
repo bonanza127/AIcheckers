@@ -36,8 +36,7 @@ export default function GuardDisclaimer() {
                         <h2 className="text-xl font-bold mb-3 text-foreground">1. 保護機能について</h2>
                         <p>
                             本サービスが提供する画像保護機能は、機械学習モデルに対する妨害を目的としたものであり、
-                            100%の保護を保証するものではありません。本サービスの使用、または期待した効果が得られなかったことによって生じたいかなる損害についても、当サービスは一切の責任を負いません。
-                            （本サービスの仕様によって生じたいかなる損害についても、当サービスは責任を負いかねます）
+                            100%の保護を保証するものではありません。本サービスの使用、または期待した効果が得られなかったことによって生じたいかなる損害についても、当サービスは責任を負いかねます。
                         </p>
                     </section>
 
@@ -49,7 +48,14 @@ export default function GuardDisclaimer() {
                     </section>
 
                     <section>
-                        <h2 className="text-xl font-bold mb-3 text-foreground">3. 利用目的</h2>
+                        <h2 className="text-xl font-bold mb-3 text-foreground">3. 注意事項</h2>
+                        <p>
+                            画像のリサイズや加工等により、保護機能が減衰する場合があります。
+                        </p>
+                    </section>
+
+                    <section>
+                        <h2 className="text-xl font-bold mb-3 text-foreground">4. 利用目的</h2>
                         <p>
                             本サービスは、画像をAI学習から保護するためのツールとして提供しています。
                             本サービスを用いた誹謗中傷、権利侵害の主張、その他の悪意ある目的での使用を禁止します。
@@ -57,7 +63,7 @@ export default function GuardDisclaimer() {
                     </section>
 
                     <section>
-                        <h2 className="text-xl font-bold mb-3 text-foreground">4. アップロード画像</h2>
+                        <h2 className="text-xl font-bold mb-3 text-foreground">5. アップロード画像</h2>
                         <p>
                             アップロードされた画像は保護処理のみに使用され、サーバーに保存されることはありません。
                             ただし、違法なコンテンツのアップロードは固くお断りいたします。
@@ -65,23 +71,16 @@ export default function GuardDisclaimer() {
                     </section>
 
                     <section>
-                        <h2 className="text-xl font-bold mb-3 text-foreground">5. サービスの変更・停止</h2>
+                        <h2 className="text-xl font-bold mb-3 text-foreground">6. サービスの変更・停止/著作権</h2>
                         <p>
                             当サービスは、予告なくサービス内容の変更、または提供を停止することがあります。
                             これによって生じた損害について、当サービスは責任を負いません。
+                            また、本サイトのコンテンツ（テキスト、画像、ロゴ等）の著作権は当サービスに帰属します。
                         </p>
                     </section>
 
                     <section>
-                        <h2 className="text-xl font-bold mb-3 text-foreground">6. 著作権</h2>
-                        <p>
-                            本サイトのコンテンツ（テキスト、画像、ロゴ等）の著作権は当サービスに帰属します。
-                            無断転載・複製を禁じます。
-                        </p>
-                    </section>
-
-                    <section>
-                        <h2 className="text-xl font-bold mb-3 text-foreground">お問い合わせ</h2>
+                        <h2 className="text-xl font-bold mb-3 text-foreground">7. お問い合わせ</h2>
                         <p>
                             本サービスに関するお問い合わせは、
                             <a href="mailto:contact@aicheckers.net" className="text-accent hover:underline">contact@aicheckers.net</a>

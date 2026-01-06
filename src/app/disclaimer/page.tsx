@@ -28,7 +28,7 @@ export default function Disclaimer() {
 
         <div className="space-y-8 text-muted leading-relaxed">
           <section>
-            <h2 className="text-xl font-bold mb-3 text-foreground">判定結果について</h2>
+            <h2 className="text-xl font-bold mb-3 text-foreground">1. 判定結果について</h2>
             <p>
               本サービスが提供するAI生成画像の判定結果は、機械学習モデルによる推定であり、
               100%の正確性を保証するものではありません。判定結果を根拠とした
@@ -37,7 +37,7 @@ export default function Disclaimer() {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold mb-3 text-foreground">利用目的</h2>
+            <h2 className="text-xl font-bold mb-3 text-foreground">2. 利用目的</h2>
             <p>
               本サービスは、画像がAI生成である可能性を判定する参考ツールとして提供しています。
               判定結果を用いた誹謗中傷、権利侵害の主張、その他の悪意ある目的での使用を禁止します。
@@ -45,7 +45,7 @@ export default function Disclaimer() {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold mb-3 text-foreground">アップロード画像</h2>
+            <h2 className="text-xl font-bold mb-3 text-foreground">3. アップロード画像</h2>
             <p>
               アップロードされた画像は判定処理のみに使用され、サーバーに保存されることはありません。
               ただし、違法なコンテンツのアップロードは固くお断りいたします。
@@ -53,31 +53,23 @@ export default function Disclaimer() {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold mb-3 text-foreground">サービスの変更・停止</h2>
+            <h2 className="text-xl font-bold mb-3 text-foreground">4. サービスの変更・停止/著作権</h2>
             <p>
               当サービスは、予告なくサービス内容の変更、または提供を停止することがあります。
               これによって生じた損害について、当サービスは責任を負いません。
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-bold mb-3 text-foreground">著作権</h2>
-            <p>
-              本サイトのコンテンツ（テキスト、画像、ロゴ等）の著作権は当サービスに帰属します。
+              また、本サイトのコンテンツ（テキスト、画像、ロゴ等）の著作権は当サービスに帰属します。
               無断転載・複製を禁じます。
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-bold mb-3 text-foreground">お問い合わせ</h2>
+            <h2 className="text-xl font-bold mb-3 text-foreground">5. お問い合わせ</h2>
             <p>
               本サービスに関するお問い合わせは、
               <a href="mailto:contact@aicheckers.net" className="text-accent hover:underline">contact@aicheckers.net</a>
               までご連絡ください。
             </p>
           </section>
-
-
         </div>
 
         {/* Back Link */}
