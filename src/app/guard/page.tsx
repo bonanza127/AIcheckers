@@ -1200,31 +1200,35 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
         <div className="bg-gray-900/40 rounded-xl p-6 border border-gray-800/50">
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-foreground">
             <Shield className="w-5 h-5 text-accent" />
-            AIイラストガード 免責事項
+            免責事項
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-muted leading-relaxed">
             <div className="space-y-3">
               <p>
-                <strong className="text-foreground">1. 保護の限界:</strong><br />
-                MoonKnight技術は強力な学習妨害を提供しますが、全ての既存・将来のAIモデルに対して100%の保護を保証するものではありません。
+                <strong className="text-foreground">1. 保護機能について:</strong><br />
+                本サービスが提供する画像保護機能は、機械学習モデルに対する妨害を目的としたものであり、100%の保護を保証するものではありません。本サービスの使用、または期待した効果が得られなかったことによって生じたいかなる損害についても、当サイトは一切の責任を負いません。
               </p>
               <p>
                 <strong className="text-foreground">2. 画質への影響:</strong><br />
-                保護の仕組み上、設定した強度に応じて画像に微細なノイズ等の視覚的変化が生じる場合があります。
+                保護強度に応じて、画像に微細なノイズ等の視覚的変化が生じる場合があります。
               </p>
               <p>
-                <strong className="text-foreground">3. プラットフォームの影響:</strong><br />
-                投稿先サイト（SNS等）による再圧縮や加工により、保護効果が低下または消失する可能性があります。
+                <strong className="text-foreground">3. 利用目的:</strong><br />
+                本サービスは、画像をAI学習から保護するためのツールとして提供しています。本サービスを用いた誹謗中傷、権利侵害の主張、その他の悪意ある目的での使用を禁止します。
               </p>
             </div>
             <div className="space-y-3">
               <p>
-                <strong className="text-foreground">4. 損害への責任:</strong><br />
-                本サービスの使用、または期待した効果が得られなかったことによって生じたいかなる損害についても、当サイトは一切の責任を負いません。
+                <strong className="text-foreground">4. アップロード画像:</strong><br />
+                アップロードされた画像は保護処理のみに使用され、サーバーに保存されることはありません。ただし、違法なコンテンツのアップロードは固くお断りいたします。
               </p>
               <p>
-                <strong className="text-foreground">5. プライバシー保護:</strong><br />
-                アップロードされた画像は処理後、即座にメモリから消去されます。サーバーへの永続的な保存は一切行われません。
+                <strong className="text-foreground">5. サービスの変更・停止:</strong><br />
+                当サービスは、予告なくサービス内容の変更、または提供を停止することがあります。これによって生じた損害について、当サービスは責任を負いません。
+              </p>
+              <p>
+                <strong className="text-foreground">6. 著作権:</strong><br />
+                本サイトのコンテンツ（テキスト、画像、ロゴ等）の著作権は当サービスに帰属します。無断転載・複製を禁じます。
               </p>
               <p className="pt-2 border-t border-gray-800 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
