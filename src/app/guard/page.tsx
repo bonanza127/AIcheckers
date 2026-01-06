@@ -1230,19 +1230,10 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
               </button>
             )}
 
-            {/* Image Container */}
-            <div className="relative max-h-full">
-              <img
-                src={modalImageIndex === 0
-                  ? previewImage
-                  : (currentProtectedImage?.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`)
-                }
-                alt="Comparison View"
-                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
-              />
-
-              {/* Labels & Controls (Overlay) */}
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10">
+            {/* Center Content */}
+            <div className="flex flex-col items-center gap-4">
+              {/* Labels & Controls */}
+              <div className="flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10 z-10">
                 <button
                   onClick={() => setModalImageIndex(0)}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 0 ? "bg-white text-black shadow-lg" : "text-gray-400 hover:text-white"
@@ -1260,15 +1251,27 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                 </button>
               </div>
 
-              {/* Close Button (Overlay) */}
-              <button
-                onClick={() => setIsImageModalOpen(false)}
-                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-white/20 rounded-full text-white transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              {/* Image Container */}
+              <div className="relative max-h-full">
+                <img
+                  src={modalImageIndex === 0
+                    ? previewImage
+                    : (currentProtectedImage?.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`)
+                  }
+                  alt="Comparison View"
+                  className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
+                />
+
+                {/* Close Button (Overlay on image) */}
+                <button
+                  onClick={() => setIsImageModalOpen(false)}
+                  className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-white/20 rounded-full text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Right Arrow */}
