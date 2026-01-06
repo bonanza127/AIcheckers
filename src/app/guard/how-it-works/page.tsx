@@ -15,7 +15,7 @@ const faqData = [
   },
   {
     q: "NightshadeとかGlazeっていうのは聞いたことあるけど、それと何が違うの？",
-    a: "原理は同じですが、使用している技術の数と世代が異なります。\n\n2025年8月にLightshade<sup class=\"text-accent\">*1</sup>という技術が登場したことにより、Nightshadeは完全に無効化、その他のGlazeやMist2といったポイズニング技術も併せて突破されてしまうことがわかりました。\n\nそこでラストガードでは、それ以降に登場した複数の最新技術を組み合わせ、単一手法に依存しない多層的な防御を構築しています。"
+    a: "原理は同じですが、使用している技術の数と世代が異なります。\n\n2025年8月にLightshade<sup class=\"text-accent\">*1</sup>という技術が登場したことにより、Nightshadeは完全に無効化、その他のGlazeやMist2といったポイズニング技術も併せて突破されてしまうことがわかりました。\n\nそこでイラストガードでは、それ以降に登場した複数の最新技術を組み合わせ、単一手法に依存しない多層的な防御を構築しています。"
   },
   {
     q: "実際の効果は？",
@@ -27,7 +27,7 @@ const faqData = [
   },
   {
     q: "自分の作品はすでにAI学習されてしまっていると思うのだけど…",
-    a: "イラストガードにはLoRA学習を破壊するセマンティック（AIの錯覚を引き起こす)攻撃がふくまれているため、毒の混じった画像を学習させればさせるほど、既存の学習結果を悪化させる可能性が高いです。「もう遅い」と感じている方にこそ、お試しいただきたい技術です。"
+    a: "イラストガードにはLoRA学習を破壊するセマンティック（AIの錯覚を引き起こす)攻撃がふくまれているため、毒の混じった画像を学習させればさせるほど、既存の学習結果を悪化させる可能性が高いです。「もう遅い」と感じている方にこそ、試していただきたい技術です。"
   },
   {
     q: "でも結局、また新しい技術がでたら、いまのバリアは突破されちゃうんじゃないの？",
@@ -55,9 +55,14 @@ export default function FAQ() {
 
       {/* Main Content */}
       <main className="flex-grow container mx-auto px-4 py-12 max-w-3xl">
-        <div className="text-center mb-12">
+        <div className="text-center mb-12 flex flex-col items-center">
+          <div className="relative mb-4">
+            <Shield className="w-16 h-16 text-accent opacity-90" />
+            <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-1">
+              <div className="bg-green-500 w-4 h-4 rounded-full border-2 border-background"></div>
+            </div>
+          </div>
           <h1 className="text-3xl font-bold mb-3 tracking-tight">よくある質問</h1>
-          <p className="text-muted text-sm uppercase tracking-widest opacity-70">FAQ</p>
         </div>
 
         <div className="space-y-10">
@@ -75,8 +80,8 @@ export default function FAQ() {
 
               {/* Answer (System) - Left Side */}
               <div className="flex gap-3 justify-start group">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-800 to-black flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-md">
-                  <Shield className="w-5 h-5 text-accent" />
+                <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-md overflow-hidden">
+                  <img src="/guard-chat-icon.jpg" alt="Guard" className="w-full h-full object-cover" />
                 </div>
                 <div className="bg-gray-800/80 border border-white/5 rounded-2xl rounded-tl-none px-6 py-4 max-w-[90%] md:max-w-[85%] shadow-sm backdrop-blur-sm transition-transform group-hover:translate-x-1">
                   {item.a.split('\n').map((line, i) => (
@@ -106,7 +111,7 @@ export default function FAQ() {
             href="/guard"
             className="inline-flex items-center justify-center px-8 py-4 bg-white text-black font-bold rounded-full hover:bg-gray-100 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] active:scale-95 text-lg"
           >
-            さっそく保護する
+            画像を保護する
           </Link>
         </div>
       </main>
