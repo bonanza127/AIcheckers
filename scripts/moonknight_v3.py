@@ -214,10 +214,9 @@ class MoonKnightV3:
             if self.use_adaptive and self.lpips_model is not None:
                 report_progress(50) # Adaptive Scaling
                 
-                # Use fixed reference strength for scaling map to ensure linearity
-                # If we use args.strength, higher strength triggers stronger suppression, canceling out the increase.
-                reference_strength = 0.5
-                delta_scaled_512 = raw_delta * reference_strength
+                # Use actual strength for scaling map calculation
+                # This ensures different strength values produce visibly different results
+                delta_scaled_512 = raw_delta * strength
                 
                 # Check dims and resize if needed (rare case if raw_delta != 512)
                 if delta_scaled_512.shape[1:] != img_analysis.shape[2:]:
