@@ -69,17 +69,41 @@ python3 scripts/train_from_embeddings.py --label-smoothing 0.1  # Label Smoothin
 5. **Validation Accuracy（96%+）を最終精度と誤解しない**
 6. **Modal CLIを直接実行しない** - タイムアウトループの原因になる（下記参照）
 
-### Modal連携の注意事項
+### Modal連携 - 非同期実行パターン
 
-**問題**: `modal run`等を直接実行すると「Request timed out. Retrying in 0 seconds…」の無限ループに陥る
+**問題**: `modal run`の同期実行は長時間ジョブでタイムアウトループに陥る
 
-**対策**:
-1. **バックグラウンド実行**: `run_in_background=true`で実行し、`TaskOutput`で結果取得
-2. **ローカル優先**: GTX 1660で動作可能なタスク（LoRA学習以外）はローカルで実行
-3. **スクリプト側でタイムアウト制御**: Modal関数に`@app.function(timeout=600)`を設定
-4. **環境変数**: `export MODAL_CLIENT_TIMEOUT=300`でタイムアウト延長
+**解決策**: `spawn()` + ステータスファイルによる非同期実行
 
-**推奨**: LoRA学習等の重いタスクのみModalを使用し、それ以外はローカル実行
+```bash
+# ジョブ投入（即座に戻る）
+modal run scripts/modal_kohya_lora.py --submit "train_sap_v3_variants:lora_sap_v3"
+
+# ステータス確認
+modal run scripts/modal_kohya_lora.py --status
+
+# Modal Dashboardでも確認可能
+# https://modal.com/apps
+```
+
+**フォーマット**: `--submit "訓練フォルダ名:出力名"`
+
+| 例 | 説明 |
+|-----|------|
+| `train_normal:lora_normal` | 通常画像でLoRA学習 |
+| `train_sap_v3:lora_sap_v3` | SAP v3攻撃画像でLoRA学習 |
+| `train_sap_v3_variants:lora_sap_v3_perlin` | Perlin版で学習 |
+
+**ステータスの見方**:
+- `running` - 実行中
+- `completed` - 完了（result に結果）
+- `failed` - 失敗（result にエラー）
+
+**旧方式（非推奨）**: 同期実行はタイムアウトの可能性あり
+```bash
+# これは使わない
+modal run scripts/modal_kohya_lora.py --train-sap-v3
+```
 
 ---
 
@@ -94,6 +118,8 @@ python3 scripts/train_from_embeddings.py --label-smoothing 0.1  # Label Smoothin
 | `extract_patch_stats_only.py` | パッチ統計のみ追加抽出 | 低 |
 | `patch_analysis.py` | パッチ分析ツール | 低 |
 | `train_with_patch_stats.py` | パッチ統計付き学習（実験用） | 低 |
+| `fastprotect_train.py` | FastProtect摂動学習 | 中 |
+| `fastprotect_inference.py` | FastProtect画像保護 | 中 |
 
 ### scripts/ - スクレイパー類
 | ファイル | 用途 |
@@ -125,6 +151,8 @@ python3 scripts/train_from_embeddings.py --label-smoothing 0.1  # Label Smoothin
 | ファイル | 用途 |
 |----------|------|
 | `patch_stats.py` | パッチ統計量計算（backend/main.py, extract_embeddings_v2.pyで使用） |
+| `vae_hooks.py` | VAE中間層フック（FastProtect用） |
+| `mpl_loss.py` | Multi-Layer Protection Loss（FastProtect用） |
 
 ### models/
 | ファイル | 説明 |
@@ -292,16 +320,15 @@ LoRA学習を妨害するための摂動技術を研究中。
 
 ---
 
-### 現在のベスト: SAP v3 (2025-01-04)
+### 現在のベスト: SAP v3
 
 **スクリプト**: `scripts/sap_v3.py`
+
+VAE+CLIP攻撃。視認性とVAE攻撃効果のバランスが最も良い。
 
 ```bash
 # 1枚テスト（約1分）
 modal run scripts/sap_v3.py --test --warp-magnitude 0.01 --iterations 50
-
-# バッチ攻撃
-modal run scripts/sap_v3.py --attack
 ```
 
 #### 攻撃構成
@@ -347,15 +374,67 @@ CONFUSION_CONCEPTS = [
 
 ---
 
+### SAP v3 Variants (Perlin実験)
+
+**スクリプト**: `scripts/sap_v3_variants.py`
+
+v3の適応型マスクにPerlinノイズを導入。平坦部の摂動を空間的にバラけさせる。
+
+```bash
+# scale64 + 画像ハッシュベースシード（推奨）
+modal run scripts/sap_v3_variants.py --test --perlin-scale 64
+```
+
+#### 改良点
+
+| 項目 | v3 | v3 Variants |
+|------|-----|-------------|
+| 平坦部マスク | 一様1% | Perlin 0.75〜1.5% |
+| シード | 固定/ランダム | **画像ハッシュベース** |
+| CLIPネガティブ | 5概念 | **8概念**（abstract texture等追加） |
+
+#### 推奨パラメータ
+
+| パラメータ | 値 | 理由 |
+|------------|-----|------|
+| perlin_scale | **64** | scale128より攻撃効果が高い |
+| perlin_seed | None（画像ハッシュ） | 再現可能 + 画像ごとに異なる |
+
+#### ベンチマーク結果 (scale64, image-hash seed)
+
+| 指標 | 値 | 評価 |
+|------|-----|------|
+| LPIPS | 0.047 | ✅ 視覚差なし |
+| VAE Cos Sim | 0.80 | ✅ 構造乖離 |
+| CLIP to Original | -0.19 | ⚠️ v3(-0.26)より低下 |
+| CLIP to Negative | 0.28 | ✅ |
+
+#### 設計思想
+
+- **Perlinノイズ**: ホワイトノイズより浄化耐性・JPEG耐性が高い
+- **画像ハッシュベースシード**: 攻撃パターンが画像ごとに異なり学習されにくい
+- **scale64**: 細かすぎず粗すぎないバランス
+
+---
+
+### SAP v4 (アーカイブ: WD14実験)
+
+**スクリプト**: `archive/sap_experiments/sap_v4.py`
+
+WD14 Tagger攻撃を試みたが、視認性とのトレードオフが厳しく、v3の方がバランスが良いため保留。
+
+**課題**: 平坦部へのWD14攻撃がノイズとして目立つ。知覚マスク等で改善を試みたが、VAE攻撃効果との両立が困難。
+
+---
+
 ### スクリプト一覧
 
 | スクリプト | 用途 | 状態 |
 |------------|------|------|
-| `sap_v3.py` | **現行ベスト** - VAE+CLIP+Warping統合 | ✅ 使用中 |
+| `sap_v3.py` | VAE+CLIP+Warping（ベースライン） | ✅ 使用中 |
+| `sap_v3_variants.py` | **Perlin + 画像ハッシュシード** | ✅ 実験中 |
 | `sap_v2.py` | VAE+CLIP+Warping（旧版） | 参考用 |
-| `highfreq_attack.py` | エッジ適応VAE攻撃 | 参考用 |
-| `vae_latent_attack.py` | VAE latent攻撃のみ | 参考用 |
-| `test_single_attack.py` | 1枚テスト用 | デバッグ用 |
+| `archive/sap_experiments/sap_v4.py` | WD14+VAE実験 | アーカイブ |
 
 ---
 
@@ -363,7 +442,8 @@ CONFUSION_CONCEPTS = [
 
 1. **highfreq_attack.py** - エッジ適応 + VAE攻撃（Cos Sim 0.92程度）
 2. **sap_v2.py** - CLIP攻撃追加 + Micro-Warping
-3. **sap_v3.py** - ネガティブ概念誘導 + 概念混乱追加（Cos Sim 0.81、CLIP離脱-0.26）
+3. **sap_v3.py** - ネガティブ概念誘導 + 概念混乱追加（Cos Sim 0.81、CLIP離脱-0.26）★現行ベスト
+4. **sap_v4.py** - WD14 Tagger攻撃実験（ノイズ問題でアーカイブ）
 
 ---
 
@@ -384,7 +464,51 @@ CONFUSION_CONCEPTS = [
 #### FastProtect (CVPR 2025) ★★★最推奨
 - **論文**: https://arxiv.org/abs/2412.11423
 - **開発**: NAVER WEBTOON AI
-- **課題**: コード未公開（TBA）。公開待ち。
+- **状態**: **独自実装完了** (2026-01-04)
+
+##### FastProtect使用方法
+
+```bash
+# 学習（Modal上で実行）
+modal run scripts/fastprotect_train.py --train --data-dir /vol/train_images --steps 40000
+
+# 非同期投入（推奨）
+modal run scripts/fastprotect_train.py --submit --data-dir /vol/train_images
+
+# 推論テスト
+modal run scripts/fastprotect_inference.py --test
+
+# 画像保護
+modal run scripts/fastprotect_inference.py --protect --input /vol/input --output /vol/output --use-warping
+```
+
+##### FastProtect関連ファイル
+
+| ファイル | 用途 |
+|----------|------|
+| `scripts/fastprotect_train.py` | 摂動学習（40,000ステップ） |
+| `scripts/fastprotect_inference.py` | 画像保護推論 |
+| `lib/vae_hooks.py` | VAE中間層フック |
+| `lib/mpl_loss.py` | Multi-Layer Protection Loss |
+
+##### FastProtect学習パラメータ
+
+| パラメータ | 値 | 備考 |
+|------------|-----|------|
+| num_steps | 40,000 | 論文準拠 |
+| batch_size | 16 | A10G向け |
+| lr | 0.0002 | Adam (β=0.5, 0.99) |
+| η (摂動予算) | 8/255 | ~0.031 |
+| λ (中間層重み) | 3.5×10⁻⁵ | 論文準拠 |
+| K (クラスタ数) | 4 | Mixture-of-Perturbations |
+
+##### FastProtect技術詳細
+
+- **Multi-Layer Protection Loss**: VAE中間層（down_1〜3, mid_0）でも距離を最大化
+- **Mixture-of-Perturbations**: K=4のクラスタごとに異なる摂動を学習
+- **Adaptive Targeted Protection**: エントロピーベースでターゲット画像を選択
+- **Adaptive Protection Strength**: LPIPS距離に基づき摂動強度を調整
+- **Micro-Warping統合**: 浄化耐性のための幾何学的変形
 
 #### PAP (NeurIPS 2024)
 - **論文**: https://arxiv.org/abs/2408.10571

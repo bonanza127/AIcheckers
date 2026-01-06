@@ -58,10 +58,14 @@ export default function Home() {
   const [logs, setLogs] = useState<LogEntry[]>([
     { message: "SYSTEM INITIALIZED. Ready for batch submission.", type: "system" },
   ]);
+  const [currentProtectedImage, setCurrentProtectedImage] = useState<string | null>(null);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [modalImageIndex, setModalImageIndex] = useState<0 | 1>(0); // 0: Original, 1: Protected
   // Guard モードでは DetectionResult は使用しない（保護専用）
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [isScanning, setIsScanning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [strength, setStrength] = useState(0.6);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -526,6 +530,10 @@ export default function Home() {
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
 
     setPhase("complete");
+    // 結果をステートにセット
+    if (protectedImage) {
+      setCurrentProtectedImage(protectedImage);
+    }
     const logMessage = rateLimitError
       ? "エラー: レート制限に達しました"
       : protectedImage
@@ -666,6 +674,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
     setSelectedHistoryId(item.id);
     setSelectedQueueId(null); // Clear queue selection
     setCurrentImage(item.preview);
+    setCurrentProtectedImage(item.protectedImage);
     setCurrentFileName(item.name);
     setPhase("complete");
   };
@@ -675,7 +684,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
     if (!item.protectedImage) return;
 
     const link = document.createElement("a");
-    link.href = `data:image/png;base64,${item.protectedImage}`;
+    link.href = item.protectedImage.startsWith("data:") ? item.protectedImage : `data:image/png;base64,${item.protectedImage}`;
     // ファイル名から拡張子を除去して _protected.png を付与
     const baseName = item.name.replace(/\.[^/.]+$/, "");
     link.download = `${baseName}_protected.png`;
@@ -684,6 +693,35 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
     document.body.removeChild(link);
     addLog(`ダウンロード: ${link.download}`, "info");
   };
+
+  const handleDownloadCurrent = () => {
+    if (!currentProtectedImage || !currentFileName) return;
+    const link = document.createElement("a");
+    link.href = currentProtectedImage.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`;
+    const baseName = currentFileName.replace(/\.[^/.]+$/, "");
+    link.download = `${baseName}_protected.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addLog(`ダウンロード: ${link.download}`, "info");
+  };
+
+  const openImageModal = (index: 0 | 1) => {
+    if (!currentImage) return;
+    setModalImageIndex(index);
+    setIsImageModalOpen(true);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isImageModalOpen) return;
+      if (e.key === "ArrowLeft") setModalImageIndex(0);
+      if (e.key === "ArrowRight" && currentProtectedImage) setModalImageIndex(1);
+      if (e.key === "Escape") setIsImageModalOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isImageModalOpen, currentProtectedImage]);
 
   // まとめてダウンロード（ZIP形式）
   const downloadAllImages = async () => {
@@ -808,28 +846,63 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                 {/* Active Image Preview */}
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   {previewImage ? (
-                    <div className="relative w-full">
-                      <div className={`active-image-container w-full h-72 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
-                        <img
-                          src={previewImage}
-                          alt="Guard Scan"
-                          className="max-w-full max-h-full object-contain"
-                        />
+                    <div className="flex gap-4 w-full">
+                      {/* Left: Original */}
+                      <div className="flex-1 min-w-0 flex flex-col items-center">
+                        <div
+                          className={`relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-zoom-in group ${phase === "scanning" ? "scanning" : ""}`}
+                          onClick={() => openImageModal(0)}
+                        >
+                          <img
+                            src={previewImage}
+                            alt="Original"
+                            className="max-w-full max-h-full object-contain"
+                          />
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-xs text-white rounded">Before</div>
+                        </div>
                       </div>
-                      {/* 選択中の履歴アイテムがあればダウンロードボタンを表示 */}
-                      {selectedHistoryId && (() => {
-                        const selectedItem = history.find(h => h.id === selectedHistoryId);
-                        return selectedItem?.protectedImage ? (
-                          <button
-                            onClick={() => downloadSingleImage(selectedItem)}
-                            className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1.5 text-xs font-medium bg-accent/90 hover:bg-accent text-white rounded shadow-lg transition-colors"
-                            title="保護済み画像をダウンロード"
+
+                      {/* Right: Protected */}
+                      <div className="flex-1 min-w-0 flex flex-col items-center">
+                        {currentProtectedImage ? (
+                          <div
+                            className="relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-accent/30 overflow-hidden cursor-zoom-in group"
+                            onClick={() => openImageModal(1)}
                           >
-                            <Download className="w-3.5 h-3.5" />
-                            ダウンロード
-                          </button>
-                        ) : null;
-                      })()}
+                            <div className="absolute inset-0 bg-accent/5 pointer-events-none"></div>
+                            <img
+                              src={currentProtectedImage.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`}
+                              alt="Protected"
+                              className="max-w-full max-h-full object-contain"
+                            />
+                            <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-xs text-white font-bold rounded shadow-lg">After</div>
+
+                            {/* Download Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadCurrent();
+                              }}
+                              className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white text-accent hover:bg-gray-100 rounded-md shadow-xl transition-all opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0"
+                              title="画像をダウンロード"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Save
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-full h-72 flex flex-col items-center justify-center bg-black/20 rounded-lg border border-dashed border-gray-700">
+                            {phase === "scanning" ? (
+                              <div className="flex flex-col items-center animate-pulse">
+                                <Shield className="w-8 h-8 text-accent mb-2 opacity-50" />
+                                <span className="text-xs text-accent">Protecting...</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-dim">Pending...</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <div className="scan-placeholder w-full h-72 flex flex-col items-center justify-center">
@@ -1043,6 +1116,27 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                       <Plus className="w-6 h-6" />
                     </button>
                   </div>
+                  {/* Slider for strength, placed after the queue items */}
+                  <div className="mt-4">
+                    <label htmlFor="strength-slider" className="block text-sm font-medium text-muted mb-2">
+                      保護強度: <span className="font-bold text-accent">{(strength * 100).toFixed(0)}%</span>
+                    </label>
+                    <input
+                      id="strength-slider"
+                      type="range"
+                      min="0.1"
+                      max="1.0"
+                      step="0.01"
+                      value={strength}
+                      onChange={(e) => setStrength(parseFloat(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-dim mt-1">
+                      <span>Weak (0.1)</span>
+                      <span className="text-accent font-bold">Standard (0.6)</span>
+                      <span>Strong (1.0)</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1113,6 +1207,59 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
         onClose={() => setIsVipModalOpen(false)}
         authUser={authUser}
       />
+      {/* Image Comparison Modal */}
+      {isImageModalOpen && previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setIsImageModalOpen(false)}
+        >
+          <div className="relative max-w-[95vw] max-h-[95vh]" onClick={e => e.stopPropagation()}>
+            <img
+              src={modalImageIndex === 0
+                ? previewImage
+                : (currentProtectedImage?.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`)
+              }
+              alt="Comparison View"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+
+            {/* Labels & Controls */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10">
+              <button
+                onClick={() => setModalImageIndex(0)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 0 ? "bg-white text-black shadow-lg" : "text-gray-400 hover:text-white"
+                  }`}
+              >
+                Before
+              </button>
+              <button
+                onClick={() => currentProtectedImage && setModalImageIndex(1)}
+                disabled={!currentProtectedImage}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 1 ? "bg-accent text-white shadow-lg" : "text-gray-400 hover:text-accent disabled:opacity-30"
+                  }`}
+              >
+                After
+              </button>
+            </div>
+
+            <button
+              onClick={() => setIsImageModalOpen(false)}
+              className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-white/20 rounded-full text-white transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Navigation Arrows Hint */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-xs flex items-center gap-2">
+              <span>← Arrow Left</span>
+              <span className="w-1 h-1 bg-white/50 rounded-full"></span>
+              <span>Arrow Right →</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

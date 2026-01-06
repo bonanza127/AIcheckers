@@ -21,20 +21,64 @@ CLSトークン + パッチ統計量を保存
 import os
 import sys
 import argparse
+import io
+import random
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageFilter
 from tqdm import tqdm
 from transformers import AutoImageProcessor, AutoModel
 
+# 共通モジュール
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from lib.patch_stats import compute_patch_stats_batch
+
 # 設定
 DINOV3_MODEL = "facebook/dinov3-vitb16-pretrain-lvd1689m"
-HF_TOKEN = "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"
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
 CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
+
+
+def apply_degradation(img: Image.Image) -> Image.Image:
+    """
+    画像に劣化処理を適用（画質バイアスを除去するため）
+
+    適用される劣化の種類（ランダムに1つ選択）:
+    - JPEG圧縮 (quality 30-70)
+    - ガウシアンノイズ
+    - ダウンサンプリング→アップサンプリング (50-80%)
+    """
+    degradation_type = random.choice(['jpeg', 'noise', 'downsample'])
+
+    if degradation_type == 'jpeg':
+        # JPEG圧縮
+        quality = random.randint(30, 70)
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=quality)
+        buffer.seek(0)
+        img = Image.open(buffer).convert('RGB')
+
+    elif degradation_type == 'noise':
+        # ガウシアンノイズ
+        arr = np.array(img, dtype=np.float32)
+        noise_std = random.uniform(5, 25)
+        noise = np.random.normal(0, noise_std, arr.shape).astype(np.float32)
+        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+        img = Image.fromarray(arr)
+
+    elif degradation_type == 'downsample':
+        # ダウンサンプリング→アップサンプリング
+        scale = random.uniform(0.5, 0.8)
+        w, h = img.size
+        small_size = (int(w * scale), int(h * scale))
+        img = img.resize(small_size, Image.BILINEAR)
+        img = img.resize((w, h), Image.BILINEAR)
+
+    return img
 
 
 def load_model():
@@ -77,91 +121,28 @@ def load_classifier(device):
 
 
 def compute_patch_stats(patch_embeddings: torch.Tensor, classifier: nn.Linear = None) -> np.ndarray:
-    """
-    パッチ統計量を計算
+    """パッチ統計量計算（共通モジュールへの委譲）"""
+    return compute_patch_stats_batch(patch_embeddings, classifier)
+
+
+def extract_embeddings(image_dir: Path, model, processor, device, classifier=None, batch_size=32, degradation_prob=0.0):
+    """ディレクトリ内の全画像からembeddingとパッチ統計量を抽出
 
     Args:
-        patch_embeddings: (batch, 196, 768) パッチのembedding
-        classifier: 分類器（Noneの場合はembedding-based統計のみ）
-
-    Returns:
-        stats: (batch, 7) パッチ統計量
+        degradation_prob: 劣化Augmentationを適用する確率 (0.0-1.0)
     """
-    batch_size = patch_embeddings.shape[0]
-    num_patches = patch_embeddings.shape[1]  # 196
-    grid_size = 14  # 14x14 patches
-    stats = np.zeros((batch_size, 7), dtype=np.float32)
-
-    HIGH_SCORE_THRESHOLD = 0.8
-    HIGH_SIM_THRESHOLD = 0.85
-
-    with torch.no_grad():
-        if classifier is not None:
-            # 分類器を通してパッチごとのAIスコアを計算
-            # 775次元分類器の場合は先頭768次元のみ使用（backend/main.pyと同じ）
-            # (batch, 196, 768) -> (batch * 196, 768)
-            flat_patches = patch_embeddings.reshape(-1, 768)
-            weight = classifier.weight[:, :768]  # (2, 768)
-            bias = classifier.bias
-            logits = torch.mm(flat_patches, weight.t()) + bias  # (batch * 196, 2)
-            probs = F.softmax(logits, dim=1)
-            ai_scores = probs[:, 1].reshape(batch_size, -1)  # (batch, 196)
-
-            # スコアベースの統計量
-            for i in range(batch_size):
-                scores = ai_scores[i].cpu().numpy()
-                stats[i, 0] = np.mean(scores)                    # patch_mean
-                stats[i, 1] = np.max(scores)                     # patch_max
-                stats[i, 2] = np.var(scores)                     # patch_var
-                stats[i, 3] = stats[i, 1] - stats[i, 0]          # max_minus_mean
-                stats[i, 5] = np.sum(scores >= HIGH_SCORE_THRESHOLD) / num_patches  # count_high_score (ratio)
-        else:
-            # 分類器がない場合はembedding-based統計（コサイン類似度ベース）
-            for i in range(batch_size):
-                patch_emb = patch_embeddings[i].cpu().numpy()  # (196, 768)
-                # パッチ間のコサイン類似度
-                norms = np.linalg.norm(patch_emb, axis=1, keepdims=True)
-                normalized = patch_emb / (norms + 1e-8)
-                mean_patch = normalized.mean(axis=0)
-                cos_sims = normalized @ mean_patch  # 各パッチと平均の類似度
-                stats[i, 0] = np.mean(cos_sims)
-                stats[i, 1] = np.max(cos_sims)
-                stats[i, 2] = np.var(cos_sims)
-                stats[i, 3] = stats[i, 1] - stats[i, 0]
-                # 類似度ベースでは0.8以上を「高類似度」とみなす
-                stats[i, 5] = np.sum(cos_sims >= HIGH_SCORE_THRESHOLD) / num_patches
-
-        # embedding空間でのパッチ多様性 + 垂直方向の高類似度パッチ比率（分類器有無に関わらず計算）
-        for i in range(batch_size):
-            patch_emb = patch_embeddings[i]  # (196, 768) - keep as tensor
-            # 次元ごとの分散の平均 = パッチ間の多様性
-            stats[i, 4] = patch_emb.cpu().numpy().var(axis=0).mean()  # embed_var_mean
-
-            # [6] v_high_sim_85: 垂直方向の高類似度パッチ比率
-            patches_grid = patch_emb.reshape(grid_size, grid_size, -1)  # (14, 14, 768)
-            v_sims = []
-            for row in range(grid_size - 1):
-                for col in range(grid_size):
-                    current = patches_grid[row, col]
-                    down = patches_grid[row + 1, col]
-                    sim = F.cosine_similarity(current.unsqueeze(0), down.unsqueeze(0)).item()
-                    v_sims.append(sim)
-            stats[i, 6] = np.sum(np.array(v_sims) > HIGH_SIM_THRESHOLD) / len(v_sims)  # v_high_sim_85
-
-    return stats
-
-
-def extract_embeddings(image_dir: Path, model, processor, device, classifier=None, batch_size=32):
-    """ディレクトリ内の全画像からembeddingとパッチ統計量を抽出"""
     extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
     image_files = [f for f in image_dir.rglob("*")
                    if f.is_file() and f.suffix.lower() in extensions]
 
     print(f"Found {len(image_files)} images in {image_dir}")
+    if degradation_prob > 0:
+        print(f"Degradation augmentation enabled: {degradation_prob*100:.0f}% of images")
 
     cls_embeddings = []
     patch_stats_list = []
     filenames = []
+    degradation_count = 0
 
     for i in tqdm(range(0, len(image_files), batch_size), desc="Extracting"):
         batch_files = image_files[i:i+batch_size]
@@ -171,6 +152,10 @@ def extract_embeddings(image_dir: Path, model, processor, device, classifier=Non
         for f in batch_files:
             try:
                 img = Image.open(f).convert("RGB")
+                # 劣化Augmentation（確率的に適用）
+                if degradation_prob > 0 and random.random() < degradation_prob:
+                    img = apply_degradation(img)
+                    degradation_count += 1
                 batch_images.append(img)
                 batch_names.append(f.name)
             except Exception as e:
@@ -206,6 +191,9 @@ def extract_embeddings(image_dir: Path, model, processor, device, classifier=Non
     cls_embeddings = np.vstack(cls_embeddings)
     patch_stats_all = np.vstack(patch_stats_list)
 
+    if degradation_prob > 0:
+        print(f"Applied degradation to {degradation_count}/{len(filenames)} images ({degradation_count/len(filenames)*100:.1f}%)")
+
     return cls_embeddings, patch_stats_all, filenames
 
 
@@ -216,6 +204,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--no-classifier", action="store_true",
                         help="Skip classifier-based patch stats (use embedding-based only)")
+    parser.add_argument("--degradation-prob", type=float, default=0.0,
+                        help="Probability of applying degradation augmentation (0.0-1.0, default: 0.0)")
     args = parser.parse_args()
 
     image_dir = Path(args.dir)
@@ -235,7 +225,7 @@ def main():
 
     # 抽出
     cls_embeddings, patch_stats, filenames = extract_embeddings(
-        image_dir, model, processor, device, classifier, args.batch_size
+        image_dir, model, processor, device, classifier, args.batch_size, args.degradation_prob
     )
 
     # 保存（分類器がない場合は _sim_based サフィックス）

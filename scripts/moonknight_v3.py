@@ -157,7 +157,7 @@ class MoonKnightV3:
             distance_map = self.lpips_model(original_normalized, protected_normalized, normalize=False)
         return distance_map
 
-    def _scale_perturbation_strength(self, perceptual_map, base_scale=0.5, sensitivity=3.0, min_scale=0.02):
+    def _scale_perturbation_strength(self, perceptual_map, base_scale=0.5, sensitivity=3.0, min_scale=0.15):
         """知覚マップに基づいて摂動強度をスケーリング"""
         M_normalized = (perceptual_map - perceptual_map.min()) / (perceptual_map.max() - perceptual_map.min() + 1e-8)
         scaling = base_scale * (1 - M_normalized * sensitivity)
@@ -213,7 +213,11 @@ class MoonKnightV3:
             scaling_map_512 = None
             if self.use_adaptive and self.lpips_model is not None:
                 report_progress(50) # Adaptive Scaling
-                delta_scaled_512 = raw_delta * strength
+                
+                # Use fixed reference strength for scaling map to ensure linearity
+                # If we use args.strength, higher strength triggers stronger suppression, canceling out the increase.
+                reference_strength = 0.5
+                delta_scaled_512 = raw_delta * reference_strength
                 
                 # Check dims and resize if needed (rare case if raw_delta != 512)
                 if delta_scaled_512.shape[1:] != img_analysis.shape[2:]:
@@ -304,30 +308,52 @@ def main():
     engine = MoonKnightV3()
     
     # Process
-    supported_exts = ["*.png", "*.jpg", "*.jpeg", "*.webp"]
     image_files = []
-    for ext in supported_exts:
-        image_files.extend(input_path.glob(ext))
+    if input_path.is_file():
+        image_files = [input_path]
+    elif input_path.is_dir():
+        supported_exts = ["*.png", "*.jpg", "*.jpeg", "*.webp"]
+        for ext in supported_exts:
+            image_files.extend(input_path.glob(ext))
         
     print(f"Found {len(image_files)} images")
     
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1) # Reduce workers for better logging
     futures = []
+    
+    import numpy as np
     
     for img_file in tqdm(image_files, desc="Protecting"):
         try:
-            img = Image.open(img_file)
+            img = Image.open(img_file).convert("RGB")
+            # Calculate stats
+            original_np = np.array(img).astype(np.float32) / 255.0
+            
             protected_img = engine.poison(img, strength=args.strength)
+            
+            protected_np = np.array(protected_img).astype(np.float32) / 255.0
+            diff = np.abs(original_np - protected_np)
+            l_inf = np.max(diff)
+            l2 = np.mean(diff ** 2)
+            
+            print(f"[{img_file.name}] Protection Stats: L_inf={l_inf:.4f}, L2={l2:.6f}")
             
             # Add _protected suffix and ensure png for alpha support consistency
             base_name = img_file.stem
             out_name = f"{base_name}_protected.png"
-            out_file = output_path / out_name
+            # If output is dir, use it. If output is file (and input is single file), use output filename.
+            if output_path.suffix:
+                 # Output is a file path
+                 out_file = output_path
+            else:
+                 out_file = output_path / out_name
             
             futures.append(executor.submit(save_image_task, protected_img, out_file))
             
         except Exception as e:
             print(f"Failed to process {img_file.name}: {e}")
+            import traceback
+            traceback.print_exc()
             
     concurrent.futures.wait(futures)
     print("All tasks completed.")

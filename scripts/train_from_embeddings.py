@@ -117,17 +117,20 @@ def load_embeddings(use_patch_stats=True):
 def train_classifier(X, y, input_dim, epochs=30, lr=0.001,
                      vat_epsilon=0.005, vat_alpha_start=0.05, vat_alpha_end=0.3,
                      entropy_start_epoch=20, entropy_alpha_end=0.05,
-                     entropy_threshold=0.9, entropy_temperature=0.6,
+                     entropy_threshold=0.8, entropy_temperature=0.6,
                      cons_start_epoch=5, cons_alpha=0.15,
-                     cons_weak_sigma=0.02, cons_strong_sigma=0.08, cons_mask_ratio=0.2):
+                     cons_weak_sigma=0.02, cons_strong_sigma=0.08, cons_mask_ratio=0.2,
+                     label_smoothing=0.0, use_entropy_minimization=False):
     """Linear Probe分類器を学習（VAT + Entropy Minimization + Consistency Regularization）
 
     - Epoch 0〜end: VAT（勾配ベース敵対的ノイズ）+ αウォームアップ
     - Epoch cons_start_epoch〜end: Consistency Regularization（embedding空間）
-    - Epoch entropy_start_epoch〜end: Entropy Minimization追加
+    - Epoch entropy_start_epoch〜end: Entropy Minimization追加（--no-emで無効化可能）
 
     Args:
         input_dim: 入力次元（768 or 774）
+        label_smoothing: Label Smoothing係数（0.0-0.2推奨）
+        use_entropy_minimization: EMを使用するかどうか
     """
     from torch.utils.data import DataLoader, TensorDataset
     import torch.nn.functional as F
@@ -140,7 +143,12 @@ def train_classifier(X, y, input_dim, epochs=30, lr=0.001,
     print(f"\nTraining on {device}")
     print(f"VAT: ε={vat_epsilon}, α={vat_alpha_start}→{vat_alpha_end} (全エポック)")
     print(f"Consistency: epoch {cons_start_epoch}〜, α={cons_alpha}, weak_σ={cons_weak_sigma}, strong_σ={cons_strong_sigma}, mask={cons_mask_ratio}")
-    print(f"Entropy Minimization: epoch {entropy_start_epoch}〜, α=0→{entropy_alpha_end}, τ={entropy_threshold}, T={entropy_temperature}")
+    if use_entropy_minimization:
+        print(f"Entropy Minimization: epoch {entropy_start_epoch}〜, α=0→{entropy_alpha_end}, τ={entropy_threshold}, T={entropy_temperature}")
+    else:
+        print("Entropy Minimization: DISABLED")
+    if label_smoothing > 0:
+        print(f"Label Smoothing: {label_smoothing}")
 
     # Shuffle
     perm = np.random.permutation(len(X))
@@ -167,7 +175,7 @@ def train_classifier(X, y, input_dim, epochs=30, lr=0.001,
     # Model - 動的次元対応
     print(f"Input dimension: {input_dim}")
     model = nn.Linear(input_dim, 2).to(device)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
@@ -188,7 +196,7 @@ def train_classifier(X, y, input_dim, epochs=30, lr=0.001,
         vat_alpha = vat_alpha_start + (vat_alpha_end - vat_alpha_start) * (epoch / max(epochs - 1, 1))
 
         # Entropy Minimization用αのウォームアップ（中盤から線形増加）
-        use_entropy = epoch >= entropy_start_epoch
+        use_entropy = use_entropy_minimization and epoch >= entropy_start_epoch
         if use_entropy:
             entropy_epochs_total = epochs - entropy_start_epoch
             entropy_epoch_idx = epoch - entropy_start_epoch
@@ -334,6 +342,10 @@ def main():
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
     parser.add_argument("--output", type=str, default=None,
                         help="Output path (default: models/dinov3_classifier.pt)")
+    parser.add_argument("--label-smoothing", type=float, default=0.0,
+                        help="Label smoothing coefficient (0.0-0.2 recommended, default: 0.0)")
+    parser.add_argument("--no-em", action="store_true",
+                        help="Disable Entropy Minimization (EM)")
     args = parser.parse_args()
 
     use_patch_stats = not args.cls_only
@@ -361,7 +373,12 @@ def main():
     X, y, input_dim = load_embeddings(use_patch_stats=use_patch_stats)
 
     # Train
-    model, best_acc, input_dim = train_classifier(X, y, input_dim, epochs=args.epochs)
+    model, best_acc, input_dim = train_classifier(
+        X, y, input_dim,
+        epochs=args.epochs,
+        label_smoothing=args.label_smoothing,
+        use_entropy_minimization=not args.no_em
+    )
 
     # Save (checkpoint形式: バックエンドが checkpoint["classifier"] を期待)
     output_path.parent.mkdir(parents=True, exist_ok=True)
