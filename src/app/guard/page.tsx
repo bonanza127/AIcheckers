@@ -1116,7 +1116,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                       <Plus className="w-6 h-6" />
                     </button>
                   </div>
-                  {/* Slider for strength, placed after the queue items */}
+                  {/* Slider for strength, placed after the queue items
                   <div className="mt-4">
                     <label htmlFor="strength-slider" className="block text-sm font-medium text-muted mb-2">
                       保護強度: <span className="font-bold text-accent">{(strength * 100).toFixed(0)}%</span>
@@ -1137,6 +1137,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                       <span>Strong (1.0)</span>
                     </div>
                   </div>
+                  */}
                 </div>
               )}
             </div>
