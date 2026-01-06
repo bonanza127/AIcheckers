@@ -61,6 +61,7 @@ export default function Home() {
   const [currentProtectedImage, setCurrentProtectedImage] = useState<string | null>(null);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [modalImageIndex, setModalImageIndex] = useState<0 | 1>(0); // 0: Original, 1: Protected
+  const [mainImageIndex, setMainImageIndex] = useState<0 | 1>(0); // Main preview toggle
   // Guard モードでは DetectionResult は使用しない（保護専用）
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [isScanning, setIsScanning] = useState(false);
@@ -847,61 +848,92 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                 {/* Active Image Preview */}
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   {previewImage ? (
-                    <div className="flex gap-4 w-full">
-                      {/* Left: Original */}
-                      <div className="flex-1 min-w-0 flex flex-col items-center">
-                        <div
-                          className={`relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-zoom-in group ${phase === "scanning" ? "scanning" : ""}`}
-                          onClick={() => openImageModal(0)}
+                    <div className="flex flex-col items-center gap-4 w-full">
+                      {/* Controls */}
+                      <div className="flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10 z-10">
+                        <button
+                          onClick={() => setMainImageIndex(0)}
+                          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${mainImageIndex === 0 ? "bg-accent text-white shadow-lg" : "text-gray-400 hover:text-white"
+                            }`}
                         >
-                          <img
-                            src={previewImage}
-                            alt="Original"
-                            className="max-w-full max-h-full object-contain"
-                          />
-                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-xs text-white rounded">Before</div>
-                        </div>
+                          Before
+                        </button>
+                        <button
+                          onClick={() => currentProtectedImage && setMainImageIndex(1)}
+                          disabled={!currentProtectedImage}
+                          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${mainImageIndex === 1 ? "bg-accent text-white shadow-lg" : "text-gray-400 hover:text-accent disabled:opacity-30"
+                            }`}
+                        >
+                          After
+                        </button>
                       </div>
 
-                      {/* Right: Protected */}
-                      <div className="flex-1 min-w-0 flex flex-col items-center">
-                        {currentProtectedImage ? (
-                          <div
-                            className="relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-accent/30 overflow-hidden cursor-zoom-in group"
-                            onClick={() => openImageModal(1)}
+                      <div className="flex items-center justify-center gap-4 w-full">
+                        {/* Left Arrow */}
+                        {currentProtectedImage && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMainImageIndex(0);
+                            }}
+                            className={`p-2 rounded-full text-white transition-all backdrop-blur-sm ${mainImageIndex === 0 ? "bg-white/20 cursor-default opacity-50" : "bg-black/40 hover:bg-black/60"}`}
+                            aria-label="Previous image"
+                            disabled={mainImageIndex === 0}
                           >
-                            <div className="absolute inset-0 bg-accent/5 pointer-events-none"></div>
+                            <ChevronLeft className="w-6 h-6" />
+                          </button>
+                        )}
+
+                        {/* Image Area */}
+                        <div className="flex-1 min-w-0 flex flex-col items-center">
+                          <div
+                            className={`relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border ${mainImageIndex === 1 ? "border-accent/30" : "border-white/5"} overflow-hidden cursor-zoom-in group ${phase === "scanning" && mainImageIndex === 0 ? "scanning" : ""}`}
+                            onClick={() => {
+                              setModalImageIndex(mainImageIndex);
+                              setIsImageModalOpen(true);
+                            }}
+                          >
+                            {mainImageIndex === 1 && <div className="absolute inset-0 bg-accent/5 pointer-events-none"></div>}
+
                             <img
-                              src={currentProtectedImage.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`}
-                              alt="Protected"
+                              src={mainImageIndex === 0
+                                ? previewImage
+                                : (currentProtectedImage?.startsWith("data:") ? currentProtectedImage || "" : `data:image/png;base64,${currentProtectedImage || ""}`)
+                              }
+                              alt={mainImageIndex === 0 ? "Original" : "Protected"}
                               className="max-w-full max-h-full object-contain"
                             />
-                            <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-xs text-white font-bold rounded shadow-lg">After</div>
 
-                            {/* Download Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadCurrent();
-                              }}
-                              className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white text-accent hover:bg-gray-100 rounded-md shadow-xl transition-all opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0"
-                              title="画像をダウンロード"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              Save
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="w-full h-72 flex flex-col items-center justify-center bg-black/20 rounded-lg border border-dashed border-gray-700">
-                            {phase === "scanning" ? (
-                              <div className="flex flex-col items-center animate-pulse">
-                                <Shield className="w-8 h-8 text-accent mb-2 opacity-50" />
-                                <span className="text-xs text-accent">Protecting...</span>
-                              </div>
-                            ) : (
-                              <span className="text-sm text-dim">Pending...</span>
+                            {/* Download Button (Only for Protected) */}
+                            {mainImageIndex === 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadCurrent();
+                                }}
+                                className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white text-accent hover:bg-gray-100 rounded-md shadow-xl transition-all opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0"
+                                title="画像をダウンロード"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Save
+                              </button>
                             )}
                           </div>
+                        </div>
+
+                        {/* Right Arrow */}
+                        {currentProtectedImage && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMainImageIndex(1);
+                            }}
+                            className={`p-2 rounded-full text-white transition-all backdrop-blur-sm ${mainImageIndex === 1 ? "bg-white/20 cursor-default opacity-50" : "bg-black/40 hover:bg-black/60"}`}
+                            aria-label="Next image"
+                            disabled={mainImageIndex === 1}
+                          >
+                            <ChevronRight className="w-6 h-6" />
+                          </button>
                         )}
                       </div>
                     </div>
