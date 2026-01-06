@@ -845,99 +845,87 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
               <h3 className="panel-header">リアルタイム解析 ＆ コンソール</h3>
 
               <div className="flex flex-col md:flex-row gap-6 flex-grow">
-                {/* Active Image Preview */}
+                {/* Left: Original (Before) */}
                 <div className="w-full md:w-1/2 flex flex-col items-center">
+                  <h4 className="text-sm text-muted mb-2 font-bold tracking-wider">BEFORE</h4>
                   {previewImage ? (
-                    <div className="flex gap-4 w-full">
-                      {/* Left: Original */}
-                      <div className="flex-1 min-w-0 flex flex-col items-center">
-                        <div
-                          className={`relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-zoom-in group ${phase === "scanning" ? "scanning" : ""}`}
-                          onClick={() => {
-                            setModalImageIndex(0);
-                            setIsImageModalOpen(true);
-                          }}
-                        >
-                          <img
-                            src={previewImage}
-                            alt="Original"
-                            className="max-w-full max-h-full object-contain"
-                          />
-                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-xs text-white rounded">Before</div>
-                        </div>
-                      </div>
-
-                      {/* Right: Protected */}
-                      <div className="flex-1 min-w-0 flex flex-col items-center">
-                        {currentProtectedImage ? (
-                          <div
-                            className="relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-accent/30 overflow-hidden cursor-zoom-in group"
-                            onClick={() => {
-                              setModalImageIndex(1);
-                              setIsImageModalOpen(true);
-                            }}
-                          >
-                            <div className="absolute inset-0 bg-accent/5 pointer-events-none"></div>
-                            <img
-                              src={currentProtectedImage.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`}
-                              alt="Protected"
-                              className="max-w-full max-h-full object-contain"
-                            />
-                            <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-xs text-white font-bold rounded shadow-lg">After</div>
-
-                            {/* Download Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadCurrent();
-                              }}
-                              className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white text-accent hover:bg-gray-100 rounded-md shadow-xl transition-all opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0"
-                              title="画像をダウンロード"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              Save
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="w-full h-72 flex flex-col items-center justify-center bg-black/20 rounded-lg border border-dashed border-gray-700">
-                            {phase === "scanning" ? (
-                              <div className="flex flex-col items-center animate-pulse">
-                                <Shield className="w-8 h-8 text-accent mb-2 opacity-50" />
-                                <span className="text-xs text-accent">Protecting...</span>
-                              </div>
-                            ) : (
-                              <div className="text-muted text-xs">Processing...</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                    <div
+                      className={`relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-zoom-in group ${phase === "scanning" ? "scanning" : ""}`}
+                      onClick={() => {
+                        setModalImageIndex(0);
+                        setIsImageModalOpen(true);
+                      }}
+                    >
+                      <img
+                        src={previewImage}
+                        alt="Original"
+                        className="max-w-full max-h-full object-contain"
+                      />
+                      <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-xs text-white rounded">Before</div>
                     </div>
                   ) : (
-                    <div className="scan-placeholder w-full h-72 flex flex-col items-center justify-center">
-                      <Cpu className="w-12 h-12 text-dim mb-2" />
-                      <p className="text-muted font-light">SYSTEM READY FOR INFERENCE</p>
+                    <div className="scan-placeholder w-full h-72 flex flex-col items-center justify-center border border-dashed border-gray-700 rounded-lg bg-black/10">
+                      <p className="text-muted/30 font-bold text-2xl uppercase tracking-widest">Before</p>
                     </div>
                   )}
                   {previewFileName && (
-                    <div className="flex items-center justify-center gap-2 mt-3">
-                      <p className="text-sm text-muted truncate font-mono">{previewFileName}</p>
-                      {phase === "complete" && <span className="text-xs text-accent font-semibold">[PROTECTED]</span>}
+                    <div className="flex items-center justify-center gap-2 mt-3 w-full">
+                      <p className="text-sm text-muted truncate font-mono max-w-full">{previewFileName}</p>
                     </div>
                   )}
                 </div>
 
-                {/* Console Log */}
-                <div className="w-full md:w-1/2">
-                  <div
-                    ref={logContainerRef}
-                    className="console-log h-72 overflow-y-auto"
-                  >
-                    {logs.map((log, i) => (
-                      <div key={i} className={getLogClass(log.type)}>
-                        &gt; {log.message}
-                      </div>
-                    ))}
-                  </div>
+                {/* Right: Protected (After) */}
+                <div className="w-full md:w-1/2 flex flex-col items-center">
+                  <h4 className="text-sm text-accent mb-2 font-bold tracking-wider">AFTER</h4>
+                  {currentProtectedImage ? (
+                    <div
+                      className="relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-accent/50 overflow-hidden cursor-zoom-in group shadow-[0_0_15px_rgba(124,58,237,0.1)]"
+                      onClick={() => {
+                        setModalImageIndex(1);
+                        setIsImageModalOpen(true);
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-accent/5 pointer-events-none"></div>
+                      <img
+                        src={currentProtectedImage.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`}
+                        alt="Protected"
+                        className="max-w-full max-h-full object-contain"
+                      />
+                      <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-xs text-white font-bold rounded shadow-lg">After</div>
+
+                      {/* Download Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadCurrent();
+                        }}
+                        className="absolute top-2 right-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white text-accent hover:bg-gray-100 rounded-md shadow-xl transition-all opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0"
+                        title="画像をダウンロード"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-full h-72 flex flex-col items-center justify-center bg-black/10 rounded-lg border border-dashed border-gray-700">
+                      {phase === "scanning" ? (
+                        <div className="flex flex-col items-center animate-pulse">
+                          <Shield className="w-10 h-10 text-accent mb-3 opacity-80" />
+                          <span className="text-sm text-accent font-bold tracking-wider">PROTECTING...</span>
+                        </div>
+                      ) : (
+                        <p className="text-muted/30 font-bold text-2xl uppercase tracking-widest">After</p>
+                      )}
+                    </div>
+                  )}
+                  {previewFileName && phase === "complete" && (
+                    <div className="flex items-center justify-center gap-2 mt-3 w-full">
+                      <span className="text-xs text-accent font-semibold flex items-center gap-1">
+                        <Shield className="w-3 h-3" /> PROTECTED
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
