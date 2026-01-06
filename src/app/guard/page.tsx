@@ -370,6 +370,7 @@ export default function Home() {
     // API呼び出し（SSEストリーミング /guard-stream エンドポイント）
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("strength", strength.toString());
 
     let protectedImage: string | undefined;
     let processingTime: number = 0;
