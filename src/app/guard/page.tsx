@@ -1236,7 +1236,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
               <div className="flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10 z-10">
                 <button
                   onClick={() => setModalImageIndex(0)}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 0 ? "bg-white text-black shadow-lg" : "text-gray-400 hover:text-white"
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 0 ? "bg-accent text-white shadow-lg" : "text-gray-400 hover:text-white"
                     }`}
                 >
                   Before
