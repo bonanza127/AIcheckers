@@ -842,12 +842,10 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
 
             {/* Active Screen / Logs */}
             <div className="card-panel p-6 flex-grow flex flex-col">
-              <h3 className="panel-header">リアルタイム解析 ＆ コンソール</h3>
+              <h3 className="panel-header">Before ＆ After</h3>
 
               <div className="flex flex-col md:flex-row gap-6 flex-grow">
-                {/* Left: Original (Before) */}
                 <div className="w-full md:w-1/2 flex flex-col items-center">
-                  <h4 className="text-sm text-muted mb-2 font-bold tracking-wider">BEFORE</h4>
                   {previewImage ? (
                     <div
                       className={`relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-zoom-in group ${phase === "scanning" ? "scanning" : ""}`}
@@ -875,9 +873,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                   )}
                 </div>
 
-                {/* Right: Protected (After) */}
                 <div className="w-full md:w-1/2 flex flex-col items-center">
-                  <h4 className="text-sm text-accent mb-2 font-bold tracking-wider">AFTER</h4>
                   {currentProtectedImage ? (
                     <div
                       className="relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-accent/50 overflow-hidden cursor-zoom-in group shadow-[0_0_15px_rgba(124,58,237,0.1)]"
