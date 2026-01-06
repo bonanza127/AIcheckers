@@ -1214,68 +1214,76 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
           onClick={() => setIsImageModalOpen(false)}
         >
-          <div className="relative max-w-[95vw] max-h-[95vh]" onClick={e => e.stopPropagation()}>
-            <img
-              src={modalImageIndex === 0
-                ? previewImage
-                : (currentProtectedImage?.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`)
-              }
-              alt="Comparison View"
-              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-            />
-
-            {/* Labels & Controls */}
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10">
+          <div className="flex items-center justify-center gap-4 max-w-[95vw] max-h-[95vh]" onClick={e => e.stopPropagation()}>
+            {/* Left Arrow */}
+            {currentProtectedImage && (
               <button
-                onClick={() => setModalImageIndex(0)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 0 ? "bg-white text-black shadow-lg" : "text-gray-400 hover:text-white"
-                  }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setModalImageIndex(0);
+                }}
+                className={`p-3 rounded-full text-white transition-all backdrop-blur-sm ${modalImageIndex === 0 ? "bg-white/20 cursor-default opacity-50" : "bg-white/10 hover:bg-white/30"}`}
+                aria-label="Previous image"
+                disabled={modalImageIndex === 0}
               >
-                Before
+                <ChevronLeft className="w-8 h-8" />
               </button>
+            )}
+
+            {/* Image Container */}
+            <div className="relative max-h-full">
+              <img
+                src={modalImageIndex === 0
+                  ? previewImage
+                  : (currentProtectedImage?.startsWith("data:") ? currentProtectedImage : `data:image/png;base64,${currentProtectedImage}`)
+                }
+                alt="Comparison View"
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+              />
+
+              {/* Labels & Controls (Overlay) */}
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-4 bg-black/50 p-2 rounded-full backdrop-blur-md border border-white/10">
+                <button
+                  onClick={() => setModalImageIndex(0)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 0 ? "bg-white text-black shadow-lg" : "text-gray-400 hover:text-white"
+                    }`}
+                >
+                  Before
+                </button>
+                <button
+                  onClick={() => currentProtectedImage && setModalImageIndex(1)}
+                  disabled={!currentProtectedImage}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 1 ? "bg-accent text-white shadow-lg" : "text-gray-400 hover:text-accent disabled:opacity-30"
+                    }`}
+                >
+                  After
+                </button>
+              </div>
+
+              {/* Close Button (Overlay) */}
               <button
-                onClick={() => currentProtectedImage && setModalImageIndex(1)}
-                disabled={!currentProtectedImage}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${modalImageIndex === 1 ? "bg-accent text-white shadow-lg" : "text-gray-400 hover:text-accent disabled:opacity-30"
-                  }`}
+                onClick={() => setIsImageModalOpen(false)}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-white/20 rounded-full text-white transition-colors"
               >
-                After
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
-            <button
-              onClick={() => setIsImageModalOpen(false)}
-              className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-white/20 rounded-full text-white transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-
-            {/* Navigation Arrows */}
+            {/* Right Arrow */}
             {currentProtectedImage && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setModalImageIndex(0);
-                  }}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-white/20 rounded-full text-white transition-colors backdrop-blur-sm"
-                  aria-label="Previous image"
-                >
-                  <ChevronLeft className="w-8 h-8" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setModalImageIndex(1);
-                  }}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 hover:bg-white/20 rounded-full text-white transition-colors backdrop-blur-sm"
-                  aria-label="Next image"
-                >
-                  <ChevronRight className="w-8 h-8" />
-                </button>
-              </>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setModalImageIndex(1);
+                }}
+                className={`p-3 rounded-full text-white transition-all backdrop-blur-sm ${modalImageIndex === 1 ? "bg-white/20 cursor-default opacity-50" : "bg-white/10 hover:bg-white/30"}`}
+                aria-label="Next image"
+                disabled={modalImageIndex === 1}
+              >
+                <ChevronRight className="w-8 h-8" />
+              </button>
             )}
           </div>
         </div>
