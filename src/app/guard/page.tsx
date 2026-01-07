@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Link from "next/link";
 import { flushSync } from "react-dom";
 import { Upload, Trash2, Cpu, Shield, History, Plus, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import VipModal from "@/components/VipModal";
