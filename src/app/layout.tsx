@@ -25,15 +25,15 @@ const cinzel = Cinzel({
 });
 
 export const metadata: Metadata = {
-  title: "AI Checkers - AI生成画像判定ツール",
+  title: "AIチェッカー - AI生成画像判定ツール",
   description: "アニメ・イラスト特化のAI画像判定ツール。画像をアップロードするだけで、AIが生成した画像か人間が描いた画像かを高精度で判定します。",
-  keywords: ["AI判定", "AI画像検出", "イラスト判定", "アニメ", "生成AI", "画像解析"],
+  keywords: ["AIチェッカー", "AIイラストチェッカー", "AI判定", "AI画像検出", "イラスト判定", "アニメ", "生成AI", "画像解析"],
   authors: [{ name: "AI Checkers" }],
   openGraph: {
     title: "AIイラスト判定 | 無料でAI絵を見分けるチェッカー",
     description: "アニメ・イラスト特化のAI画像判定。画像をアップロードするだけで高精度判定。",
     url: "https://aicheckers.net",
-    siteName: "AI Checkers",
+    siteName: "AIチェッカー",
     locale: "ja_JP",
     type: "website",
   },
