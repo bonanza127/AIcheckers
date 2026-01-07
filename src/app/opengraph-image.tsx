@@ -74,8 +74,13 @@ export default async function Image() {
         </div>
 
         {/* Main title */}
+        {/* Main title */}
         <div
           style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
             fontSize: 56,
             fontWeight: 800,
             color: "#E6E9EE",
@@ -84,9 +89,8 @@ export default async function Image() {
             lineHeight: 1.2,
           }}
         >
-          二次元に特化した
-          <br />
-          AIイラストチェッカー
+          <span>二次元に特化した</span>
+          <span style={{ marginTop: 10 }}>AIイラストチェッカー</span>
         </div>
 
         {/* Subtitle */}
