@@ -285,13 +285,36 @@ body {
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
-.log-system { color: #888; }
-.log-info { color: #b89aaa; }
-.log-process { color: var(--pixel-success, #5dd39e); }
-.log-heading { color: var(--pixel-secondary, #ff8c5a); font-weight: bold; }
-.log-detail { color: #7a6a7a; padding-left: 0.75rem; }
-.log-result { color: #fff5e6; font-weight: bold; }
-.log-error { color: var(--pixel-danger, #ff6b8a); }
+.log-system {
+  color: #888;
+}
+
+.log-info {
+  color: #b89aaa;
+}
+
+.log-process {
+  color: var(--pixel-success, #5dd39e);
+}
+
+.log-heading {
+  color: var(--pixel-secondary, #ff8c5a);
+  font-weight: bold;
+}
+
+.log-detail {
+  color: #7a6a7a;
+  padding-left: 0.75rem;
+}
+
+.log-result {
+  color: #fff5e6;
+  font-weight: bold;
+}
+
+.log-error {
+  color: var(--pixel-danger, #ff6b8a);
+}
 
 /* ============================================
    PROGRESS BARS (Pixel Art Override - HP Bar Style)
@@ -505,7 +528,14 @@ body {
 }
 
 .verdict-protected {
-  color: var(--pixel-primary, #ffd93d);
+  background: linear-gradient(180deg, #ffffff 15%, #a5f3fc 45%, #60a5fa 65%, #2563eb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 2px rgba(165, 243, 252, 0.5)) drop-shadow(0 0 8px rgba(37, 99, 235, 0.3));
+  text-shadow: none;
+  /* Reset distinct text-shadow if inherited */
+  letter-spacing: 0.05em;
 }
 
 .verdict-loading {
@@ -518,13 +548,27 @@ body {
 }
 
 @keyframes verdict-flash {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ============================================
@@ -576,12 +620,15 @@ body {
     top: -10%;
     opacity: 0;
   }
+
   10% {
     opacity: 1;
   }
+
   90% {
     opacity: 1;
   }
+
   100% {
     top: 110%;
     opacity: 0;
@@ -606,12 +653,29 @@ body {
    TEXT UTILITIES
    ============================================ */
 
-.text-accent { color: var(--accent); }
-.text-success { color: var(--success); }
-.text-danger { color: var(--danger); }
-.text-primary { color: var(--text-primary); }
-.text-muted { color: var(--text-muted); }
-.text-dim { color: var(--text-dim); }
+.text-accent {
+  color: var(--accent);
+}
+
+.text-success {
+  color: var(--success);
+}
+
+.text-danger {
+  color: var(--danger);
+}
+
+.text-primary {
+  color: var(--text-primary);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.text-dim {
+  color: var(--text-dim);
+}
 
 /* ============================================
    CUSTOM SCROLLBAR (Pixel Art Override)
@@ -752,10 +816,13 @@ body.pixel-theme {
 }
 
 @keyframes sun-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1);
     opacity: 0.9;
   }
+
   50% {
     transform: scale(1.02);
     opacity: 1;
@@ -805,8 +872,15 @@ body.pixel-theme {
 }
 
 @keyframes twinkle {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
+
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 /* 地平線の淡い光 */
@@ -852,10 +926,12 @@ body.pixel-theme {
     border-color: var(--pixel-primary);
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
   }
+
   50% {
     border-color: var(--pixel-danger);
     box-shadow: 0 0 20px var(--pixel-danger), 4px 4px 0 rgba(0, 0, 0, 0.8);
   }
+
   100% {
     border-color: var(--pixel-primary);
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
@@ -867,10 +943,12 @@ body.pixel-theme {
     border-color: var(--pixel-primary);
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
   }
+
   50% {
     border-color: var(--pixel-success);
     box-shadow: 0 0 20px var(--pixel-success), 4px 4px 0 rgba(0, 0, 0, 0.8);
   }
+
   100% {
     border-color: var(--pixel-primary);
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
@@ -914,10 +992,21 @@ body.pixel-theme {
 }
 
 @keyframes crt-flicker {
-  0% { opacity: 0.9; }
-  5% { opacity: 0.85; }
-  10% { opacity: 0.9; }
-  100% { opacity: 0.9; }
+  0% {
+    opacity: 0.9;
+  }
+
+  5% {
+    opacity: 0.85;
+  }
+
+  10% {
+    opacity: 0.9;
+  }
+
+  100% {
+    opacity: 0.9;
+  }
 }
 
 /* ============================================
@@ -1010,6 +1099,7 @@ body.pixel-theme {
   0% {
     box-shadow: 0 0 10px var(--pixel-primary), inset 0 0 5px var(--pixel-primary);
   }
+
   100% {
     box-shadow: 0 0 20px var(--pixel-primary), 0 0 10px var(--pixel-secondary), inset 0 0 15px var(--pixel-primary);
   }
@@ -1162,8 +1252,15 @@ svg[class*="lucide"] {
 }
 
 @keyframes upload-float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
 }
 
 .pixel-upload-icon::before {

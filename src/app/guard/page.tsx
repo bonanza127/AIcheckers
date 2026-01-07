@@ -1043,9 +1043,9 @@ Moonknight V3 (旧FastProtect) で画像を保護しました
                         onClick={() => handleHistoryClick(item)}
                         className="w-12 h-12 object-cover rounded cursor-pointer"
                       />
-                      {/* 完了ラベル - 紫 */}
-                      <div className="absolute -top-1 -right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-gradient-to-r from-purple-500 to-violet-400 text-white shadow-md">
-                        完
+                      {/* 完了ラベル - Diamond P */}
+                      <div className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center font-bold rounded bg-zinc-900/90 border border-blue-500/30 shadow-md">
+                        <span className="verdict-protected text-[10px]">P</span>
                       </div>
                     </div>
                   ))
