@@ -865,10 +865,10 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               onClick={() => setIsVipModalOpen(true)}
               disabled={isAuthLoading}
               className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${isAuthLoading
-                  ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
-                  : authUser
-                    ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-                    : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
+                ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
+                : authUser
+                  ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+                  : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
                 }`}
             >
               {isAuthLoading ? "..." : "VIP"}
@@ -905,7 +905,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   {previewImage ? (
                     <div className="relative w-full">
-                      <div className={`active-image-container w-full h-72 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
+                      <div className={`active-image-container w-full h-48 md:h-72 flex items-center justify-center ${phase === "scanning" ? "scanning" : ""}`}>
                         <img
                           src={showHeatmap && result?.attentionMap && phase === "complete" ? `data:image/png;base64,${result.attentionMap}` : previewImage}
                           alt={showHeatmap && phase === "complete" ? "Attention Heatmap" : "Active Scan"}
@@ -927,7 +927,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                       )}
                     </div>
                   ) : (
-                    <div className="scan-placeholder w-full h-72 flex flex-col items-center justify-center">
+                    <div className="scan-placeholder w-full h-48 md:h-72 flex flex-col items-center justify-center">
                       <Cpu className="w-12 h-12 text-dim mb-2" />
                       <p className="text-muted font-light">SYSTEM READY FOR INFERENCE</p>
                     </div>
@@ -944,7 +944,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 <div className="w-full md:w-1/2">
                   <div
                     ref={logContainerRef}
-                    className="console-log h-72 overflow-y-auto"
+                    className="console-log h-48 md:h-72 overflow-y-auto"
                   >
                     {logs.map((log, i) => (
                       <div key={i} className={getLogClass(log.type)}>

@@ -848,7 +848,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   {previewImage ? (
                     <div
-                      className={`relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-zoom-in group ${phase === "scanning" ? "scanning" : ""}`}
+                      className={`relative w-full h-48 md:h-72 flex items-center justify-center bg-black/20 rounded-lg border border-white/5 overflow-hidden cursor-zoom-in group ${phase === "scanning" ? "scanning" : ""}`}
                       onClick={() => {
                         setModalImageIndex(0);
                         setIsImageModalOpen(true);
@@ -862,7 +862,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                       <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-xs text-white rounded">Before</div>
                     </div>
                   ) : (
-                    <div className="w-full h-72 flex flex-col items-center justify-center bg-black/10 rounded-lg border border-dashed border-gray-700">
+                    <div className="w-full h-48 md:h-72 flex flex-col items-center justify-center bg-black/10 rounded-lg border border-dashed border-gray-700">
                       <p className="text-muted font-light tracking-widest text-lg">Before</p>
                     </div>
                   )}
@@ -876,7 +876,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                 <div className="w-full md:w-1/2 flex flex-col items-center">
                   {currentProtectedImage ? (
                     <div
-                      className="relative w-full h-72 flex items-center justify-center bg-black/20 rounded-lg border border-accent/50 overflow-hidden cursor-zoom-in group shadow-[0_0_15px_rgba(124,58,237,0.1)]"
+                      className="relative w-full h-48 md:h-72 flex items-center justify-center bg-black/20 rounded-lg border border-accent/50 overflow-hidden cursor-zoom-in group shadow-[0_0_15px_rgba(124,58,237,0.1)]"
                       onClick={() => {
                         setModalImageIndex(1);
                         setIsImageModalOpen(true);
