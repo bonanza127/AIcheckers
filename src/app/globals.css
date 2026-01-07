@@ -186,7 +186,7 @@ body {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
   transition: left 0.5s ease;
 }
 
@@ -236,13 +236,36 @@ body {
   line-height: 1.6;
 }
 
-.log-system { color: #6E7681; }
-.log-info { color: #8B949E; }
-.log-process { color: var(--success); }
-.log-heading { color: var(--accent); font-weight: 600; }
-.log-detail { color: #8B949E; padding-left: 0.75rem; }
-.log-result { color: var(--text-primary); font-weight: 600; }
-.log-error { color: var(--danger); }
+.log-system {
+  color: #6E7681;
+}
+
+.log-info {
+  color: #8B949E;
+}
+
+.log-process {
+  color: var(--success);
+}
+
+.log-heading {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.log-detail {
+  color: #8B949E;
+  padding-left: 0.75rem;
+}
+
+.log-result {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.log-error {
+  color: var(--danger);
+}
 
 /* ============================================
    PROGRESS BARS
@@ -409,27 +432,49 @@ body {
 }
 
 .verdict-high-alert {
-  color: #EA580C; /* オレンジ（夕日色） */
+  color: #EA580C;
+  /* オレンジ（夕日色） */
 }
 
 .verdict-middle-caution {
-  color: #EAB308; /* 黄色 */
+  color: #EAB308;
+  /* 黄色 */
 }
 
 .verdict-unknown {
-  color: #9CA3AF; /* グレー - レート制限等 */
+  color: #9CA3AF;
+  /* グレー - レート制限等 */
 }
 
 .verdict-low-risk {
-  color: var(--success); /* 緑 - LOW CONFIDENCE */
+  color: var(--success);
+  /* 緑 - LOW CONFIDENCE */
 }
 
 .verdict-human {
-  color: var(--human-confirmed); /* 青 - HUMAN CONFIRMED */
+  color: var(--human-confirmed);
+  /* 青 - HUMAN CONFIRMED */
 }
 
 .verdict-protected {
-  color: var(--accent); /* 紫 - PROTECTED (ガード用) */
+  background: linear-gradient(180deg, #ffffff 15%, #a5f3fc 45%, #60a5fa 65%, #2563eb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 2px rgba(165, 243, 252, 0.5)) drop-shadow(0 0 8px rgba(37, 99, 235, 0.3));
+  text-shadow: none;
+  letter-spacing: 0.05em;
+  font-weight: 800;
+}
+
+.diamond-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 12, 0.95);
+  border: 1px solid rgba(165, 243, 252, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
 }
 
 .verdict-loading {
@@ -442,8 +487,15 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ============================================
@@ -481,8 +533,15 @@ body {
 }
 
 @keyframes scan-line {
-  0% { top: 0; opacity: 1; }
-  100% { top: 100%; opacity: 0.3; }
+  0% {
+    top: 0;
+    opacity: 1;
+  }
+
+  100% {
+    top: 100%;
+    opacity: 0.3;
+  }
 }
 
 /* ============================================
@@ -498,12 +557,29 @@ body {
    TEXT UTILITIES
    ============================================ */
 
-.text-accent { color: var(--accent); }
-.text-success { color: var(--success); }
-.text-danger { color: var(--danger); }
-.text-primary { color: var(--text-primary); }
-.text-muted { color: var(--text-muted); }
-.text-dim { color: var(--text-dim); }
+.text-accent {
+  color: var(--accent);
+}
+
+.text-success {
+  color: var(--success);
+}
+
+.text-danger {
+  color: var(--danger);
+}
+
+.text-primary {
+  color: var(--text-primary);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.text-dim {
+  color: var(--text-dim);
+}
 
 /* ============================================
    CUSTOM SCROLLBAR

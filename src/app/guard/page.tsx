@@ -826,7 +826,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
       <main className="flex-grow container mx-auto px-4 py-8">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight">AIイラストガードがあなたの作品を無断学習から守ります</h1>
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight">イラストガードがあなたの作品をAIから守ります</h1>
           <p className="text-muted text-lg">
             人間の目には見えないノイズを混ぜることにより、作風の模倣を防ぐAIポイズニングの最新版。<br />
             複数の技法をかけ合わせた<span className="text-accent font-bold">MoonKnight V3</span>により、生成AIの学習を顕著に妨害します。
@@ -1031,9 +1031,9 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                         onClick={() => handleHistoryClick(item)}
                         className="w-12 h-12 object-cover rounded cursor-pointer"
                       />
-                      {/* 完了ラベル - 紫 */}
-                      <div className="absolute -top-1 -right-1 px-1.5 py-0.5 text-[8px] font-bold rounded bg-gradient-to-r from-purple-500 to-violet-400 text-white shadow-md">
-                        完
+                      {/* 完了ラベル - Diamond P */}
+                      <div className="absolute -top-1 -right-1 w-5 h-5 diamond-badge">
+                        <span className="verdict-protected text-[10px] leading-none">P</span>
                       </div>
                     </div>
                   ))
