@@ -826,7 +826,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
       <main className="flex-grow container mx-auto px-4 py-8">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight whitespace-nowrap">AIイラストガードがあなたの作品を無断学習から守ります</h1>
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight">AIイラストガードがあなたの作品を無断学習から守ります</h1>
           <p className="text-muted text-lg">
             人間の目には見えないノイズを混ぜることにより、作風の模倣を防ぐAIポイズニングの最新版。<br />
             複数の技法をかけ合わせた<span className="text-accent font-bold">MoonKnight V3</span>により、生成AIの学習を顕著に妨害します。
@@ -905,7 +905,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                       </button>
                     </div>
                   ) : (
-                    <div className="w-full h-72 flex flex-col items-center justify-center bg-black/10 rounded-lg border border-dashed border-gray-700">
+                    <div className="w-full h-48 md:h-72 flex flex-col items-center justify-center bg-black/10 rounded-lg border border-dashed border-gray-700">
                       {phase === "scanning" ? (
                         <div className="flex flex-col items-center animate-pulse">
                           <Shield className="w-10 h-10 text-accent mb-3 opacity-80" />
@@ -944,7 +944,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
               </h3>
 
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
-              <div className="flex flex-wrap justify-between items-center mb-4 text-sm text-muted gap-2">
+              <div className="flex flex-col sm:flex-row flex-wrap sm:justify-between items-start sm:items-center mb-4 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
                 <span>使用モデル: <span className="text-accent font-bold">MoonKnight V3</span></span>
                 <span>ロジック: DWT + 知覚マスキング</span>
