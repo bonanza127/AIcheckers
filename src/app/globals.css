@@ -54,31 +54,57 @@
    BASE STYLES
    ============================================ */
 
+/* Default background - cooler purple palette (unified across all pages) */
 html {
-  background-color: var(--deep-bg);
-}
-
-body {
-  background-color: var(--deep-bg);
-  color: var(--text-primary);
-  font-family: 'Inter', 'Noto Sans JP', sans-serif;
+  background: linear-gradient(180deg,
+      #0d0618 0%,
+      #1a0a2e 30%,
+      #2d1540 60%,
+      #1a0a2e 100%);
+  background-attachment: fixed;
   min-height: 100vh;
 }
 
+body {
+  background: transparent;
+  color: #fff5e6;
+  font-family: var(--font-mplus-code), var(--font-dot-gothic), var(--font-press-start-2p), 'M PLUS 1 Code', 'DotGothic16', monospace;
+  min-height: 100vh;
+  text-shadow: 1px 1px 0 #000;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
 /* ============================================
-   CARD PANEL (Shadcn/Figma-like)
+   CARD PANEL (Pixel Art Override)
    ============================================ */
 
 .card-panel {
-  background-color: var(--card-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  transition: all 0.3s ease;
+  background-color: rgba(45, 26, 61, 0.85);
+  backdrop-filter: blur(4px);
+  border: 4px solid var(--pixel-primary, #ffd93d);
+  border-radius: 0;
+  box-shadow:
+    4px 4px 0 rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px rgba(255, 217, 61, 0.1);
+  position: relative;
+  image-rendering: pixelated;
+  transition: all 0.15s ease;
+}
+
+.card-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  pointer-events: none;
 }
 
 .card-panel:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--pixel-primary, #ffd93d);
 }
 
 /* Panel Header */
@@ -87,20 +113,23 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-primary);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--pixel-primary, #ffd93d);
+  border-bottom: 2px solid var(--pixel-secondary, #ff8c5a);
   padding-bottom: 0.5rem;
   margin-bottom: 0.75rem;
+  font-family: var(--font-press-start-2p), monospace;
+  text-shadow: 2px 2px 0 #000;
 }
 
 /* ============================================
-   HEADER
+   HEADER (Pixel Art Override)
    ============================================ */
 
 .site-header {
-  background-color: var(--card-bg);
-  border-bottom: 1px solid var(--accent);
-  box-shadow: 0 1px 10px rgba(139, 92, 246, 0.15);
+  background-color: rgba(45, 26, 61, 0.95);
+  border-bottom: 4px solid var(--pixel-primary, #ffd93d);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
 }
 
 /* ============================================
@@ -126,144 +155,179 @@ body {
 }
 
 /* ============================================
-   COMBINED UPLOAD ZONE (Queue + Upload)
+   COMBINED UPLOAD ZONE (Pixel Art Override)
    ============================================ */
 
 .combined-upload-zone {
-  background-color: var(--card-bg);
-  border: 2px dashed var(--color-border-accent);
-  border-radius: 12px;
-  transition: border-color 0.3s, background-color 0.3s;
+  background-color: rgba(45, 26, 61, 0.5);
+  border: 4px dashed var(--pixel-secondary, #ff8c5a);
+  border-radius: 0;
+  transition: border-color 0.15s, background-color 0.15s;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
 }
 
 .combined-upload-zone:hover {
-  border-color: var(--accent);
+  border-color: var(--pixel-primary, #ffd93d);
+  background-color: rgba(255, 140, 90, 0.1);
 }
 
 .combined-upload-zone.dragging {
-  border-color: var(--accent);
+  border-color: var(--pixel-primary, #ffd93d);
   border-style: solid;
-  background-color: rgba(139, 92, 246, 0.08);
+  background-color: rgba(255, 217, 61, 0.15);
 }
 
 /* Add more button */
 .add-more-button {
-  border: 2px dashed #4B5563;
-  border-radius: 8px;
-  background: transparent;
-  color: #6B7280;
-  transition: all 0.2s ease;
+  border: 2px dashed #555;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--pixel-secondary, #ff8c5a);
+  transition: all 0.15s ease;
   cursor: pointer;
+  box-shadow: 2px 2px 0 #000;
 }
 
 .add-more-button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background-color: rgba(139, 92, 246, 0.1);
+  border-color: var(--pixel-primary, #ffd93d);
+  color: var(--pixel-primary, #ffd93d);
+  background-color: rgba(255, 217, 61, 0.1);
 }
 
 /* ============================================
-   BUTTONS
+   BUTTONS (Pixel Art Override)
    ============================================ */
 
 .primary-button {
-  background: linear-gradient(to right, var(--accent), #a855f7);
-  color: white;
-  font-weight: 600;
-  border-radius: 8px;
-  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.3);
-  transition: all 0.2s ease;
-  padding: 0.75rem 1.5rem;
-  font-size: 0.875rem;
+  background-color: var(--pixel-primary, #ffd93d);
+  color: #1a0a2e;
+  font-weight: 700;
+  border: 4px solid #000;
+  border-bottom-width: 6px;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
+  transition: all 0.1s ease;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.75rem;
+  font-family: var(--font-press-start-2p), monospace;
+  text-transform: uppercase;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .primary-button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  transition: left 0.5s ease;
-}
-
-.primary-button:hover:not(:disabled)::before {
-  left: 100%;
+  display: none;
 }
 
 .primary-button:hover:not(:disabled) {
+  background-color: #ffe566;
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(139, 92, 246, 0.5);
+  box-shadow: 4px 6px 0 rgba(0, 0, 0, 0.8);
+}
+
+.primary-button:active:not(:disabled) {
+  transform: translateY(2px);
+  border-bottom-width: 4px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.8);
 }
 
 .primary-button:disabled {
-  background: linear-gradient(to right, #5b4a7a, #6b5a8a);
-  box-shadow: none;
+  background-color: #555;
+  color: #333;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.5);
   cursor: not-allowed;
 }
 
 .danger-button {
-  background-color: #374151;
-  color: white;
-  border-radius: 8px;
-  transition: background-color 0.2s;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  background-color: var(--pixel-danger, #ff6b8a);
+  color: #1a0a2e;
+  border: 4px solid #000;
+  border-bottom-width: 6px;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
+  transition: all 0.1s ease;
+  font-family: var(--font-press-start-2p), monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
 }
 
 .danger-button:hover:not(:disabled) {
-  background-color: #4B5563;
+  background-color: #ff8aa5;
+  transform: translateY(-2px);
+  box-shadow: 4px 6px 0 rgba(0, 0, 0, 0.8);
+}
+
+.danger-button:active:not(:disabled) {
+  transform: translateY(2px);
+  border-bottom-width: 4px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.8);
 }
 
 .danger-button:disabled {
-  opacity: 0.5;
+  background-color: #555;
+  color: #333;
+  opacity: 1;
   cursor: not-allowed;
 }
 
 /* ============================================
-   CONSOLE LOG
+   CONSOLE LOG (Pixel Art Override)
    ============================================ */
 
 .console-log {
-  background-color: #0A0D11;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  padding: 1rem;
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
-  font-size: 0.75rem;
-  line-height: 1.6;
+  background-color: #0a0612;
+  border: 2px solid var(--pixel-primary, #ffd93d);
+  border-radius: 0;
+  padding: 0.5rem;
+  font-family: var(--font-press-start-2p), 'SF Mono', monospace;
+  font-size: 11px;
+  line-height: 1.8;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
-.log-system { color: #6E7681; }
-.log-info { color: #8B949E; }
-.log-process { color: var(--success); }
-.log-heading { color: var(--accent); font-weight: 600; }
-.log-detail { color: #8B949E; padding-left: 0.75rem; }
-.log-result { color: var(--text-primary); font-weight: 600; }
-.log-error { color: var(--danger); }
+.log-system { color: #888; }
+.log-info { color: #b89aaa; }
+.log-process { color: var(--pixel-success, #5dd39e); }
+.log-heading { color: var(--pixel-secondary, #ff8c5a); font-weight: bold; }
+.log-detail { color: #7a6a7a; padding-left: 0.75rem; }
+.log-result { color: #fff5e6; font-weight: bold; }
+.log-error { color: var(--pixel-danger, #ff6b8a); }
 
 /* ============================================
-   PROGRESS BARS
+   PROGRESS BARS (Pixel Art Override - HP Bar Style)
    ============================================ */
 
 .progress-bar-bg {
-  height: 12px;
-  background-color: #374151;
-  border-radius: 9999px;
+  height: 16px;
+  background-color: #1a0f24;
+  border: 3px solid #000;
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px #3d2850;
   overflow: hidden;
+  position: relative;
 }
 
 .progress-bar-fill {
   height: 100%;
-  border-radius: 9999px;
-  transition: width 1.5s cubic-bezier(0.22, 1, 0.36, 1);
-  box-shadow: 0 0 8px currentColor;
+  border-radius: 0;
+  transition: width 0.5s ease;
+  box-shadow: none;
+  position: relative;
+}
+
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
 }
 
 .progress-bar-fill.ai {
-  background-color: var(--danger);
+  background-color: var(--pixel-danger, #ff6b8a);
 }
 
 .progress-bar-fill.high-alert {
@@ -275,109 +339,119 @@ body {
 }
 
 .progress-bar-fill.low-risk {
-  background-color: var(--success);
+  background-color: var(--pixel-success, #5dd39e);
 }
 
 .progress-bar-fill.human {
-  background-color: var(--human-confirmed);
+  background-color: var(--pixel-success, #5dd39e);
 }
 
 .progress-bar-fill.guard-progress {
-  background: linear-gradient(90deg, var(--accent), #a855f7);
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+  background-color: var(--pixel-primary, #ffd93d);
 }
 
 .progress-bar-fill.guard-progress-gold {
-  background: linear-gradient(90deg, #D4AF37, #F5D061, #C9A227);
-  box-shadow: 0 0 12px rgba(212, 175, 55, 0.6);
+  background-color: var(--pixel-primary, #ffd93d);
 }
 
 /* ============================================
-   QUEUE ITEMS
+   QUEUE ITEMS (Pixel Art Override)
    ============================================ */
 
 .queue-item {
-  border: 1px solid #374151;
-  border-radius: 8px;
+  border: 2px solid #555;
+  border-radius: 0;
   overflow: hidden;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  box-shadow: 2px 2px 0 #000;
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .queue-item.active {
-  border-color: var(--accent) !important;
+  border-color: var(--pixel-primary, #ffd93d) !important;
   border-width: 2px;
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.4);
+  box-shadow:
+    0 0 10px var(--pixel-primary, #ffd93d),
+    0 0 20px var(--pixel-primary, #ffd93d),
+    inset 0 0 10px var(--pixel-primary, #ffd93d) !important;
+  animation: item-pulse 0.8s ease-in-out infinite alternate;
+  transform: scale(1.05);
+  z-index: 10;
 }
 
 .queue-item.result-ai {
-  border-color: var(--danger) !important;
+  background-color: rgba(255, 107, 138, 0.25);
+  border-color: var(--pixel-danger, #ff6b8a) !important;
   border-width: 2px;
-  opacity: 0.7;
+  opacity: 1;
 }
 
 .queue-item.result-human {
-  border-color: var(--human-confirmed) !important;
+  background-color: rgba(93, 211, 158, 0.25);
+  border-color: var(--pixel-success, #5dd39e) !important;
   border-width: 2px;
-  opacity: 0.7;
+  opacity: 1;
 }
 
 .queue-item.result-high {
   border-color: #EA580C !important;
   border-width: 2px;
-  opacity: 0.7;
+  opacity: 1;
 }
 
 .queue-item.result-middle {
   border-color: #EAB308 !important;
   border-width: 2px;
-  opacity: 0.7;
+  opacity: 1;
 }
 
 .queue-item.result-unknown {
   border-color: #6B7280 !important;
   border-width: 2px;
-  opacity: 0.7;
+  opacity: 1;
 }
 
 /* ============================================
-   HISTORY ITEMS
+   HISTORY ITEMS (Pixel Art Override)
    ============================================ */
 
 .history-item {
-  border: 2px solid #374151;
-  border-radius: 8px;
+  border: 2px solid #555;
+  border-radius: 0;
   overflow: visible;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  box-shadow: 2px 2px 0 #000;
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .history-item.result-ai {
-  border-color: var(--danger);
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+  border-color: var(--pixel-danger, #ff6b8a);
+  box-shadow: 0 0 8px rgba(255, 107, 138, 0.3), 2px 2px 0 #000;
 }
 
 .history-item.result-human {
-  border-color: var(--human-confirmed);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+  border-color: var(--pixel-success, #5dd39e);
+  box-shadow: 0 0 12px rgba(93, 211, 158, 0.5), 2px 2px 0 #000;
 }
 
 .history-item.result-unknown {
   border-color: #6B7280;
-  box-shadow: 0 0 8px rgba(107, 114, 128, 0.3);
+  box-shadow: 0 0 8px rgba(107, 114, 128, 0.3), 2px 2px 0 #000;
 }
 
 .history-item.result-high {
   border-color: #EA580C;
-  box-shadow: 0 0 8px rgba(234, 88, 12, 0.3);
+  box-shadow: 0 0 8px rgba(234, 88, 12, 0.3), 2px 2px 0 #000;
 }
 
 .history-item.result-middle {
   border-color: #EAB308;
-  box-shadow: 0 0 8px rgba(234, 179, 8, 0.3);
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.3), 2px 2px 0 #000;
 }
 
 .history-item.result-low {
-  border-color: var(--success);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+  border-color: var(--pixel-success, #5dd39e);
+  box-shadow: 0 0 8px rgba(93, 211, 158, 0.3), 2px 2px 0 #000;
 }
 
 .history-item:hover {
@@ -394,51 +468,58 @@ body {
 }
 
 /* ============================================
-   VERDICT DISPLAY
+   VERDICT DISPLAY (Pixel Art Override)
    ============================================ */
 
 .verdict-display {
-  font-size: 2.5rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  text-shadow: 0 2px 10px currentColor;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-shadow: 2px 2px 0 #000;
+  font-family: var(--font-press-start-2p), monospace;
 }
 
 .verdict-ai {
-  color: var(--danger);
+  color: var(--pixel-danger, #ff6b8a);
+  animation: verdict-flash 0.8s ease infinite;
 }
 
 .verdict-high-alert {
-  color: #EA580C; /* オレンジ（夕日色） */
+  color: #EA580C;
 }
 
 .verdict-middle-caution {
-  color: #EAB308; /* 黄色 */
+  color: #EAB308;
 }
 
 .verdict-unknown {
-  color: #9CA3AF; /* グレー - レート制限等 */
+  color: #9CA3AF;
 }
 
 .verdict-low-risk {
-  color: var(--success); /* 緑 - LOW CONFIDENCE */
+  color: var(--pixel-success, #5dd39e);
 }
 
 .verdict-human {
-  color: var(--human-confirmed); /* 青 - HUMAN CONFIRMED */
+  color: var(--pixel-success, #5dd39e);
 }
 
 .verdict-protected {
-  color: var(--accent); /* 紫 - PROTECTED (ガード用) */
+  color: var(--pixel-primary, #ffd93d);
 }
 
 .verdict-loading {
-  color: var(--accent);
-  animation: pulse 1.5s ease-in-out infinite;
+  color: var(--pixel-primary, #ffd93d);
+  animation: loading-dots 1.5s step-end infinite;
 }
 
 .verdict-pending {
   color: #6E7681;
+}
+
+@keyframes verdict-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 @keyframes pulse {
@@ -447,26 +528,27 @@ body {
 }
 
 /* ============================================
-   ACTIVE IMAGE CONTAINER
+   ACTIVE IMAGE CONTAINER (Pixel Art Override)
    ============================================ */
 
 .active-image-container {
-  background-color: #000;
-  border: 2px solid var(--accent);
-  border-radius: 8px;
+  background-color: #0a0612;
+  border: 2px solid var(--pixel-primary, #ffd93d);
+  border-radius: 0;
   overflow: hidden;
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
 .scan-placeholder {
-  background-color: #1C2128;
-  border: 2px dashed #374151;
-  border-radius: 8px;
+  background-color: #1a0f24;
+  border: 4px dashed #3d2850;
+  border-radius: 0;
 }
 
-/* Scanning animation */
+/* Scanning animation (Pixel Art) */
 .scanning {
   position: relative;
+  overflow: hidden;
 }
 
 .scanning::after {
@@ -475,23 +557,49 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  animation: scan-line 2s ease-in-out infinite;
+  height: 12px;
+  background:
+    repeating-linear-gradient(90deg,
+      var(--pixel-primary, #ffd93d) 0,
+      var(--pixel-primary, #ffd93d) 4px,
+      transparent 4px,
+      transparent 8px);
+  box-shadow: 0 0 15px var(--pixel-primary, #ffd93d);
+  animation: scan-line-pixel 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  z-index: 15;
+  opacity: 0.9;
+  mix-blend-mode: overlay;
 }
 
-@keyframes scan-line {
-  0% { top: 0; opacity: 1; }
-  100% { top: 100%; opacity: 0.3; }
+@keyframes scan-line-pixel {
+  0% {
+    top: -10%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 110%;
+    opacity: 0;
+  }
 }
 
 /* ============================================
-   FOOTER
+   FOOTER (Pixel Art Override)
    ============================================ */
 
 .site-footer {
-  background-color: #121212;
-  border-top: 1px solid #374151;
+  background-color: rgba(45, 26, 61, 0.95);
+  border-top: 4px solid var(--pixel-primary, #ffd93d);
+  box-shadow:
+    4px 0 0 rgba(0, 0, 0, 0.8),
+    -4px 0 0 rgba(0, 0, 0, 0.8),
+    0 -4px 0 rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px rgba(255, 217, 61, 0.1);
 }
 
 /* ============================================
@@ -506,38 +614,658 @@ body {
 .text-dim { color: var(--text-dim); }
 
 /* ============================================
-   CUSTOM SCROLLBAR
+   CUSTOM SCROLLBAR (Pixel Art Override)
    ============================================ */
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1C2128;
+  background: #1a0a2e;
+  border-left: 1px solid #332040;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 4px;
+  background: var(--pixel-secondary, #ff8c5a);
+  border: 2px solid #1a0a2e;
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4B5563;
+  background: var(--pixel-primary, #ffd93d);
 }
 
 /* ============================================
-   SELECTION
+   SELECTION (Pixel Art Override)
    ============================================ */
 
 ::selection {
-  background: rgba(139, 92, 246, 0.4);
-  color: var(--text-primary);
+  background: rgba(255, 217, 61, 0.4);
+  color: #fff5e6;
 }
 
 @layer base {
   * {
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 217, 61, 0.15);
   }
+}
+
+/* ============================================
+   PIXEL ART SUNSET THEME - 夕焼けレトロゲーム風
+   ============================================ */
+
+/* Pixel Art Color Overrides */
+:root {
+  --pixel-primary: #ffd93d;
+  --pixel-secondary: #ff8c5a;
+  --pixel-success: #5dd39e;
+  --pixel-danger: #ff6b8a;
+  --pixel-panel: #2d1a3d;
+  --pixel-panel-dark: #1a0f24;
+  --pixel-text: #fff5e6;
+}
+
+/* Pixel Art Background - Sunset Sky */
+html.pixel-theme {
+  background: linear-gradient(180deg,
+      #0d0618 0%,
+      #1a0a2e 30%,
+      #2d1540 60%,
+      #1a0a2e 100%) !important;
+  background-attachment: fixed;
+}
+
+body.pixel-theme {
+  font-family: var(--font-press-start-2p), var(--font-noto-sans-jp), monospace;
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* ============================================
+   PIXEL SCENERY - 夕焼け風景
+   ============================================ */
+
+.pixel-scenery {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* 月 - 左上（ヘッダーの下） */
+.pixel-moon {
+  position: absolute;
+  top: 120px;
+  left: 80px;
+  width: 70px;
+  height: 70px;
+  background: #fdfebd;
+  border-radius: 50%;
+  box-shadow: 0 0 30px rgba(253, 254, 189, 0.4);
+  opacity: 0.9;
+  z-index: 2;
+}
+
+.pixel-moon::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  left: 25%;
+  width: 15px;
+  height: 15px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  box-shadow:
+    20px 20px 0 -4px rgba(0, 0, 0, 0.1),
+    -5px 30px 0 -2px rgba(0, 0, 0, 0.1);
+}
+
+/* 夕日 - 右下に沈む */
+.pixel-sun {
+  position: absolute;
+  bottom: -130px;
+  right: -130px;
+  width: 180px;
+  height: 180px;
+  background: transparent;
+  border-radius: 50%;
+  animation: sun-pulse 8s ease-in-out infinite;
+  z-index: 1;
+}
+
+.pixel-sun::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 150vw;
+  height: 150vh;
+  background: radial-gradient(circle at bottom right,
+      rgba(255, 140, 90, 0.25) 0%,
+      rgba(255, 107, 138, 0.15) 30%,
+      rgba(100, 50, 120, 0.1) 50%,
+      transparent 70%);
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+@keyframes sun-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+}
+
+/* 星たち */
+.pixel-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(3px 3px at 80px 60px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 320px 40px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 580px 90px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 920px 50px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 1180px 70px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 200px 200px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 700px 180px, #ffd93d 100%, transparent),
+    radial-gradient(3px 3px at 1050px 220px, #ffd93d 100%, transparent),
+    radial-gradient(2px 2px at 150px 80px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 250px 30px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 420px 110px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 550px 25px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 680px 140px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 820px 85px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 980px 130px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 1100px 45px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 100px 250px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 380px 280px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 620px 240px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 850px 300px, #fff5e6 100%, transparent),
+    radial-gradient(2px 2px at 1150px 260px, #fff5e6 100%, transparent),
+    radial-gradient(1px 1px at 50px 120px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 180px 160px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 300px 100px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 480px 180px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 600px 60px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 750px 200px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 880px 160px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 1020px 100px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 1200px 180px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 130px 320px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 450px 350px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 780px 380px, #c9b8a0 100%, transparent),
+    radial-gradient(1px 1px at 950px 340px, #c9b8a0 100%, transparent);
+  animation: twinkle 3s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* 地平線の淡い光 */
+.pixel-horizon {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background: linear-gradient(to top,
+      rgba(255, 140, 90, 0.12) 0%,
+      rgba(255, 107, 138, 0.06) 50%,
+      transparent 100%);
+}
+
+/* ============================================
+   PIXEL PANEL STYLING
+   ============================================ */
+
+.pixel-panel {
+  background-color: rgba(45, 26, 61, 0.85);
+  backdrop-filter: blur(4px);
+  border: 4px solid var(--pixel-primary);
+  box-shadow:
+    4px 4px 0 rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px rgba(255, 217, 61, 0.1);
+  position: relative;
+  image-rendering: pixelated;
+}
+
+.pixel-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+}
+
+@keyframes panel-flash-ai {
+  0% {
+    border-color: var(--pixel-primary);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
+  }
+  50% {
+    border-color: var(--pixel-danger);
+    box-shadow: 0 0 20px var(--pixel-danger), 4px 4px 0 rgba(0, 0, 0, 0.8);
+  }
+  100% {
+    border-color: var(--pixel-primary);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
+  }
+}
+
+@keyframes panel-flash-human {
+  0% {
+    border-color: var(--pixel-primary);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
+  }
+  50% {
+    border-color: var(--pixel-success);
+    box-shadow: 0 0 20px var(--pixel-success), 4px 4px 0 rgba(0, 0, 0, 0.8);
+  }
+  100% {
+    border-color: var(--pixel-primary);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.8);
+  }
+}
+
+.panel-pulse-ai {
+  animation: panel-flash-ai 2s ease-out infinite;
+}
+
+.panel-pulse-human {
+  animation: panel-flash-human 2s ease-out infinite;
+}
+
+/* ============================================
+   PIXEL TEXT STYLES
+   ============================================ */
+
+.text-pixel {
+  font-family: var(--font-press-start-2p), var(--font-dot-gothic), monospace;
+  letter-spacing: 0.05em;
+}
+
+.pixel-title {
+  color: var(--pixel-secondary);
+  text-shadow: 2px 2px 0 #000;
+}
+
+/* ============================================
+   CRT SCANLINE EFFECT
+   ============================================ */
+
+.crt-overlay {
+  background:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  background-size: 100% 2px, 3px 100%;
+  pointer-events: none;
+  z-index: 10;
+  animation: crt-flicker 0.15s infinite;
+}
+
+@keyframes crt-flicker {
+  0% { opacity: 0.9; }
+  5% { opacity: 0.85; }
+  10% { opacity: 0.9; }
+  100% { opacity: 0.9; }
+}
+
+/* ============================================
+   PIXEL BUTTONS
+   ============================================ */
+
+.pixel-btn {
+  background-color: var(--pixel-primary);
+  color: #1a0a2e;
+  border: 4px solid #000;
+  border-bottom-width: 6px;
+  transition: all 0.1s ease;
+  padding: 10px 16px;
+  font-family: var(--font-press-start-2p), monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.pixel-btn:hover:not(:disabled) {
+  background-color: #ffe566;
+  transform: translateY(-2px);
+}
+
+.pixel-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  border-bottom-width: 4px;
+}
+
+.pixel-btn:disabled {
+  background-color: #555;
+  color: #333;
+  cursor: not-allowed;
+}
+
+.pixel-btn-danger {
+  background-color: var(--pixel-danger);
+}
+
+.pixel-btn-danger:hover:not(:disabled) {
+  background-color: #ff8aa5;
+}
+
+/* ============================================
+   HP/PROGRESS BAR (Pixel Style)
+   ============================================ */
+
+.hp-bar-bg {
+  height: 16px;
+  background-color: #1a0f24;
+  border: 3px solid #000;
+  box-shadow: inset 0 0 0 1px #3d2850;
+  position: relative;
+}
+
+.hp-bar-fill {
+  height: 100%;
+  transition: width 0.5s ease;
+  position: relative;
+}
+
+.hp-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================
+   PIXEL QUEUE/HISTORY ITEMS
+   ============================================ */
+
+.queue-item.active,
+.queue-item.selected,
+.history-item.selected {
+  border-color: var(--pixel-primary) !important;
+  box-shadow:
+    0 0 10px var(--pixel-primary),
+    0 0 20px var(--pixel-primary),
+    inset 0 0 10px var(--pixel-primary) !important;
+  animation: item-pulse 0.8s ease-in-out infinite alternate;
+  transform: scale(1.05);
+  z-index: 10;
+}
+
+@keyframes item-pulse {
+  0% {
+    box-shadow: 0 0 10px var(--pixel-primary), inset 0 0 5px var(--pixel-primary);
+  }
+  100% {
+    box-shadow: 0 0 20px var(--pixel-primary), 0 0 10px var(--pixel-secondary), inset 0 0 15px var(--pixel-primary);
+  }
+}
+
+/* ============================================
+   PIXEL FOOTER
+   ============================================ */
+
+.pixel-footer-bar {
+  background-color: var(--pixel-panel);
+  border: 4px solid var(--pixel-primary);
+  border-bottom: none !important;
+  box-shadow:
+    4px 0 0 rgba(0, 0, 0, 0.8),
+    -4px 0 0 rgba(0, 0, 0, 0.8),
+    0 -4px 0 rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px rgba(255, 217, 61, 0.1);
+}
+
+/* ============================================
+   PIXEL UPLOAD ZONE
+   ============================================ */
+
+.upload-zone-combined {
+  border: 4px dashed var(--pixel-secondary) !important;
+}
+
+.inner-shadow {
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1a0a2e;
+  border-left: 1px solid #332040;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--pixel-secondary);
+  border: 2px solid #1a0a2e;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--pixel-primary);
+}
+
+/* ============================================
+   ICON PIXELATION (Pixel Art Icons)
+   ============================================ */
+
+svg {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  filter: contrast(1.2);
+  stroke-width: 2.5px;
+}
+
+/* Lucide icons をさらにPixel風に */
+svg[class*="lucide"] {
+  stroke-width: 3px;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+/* Specific icon styling for better pixel look */
+.lucide {
+  stroke-width: 2.5;
+}
+
+/* ============================================
+   PIXEL ART UTILITY CLASSES
+   ============================================ */
+
+/* Pixel Box - How it works等で使用 */
+.pixel-box {
+  background-color: rgba(45, 26, 61, 0.7);
+  border: 3px solid #ffd93d;
+  border-radius: 0;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.7);
+  padding: 1.5rem;
+  image-rendering: pixelated;
+}
+
+/* Pixel Step Badge */
+.pixel-step {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #ffd93d 0%, #ff8c5a 100%);
+  border: 3px solid #fff;
+  border-radius: 0;
+  box-shadow:
+    3px 3px 0 rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.25rem;
+  color: #000;
+  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+/* Pixel Badge (for accuracy percentages, etc) */
+.pixel-badge {
+  display: inline-block;
+  background-color: rgba(139, 92, 246, 0.3);
+  border: 2px solid #8B5CF6;
+  border-radius: 0;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: bold;
+  color: #ffd93d;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Pixel Grid Visualization */
+.pixel-grid {
+  display: grid;
+  gap: 2px;
+  image-rendering: pixelated;
+}
+
+.pixel-cell {
+  background-color: rgba(255, 217, 61, 0.3);
+  border: 1px solid rgba(255, 217, 61, 0.5);
+  border-radius: 0;
+  aspect-ratio: 1;
+}
+
+/* Arrow - Pixel style */
+.pixel-arrow {
+  color: #ffd93d;
+  font-size: 1.25rem;
+  font-weight: bold;
+  text-shadow: 2px 2px 0 #000;
+}
+
+/* Pixel Upload Icon - かわいいアップロードアイコン */
+.pixel-upload-icon {
+  width: 64px;
+  height: 64px;
+  position: relative;
+  animation: upload-float 3s ease-in-out infinite;
+}
+
+@keyframes upload-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+.pixel-upload-icon::before {
+  content: '▲';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 32px;
+  color: #ffd93d;
+  text-shadow: 3px 3px 0 #000;
+}
+
+.pixel-upload-icon::after {
+  content: '📁';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 28px;
+  filter: drop-shadow(2px 2px 0 #000);
+}
+
+/* Pixel CPU Icon - システムレディアイコン */
+/* 2Dゲーム風幽霊アイコン（CSS描画） */
+.pixel-cpu-icon {
+  width: 48px;
+  height: 60px;
+  position: relative;
+  margin: 0 auto;
+}
+
+/* 幽霊の頭と体 */
+.pixel-cpu-icon::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 4px;
+  width: 40px;
+  height: 48px;
+  background: #f0f0f0;
+  border: 3px solid #000;
+  border-radius: 50% 50% 0 0;
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, 0.8),
+    3px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* 幽霊の裾（波型） */
+.pixel-cpu-icon::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 4px;
+  width: 40px;
+  height: 16px;
+  background:
+    radial-gradient(circle at 10px 0, transparent 8px, #f0f0f0 8px, #f0f0f0 100%) 0 0,
+    radial-gradient(circle at 30px 0, transparent 8px, #f0f0f0 8px, #f0f0f0 100%) 20px 0;
+  background-size: 20px 16px;
+  background-repeat: no-repeat;
+  border-left: 3px solid #000;
+  border-right: 3px solid #000;
+  border-bottom: 3px solid #000;
+}
+
+/* 幽霊の目 */
+.ghost-eyes {
+  position: absolute;
+  top: 18px;
+  left: 14px;
+  width: 24px;
+  height: 8px;
+  z-index: 1;
+}
+
+.ghost-eyes::before,
+.ghost-eyes::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #000;
+  border-radius: 50%;
+}
+
+.ghost-eyes::before {
+  left: 0;
+}
+
+.ghost-eyes::after {
+  right: 0;
+}
+
+/* 幽霊の口 */
+.ghost-mouth {
+  position: absolute;
+  top: 32px;
+  left: 18px;
+  width: 16px;
+  height: 6px;
+  background: #000;
+  border-radius: 0 0 8px 8px;
+  z-index: 1;
 }

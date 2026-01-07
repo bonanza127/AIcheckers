@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Noto_Sans_JP, Cinzel } from "next/font/google";
+import { Inter, Noto_Sans_JP, Cinzel, Press_Start_2P, DotGothic16, M_PLUS_1_Code } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
@@ -22,6 +22,24 @@ const cinzel = Cinzel({
   variable: "--font-cinzel",
   subsets: ["latin"],
   weight: ["400", "500"],
+});
+
+const pressStart2P = Press_Start_2P({
+  variable: "--font-press-start-2p",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+
+const dotGothic16 = DotGothic16({
+  variable: "--font-dot-gothic",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+
+const mPlus1Code = M_PLUS_1_Code({
+  variable: "--font-mplus-code",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -86,7 +104,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${inter.variable} ${notoSansJP.variable} ${cinzel.variable} antialiased`}>
+      <body className={`${inter.variable} ${notoSansJP.variable} ${cinzel.variable} ${pressStart2P.variable} ${dotGothic16.variable} ${mPlus1Code.variable} antialiased`}>
         {/* Google Analytics */}
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}

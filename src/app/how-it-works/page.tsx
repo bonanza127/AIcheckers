@@ -9,8 +9,16 @@ export const metadata: Metadata = {
 export default function HowItWorks() {
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Pixel Art Background Scenery */}
+      <div className="pixel-scenery">
+        <div className="pixel-stars" />
+        <div className="pixel-moon" />
+        <div className="pixel-sun" />
+        <div className="pixel-horizon" />
+      </div>
+
       {/* Header */}
-      <header className="site-header border-b border-gray-700">
+      <header className="site-header border-b border-gray-700 relative z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-1.5 hover:opacity-80">
             <img src="/logo-transparent.png" alt="AI Checkers" className="w-10 h-10" />
@@ -23,9 +31,9 @@ export default function HowItWorks() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12 max-w-3xl">
+      <main className="container mx-auto px-4 py-12 max-w-3xl relative z-10">
         <h1 className="text-4xl font-extrabold mb-10 text-center">
-          <span className="bg-gradient-to-r from-accent via-purple-400 to-accent bg-clip-text text-transparent">How it works?</span>
+          <span className="text-white font-[family-name:var(--font-press-start-2p)]" style={{ textShadow: '3px 3px 0 #000, 0 0 20px rgba(139, 92, 246, 0.5)' }}>How it works?</span>
         </h1>
 
         {/* Section 1: Problem Statement */}
@@ -61,27 +69,27 @@ export default function HowItWorks() {
 
         {/* Section 3: Detection Flow - ViT Internal */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">検出の仕組み</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b-2 border-accent pb-2">検出の仕組み</h2>
 
-          {/* ViT Processing Diagram */}
-          <div className="bg-gray-800/30 rounded-lg p-6 mb-6">
+          {/* ViT Processing Diagram - Pixel Art Style */}
+          <div className="pixel-box mb-6">
             <div className="space-y-6">
               {/* Step 1: Patch Embedding */}
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">1</div>
+                <div className="pixel-step">1</div>
                 <div className="flex-1">
                   <p className="font-bold text-foreground">パッチ分割</p>
                   <p className="text-muted text-sm mt-1">画像を196個の小さなパッチ（14×14グリッド）に分割し、それぞれを768次元の埋め込みベクトルに変換します。</p>
                   <div className="mt-2 flex items-center gap-2 text-xs text-muted">
-                    <div className="grid grid-cols-4 gap-0.5">
+                    <div className="pixel-grid grid-cols-4">
                       {[...Array(16)].map((_, i) => (
-                        <div key={i} className="w-3 h-3 bg-accent/30 rounded-sm"></div>
+                        <div key={i} className="pixel-cell w-3 h-3"></div>
                       ))}
                     </div>
-                    <span>→</span>
+                    <span className="pixel-arrow">→</span>
                     <div className="flex gap-0.5">
                       {[...Array(4)].map((_, i) => (
-                        <div key={i} className="w-1 h-6 bg-accent/50 rounded-sm"></div>
+                        <div key={i} className="w-1 h-6 bg-accent border border-accent"></div>
                       ))}
                     </div>
                   </div>
@@ -90,19 +98,19 @@ export default function HowItWorks() {
 
               {/* Step 2: Self-Attention */}
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">2</div>
+                <div className="pixel-step">2</div>
                 <div className="flex-1">
                   <p className="font-bold text-foreground">Self-Attention（自己注意機構）</p>
                   <p className="text-muted text-sm mt-1">12層のTransformerブロックを通過。各パッチが他の全パッチとの関係性を計算し、画像全体の文脈を理解します。AI生成画像特有の「均一すぎるテクスチャ」や「不自然なエッジ」がここで検出されます。</p>
-                  <div className="mt-2 text-xs font-mono text-accent/70">
-                    Layer 1 → Layer 2 → ... → Layer 12
+                  <div className="mt-2 text-xs font-mono text-accent">
+                    Layer 1 <span className="pixel-arrow">→</span> Layer 2 <span className="pixel-arrow">→</span> ... <span className="pixel-arrow">→</span> Layer 12
                   </div>
                 </div>
               </div>
 
               {/* Step 3: Attention Map */}
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">3</div>
+                <div className="pixel-step">3</div>
                 <div className="flex-1">
                   <p className="font-bold text-foreground">Attention Map生成</p>
                   <p className="text-muted text-sm mt-1">モデルが「どこに注目したか」を可視化。AI画像では特定領域への注目が収束しやすく、人間の作品では注目が分散する傾向があります。</p>
@@ -111,7 +119,7 @@ export default function HowItWorks() {
 
               {/* Step 4: Classification */}
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-accent/20 border border-accent flex items-center justify-center font-bold text-accent shrink-0">4</div>
+                <div className="pixel-step">4</div>
                 <div className="flex-1">
                   <p className="font-bold text-foreground">分類判定</p>
                   <p className="text-muted text-sm mt-1">最終層から出力された768次元の特徴ベクトルを、学習済み分類器に入力。AI/人間の確率スコアを算出します。</p>
@@ -123,22 +131,22 @@ export default function HowItWorks() {
 
         {/* Section 4: Supported Models */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">対応AIモデル</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b-2 border-accent pb-2">対応AIモデル</h2>
           <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">SDXL <span className="text-accent font-normal">(98.30%)</span></p>
+            <div className="pixel-box">
+              <p className="font-bold text-foreground">SDXL <span className="pixel-badge">(98.30%)</span></p>
               <p className="text-success text-sm mt-1">ほぼ対策済</p>
             </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">Illustrious <span className="text-accent font-normal">(97.80%)</span></p>
+            <div className="pixel-box">
+              <p className="font-bold text-foreground">Illustrious <span className="pixel-badge">(97.80%)</span></p>
               <p className="text-success text-sm mt-1">派生版含め高頻度で検出</p>
             </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">Pony Diffusion <span className="text-accent font-normal">(99.10%)</span></p>
+            <div className="pixel-box">
+              <p className="font-bold text-foreground">Pony Diffusion <span className="pixel-badge">(99.10%)</span></p>
               <p className="text-success text-sm mt-1">現在メインのv6まで高頻度で検出</p>
             </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <p className="font-bold text-foreground">NovelAI <span className="text-accent font-normal">(67.50%)</span></p>
+            <div className="pixel-box">
+              <p className="font-bold text-foreground">NovelAI <span className="pixel-badge">(67.50%)</span></p>
               <p className="text-yellow-400 text-sm mt-1">やや弱い。v4.5対応強化中</p>
             </div>
           </div>
@@ -146,27 +154,27 @@ export default function HowItWorks() {
 
         {/* Section 5: Accuracy */}
         <section className="mb-12">
-          <h2 className="text-xl font-bold mb-4 text-foreground border-b border-gray-700 pb-2">検出精度について</h2>
+          <h2 className="text-xl font-bold mb-4 text-foreground border-b-2 border-accent pb-2">検出精度について</h2>
           <p className="text-muted leading-relaxed">
             現在主流のモデルやLoRAに対しては<span className="text-accent font-bold">高精度で検出</span>します。
             ただし、以下のケースでは判定が難しい場合があります：
           </p>
           <ul className="list-none mt-4 space-y-2 text-muted">
             <li className="flex items-start gap-2">
-              <span className="text-gray-500 mt-1">•</span>
+              <span className="text-accent mt-1">■</span>
               <span>AI生成後に加筆修正が行われた画像</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-gray-500 mt-1">•</span>
+              <span className="text-accent mt-1">■</span>
               <span>極端に解像度が低い画像</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-gray-500 mt-1">•</span>
+              <span className="text-accent mt-1">■</span>
               <span>複数のLoRAを重ね合わせた画像</span>
             </li>
           </ul>
 
-          <div className="mt-6 p-4 bg-gray-800/30 rounded-lg border-l-4 border-accent">
+          <div className="mt-6 pixel-box border-l-4 border-accent">
             <p className="text-foreground font-medium">推定無罪の原則</p>
             <p className="text-muted text-sm mt-2">
               人間の作品がAIと誤判定されることを防ぐため、本サービスでは<span className="text-foreground">確信度が高い場合のみAI判定</span>を下すよう設計しています。
@@ -176,10 +184,11 @@ export default function HowItWorks() {
         </section>
 
         {/* Back Link */}
-        <div className="text-center pt-8 border-t border-gray-700">
+        <div className="text-center pt-8 border-t-2 border-accent">
           <Link
             href="/"
-            className="inline-block px-8 py-3 bg-gradient-to-r from-accent to-purple-500 text-white font-bold rounded-lg hover:from-accent/90 hover:to-purple-500/90 transition-all shadow-lg shadow-accent/20"
+            className="inline-block px-8 py-3 bg-gradient-to-r from-accent to-purple-500 text-white font-bold hover:from-accent/90 hover:to-purple-500/90 transition-all shadow-lg shadow-accent/20"
+            style={{ borderRadius: 0, boxShadow: '4px 4px 0 rgba(0, 0, 0, 0.8), 0 0 15px rgba(139, 92, 246, 0.2)' }}
           >
             画像をスキャンする →
           </Link>

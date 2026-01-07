@@ -833,8 +833,16 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Pixel Art Background Scenery */}
+      <div className="pixel-scenery">
+        <div className="pixel-stars" />
+        <div className="pixel-moon" />
+        <div className="pixel-sun" />
+        <div className="pixel-horizon" />
+      </div>
+
       {/* Header */}
-      <header className="site-header sticky top-0 z-40 p-4">
+      <header className="site-header sticky top-0 z-40 p-4 relative z-10">
         <div className="container mx-auto flex justify-between items-center">
           {/* 左: メニュー + ロゴ */}
           <div className="flex items-center gap-0">
@@ -860,25 +868,30 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               </span>
             </div>
 
-            {/* VIP - 控えめなブラックカード（ログイン時は紫の光） */}
+            {/* VIP - Pixel Art Card */}
             <button
               onClick={() => setIsVipModalOpen(true)}
               disabled={isAuthLoading}
-              className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${isAuthLoading
-                ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
+              className={`group relative px-4 py-1.5 font-[family-name:var(--font-press-start-2p)] text-[8px] font-medium tracking-wider transition-all duration-300 ${isAuthLoading
+                ? "bg-gray-800 text-gray-600 border-2 border-gray-700 cursor-wait"
                 : authUser
-                  ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-                  : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
+                  ? "bg-gradient-to-br from-purple-600 to-violet-500 text-white border-3 border-yellow-400 hover:shadow-[0_0_20px_rgba(168,85,247,0.6)]"
+                  : "bg-zinc-900 text-zinc-400 border-2 border-zinc-700 hover:text-zinc-200 hover:border-zinc-500"
                 }`}
+              style={{ 
+                borderRadius: 0, 
+                boxShadow: authUser ? '3px 3px 0 rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(255, 215, 0, 0.2)' : '2px 2px 0 rgba(0, 0, 0, 0.5)',
+                textShadow: authUser ? '1px 1px 0 #000' : 'none'
+              }}
             >
-              {isAuthLoading ? "..." : "VIP"}
+              {isAuthLoading ? "..." : authUser ? "★VIP★" : "VIP"}
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-grow container mx-auto px-4 py-8">
+      <main className="flex-grow container mx-auto px-4 py-8 relative z-10">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
           <h1 className="text-4xl font-extrabold mb-3 tracking-tight">二次元に特化した、日本のためのAIイラストチェッカー</h1>
@@ -928,7 +941,10 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     </div>
                   ) : (
                     <div className="scan-placeholder w-full h-48 md:h-72 flex flex-col items-center justify-center">
-                      <Cpu className="w-12 h-12 text-dim mb-2" />
+                      <div className="pixel-cpu-icon mb-2">
+                        <div className="ghost-eyes"></div>
+                        <div className="ghost-mouth"></div>
+                      </div>
                       <p className="text-muted font-light">SYSTEM READY FOR INFERENCE</p>
                     </div>
                   )}
@@ -1042,7 +1058,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     // 5段階判定: AI(80+), H(60-79), M(40-59), L(20-39), 人(0-19)
                     const score = item.aiScore;
                     const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-middle" : score >= 20 ? "result-low" : "result-human";
-                    const labelClass = score >= 80 ? "bg-danger text-black" : score >= 60 ? "bg-orange-600 text-black" : score >= 40 ? "bg-yellow-500 text-black" : score >= 20 ? "bg-success text-black" : "bg-blue-500 text-black";
+                    const labelClass = score >= 80 ? "bg-danger text-white" : score >= 60 ? "bg-orange-600 text-white" : score >= 40 ? "bg-yellow-500 text-white" : score >= 20 ? "bg-success text-white" : "bg-blue-500 text-white";
                     const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "M" : score >= 20 ? "L" : "人";
                     const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-500" : score >= 40 ? "text-yellow-400" : score >= 20 ? "text-success" : "text-blue-400";
 
@@ -1096,7 +1112,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   onClick={() => fileInputRef.current?.click()}
                   className="h-full flex flex-col items-center justify-center cursor-pointer"
                 >
-                  <Upload className="w-12 h-12 mb-3 text-accent opacity-70" />
+                  <div className="pixel-upload-icon mb-3"></div>
                   <p className="text-lg font-semibold text-text-primary">画像をアップロード</p>
                   <p className="text-sm text-muted mt-1">ドラッグ＆ドロップまたはクリック</p>
                 </div>
@@ -1200,7 +1216,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       </main>
 
       {/* Footer */}
-      <footer className="site-footer p-4">
+      <footer className="site-footer p-4 relative z-10">
         <div className="container mx-auto text-center text-xs text-muted">
           <p><a href="/disclaimer" className="hover:underline">免責事項</a> | &copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="hover:underline">お問い合わせ</a></p>
         </div>

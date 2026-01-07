@@ -234,20 +234,25 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative bg-card-bg border border-gray-700 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-card-bg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto" style={{ 
+        border: '4px solid #ffd93d', 
+        borderRadius: 0, 
+        boxShadow: '6px 6px 0 rgba(0, 0, 0, 0.9), 0 0 30px rgba(255, 217, 61, 0.3)'
+      }}>
         {/* Close button */}
         <button
           onClick={handleClose}
           className="absolute top-4 right-4 p-1 text-muted hover:text-white transition-colors z-10"
+          style={{ border: '2px solid currentColor', borderRadius: 0 }}
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Header */}
-        <div className="p-6 pb-4 border-b border-gray-700">
+        <div className="p-6 pb-4" style={{ borderBottom: '3px solid #ffd93d' }}>
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold bg-gradient-to-r from-amber-400 to-yellow-300 bg-clip-text text-transparent">
-              VIP登録
+            <span className="text-xl font-bold bg-gradient-to-r from-amber-400 to-yellow-300 bg-clip-text text-transparent" style={{ fontFamily: 'var(--font-press-start-2p)', textShadow: '2px 2px 0 rgba(0,0,0,0.3)' }}>
+              VIP
             </span>
             <span className="text-muted">-</span>
             <span className="text-muted text-sm">プレミアム機能をアンロック</span>
@@ -258,8 +263,12 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
         <div className="p-6 space-y-6">
 
           {/* VIP特典 */}
-          <div className="bg-gradient-to-br from-amber-500/10 to-yellow-500/10 rounded-lg p-4 border border-amber-500/30">
-            <p className="text-sm font-bold text-amber-400 mb-3">VIP特典</p>
+          <div className="p-4 border-2 border-amber-500" style={{ 
+            borderRadius: 0, 
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(234, 179, 8, 0.1) 100%)',
+            boxShadow: '3px 3px 0 rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(245, 158, 11, 0.1)'
+          }}>
+            <p className="text-sm font-bold text-amber-400 mb-3" style={{ fontFamily: 'var(--font-press-start-2p)', fontSize: '10px' }}>VIP特典</p>
             <div className="flex flex-wrap gap-6">
               <div className="flex items-start gap-2">
                 <svg className="w-4 h-4 text-success flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
@@ -305,12 +314,12 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
             <>
               {/* エラー表示 */}
               {error && (
-                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg">
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 ">
                   {error}
                 </div>
               )}
 
-              <div className="space-y-4 p-4 bg-deep-bg rounded-lg border border-gray-700">
+              <div className="space-y-4 p-4 bg-deep-bg  border border-gray-700">
                 {/* タブ */}
                 <div className="flex border-b border-gray-600">
                   <button
@@ -343,21 +352,21 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                     {/* ステップインジケーター（認証ステップでは1がアクティブ） */}
                     <div className="flex items-center justify-center gap-2 text-xs pb-2">
                       <div className="flex items-center gap-1 text-amber-400">
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-amber-400 text-black">
+                        <div className="w-5 h-5  flex items-center justify-center text-xs font-bold bg-amber-400 text-black">
                           1
                         </div>
                         <span>アカウント</span>
                       </div>
                       <ArrowRight className="w-3 h-3 text-gray-600" />
                       <div className="flex items-center gap-1 text-muted">
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-gray-700">
+                        <div className="w-5 h-5  flex items-center justify-center text-xs font-bold bg-gray-700">
                           2
                         </div>
                         <span>お支払い</span>
                       </div>
                       <ArrowRight className="w-3 h-3 text-gray-600" />
                       <div className="flex items-center gap-1 text-muted">
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-gray-700">
+                        <div className="w-5 h-5  flex items-center justify-center text-xs font-bold bg-gray-700">
                           3
                         </div>
                         <span>完了</span>
@@ -368,7 +377,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleOAuthRegister("Google")}
-                        className="flex-1 py-2.5 rounded-lg bg-white hover:bg-gray-200 active:bg-gray-300 transition-colors flex items-center justify-center gap-2 border-2 border-gray-300 hover:border-gray-400 active:scale-95"
+                        className="flex-1 py-2.5  bg-white hover:bg-gray-200 active:bg-gray-300 transition-colors flex items-center justify-center gap-2 border-2 border-gray-300 hover:border-gray-400 active:scale-95"
                       >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
                           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -380,7 +389,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                       </button>
                       <button
                         onClick={() => handleOAuthRegister("Twitter")}
-                        className="flex-1 py-2.5 rounded-lg bg-black hover:bg-gray-900 active:bg-gray-800 transition-colors flex items-center justify-center gap-2 border-2 border-gray-600 hover:border-gray-500 active:scale-95"
+                        className="flex-1 py-2.5  bg-black hover:bg-gray-900 active:bg-gray-800 transition-colors flex items-center justify-center gap-2 border-2 border-gray-600 hover:border-gray-500 active:scale-95"
                       >
                         <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
@@ -403,25 +412,35 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="メールアドレス"
-                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        className="w-full px-4 py-2.5 bg-card-bg border-2 border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        style={{ borderRadius: 0, boxShadow: '2px 2px 0 rgba(0, 0, 0, 0.5)' }}
                       />
                       <input
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="パスワード（8文字以上）"
-                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        className="w-full px-4 py-2.5 bg-card-bg border-2 border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        style={{ borderRadius: 0, boxShadow: '2px 2px 0 rgba(0, 0, 0, 0.5)' }}
                       />
                       <input
                         type="password"
                         value={passwordConfirm}
                         onChange={(e) => setPasswordConfirm(e.target.value)}
                         placeholder="パスワード（確認）"
-                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        className="w-full px-4 py-2.5 bg-card-bg border-2 border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        style={{ borderRadius: 0, boxShadow: '2px 2px 0 rgba(0, 0, 0, 0.5)' }}
                       />
                       <button
                         type="submit"
-                        className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 transition-all flex items-center justify-center gap-2"
+                        className="w-full py-3 font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 transition-all flex items-center justify-center gap-2"
+                        style={{
+                          borderRadius: 0,
+                          border: '3px solid #000',
+                          boxShadow: '4px 4px 0 rgba(0, 0, 0, 0.8)',
+                          fontFamily: 'var(--font-press-start-2p)',
+                          fontSize: '10px'
+                        }}
                       >
                         登録してお支払いへ
                         <ArrowRight className="w-4 h-4" />
@@ -438,14 +457,14 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                         外部サービスを使用しているため、サーバーに決済情報が残ることはありません
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2 opacity-50">
-                        <div className="flex-1 py-2 px-3 rounded-lg bg-gradient-to-b from-zinc-800 to-black border border-zinc-700 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                        <div className="flex-1 py-2 px-3  bg-gradient-to-b from-zinc-800 to-black border border-zinc-700 flex items-center justify-center gap-1.5 cursor-not-allowed">
                           <CreditCard className="w-3.5 h-3.5 text-gray-400" />
                           <span className="text-xs text-gray-400">Stripe(クレジットカード)</span>
                         </div>
-                        <div className="flex-1 py-2 px-3 rounded-lg bg-[#003087]/50 border border-[#003087]/30 flex items-center justify-center cursor-not-allowed">
+                        <div className="flex-1 py-2 px-3  bg-[#003087]/50 border border-[#003087]/30 flex items-center justify-center cursor-not-allowed">
                           <span className="text-xs text-gray-400 font-bold">PayPal</span>
                         </div>
-                        <div className="flex-1 py-2 px-3 rounded-lg bg-[#FF0033]/30 border border-[#FF0033]/30 flex items-center justify-center cursor-not-allowed">
+                        <div className="flex-1 py-2 px-3  bg-[#FF0033]/30 border border-[#FF0033]/30 flex items-center justify-center cursor-not-allowed">
                           <span className="text-xs text-gray-400 font-bold">PayPay</span>
                         </div>
                       </div>
@@ -460,7 +479,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleOAuthLogin("Google")}
-                        className="flex-1 py-2.5 rounded-lg bg-white hover:bg-gray-200 active:bg-gray-300 transition-colors flex items-center justify-center gap-2 border-2 border-gray-300 hover:border-gray-400 active:scale-95"
+                        className="flex-1 py-2.5  bg-white hover:bg-gray-200 active:bg-gray-300 transition-colors flex items-center justify-center gap-2 border-2 border-gray-300 hover:border-gray-400 active:scale-95"
                       >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
                           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -472,7 +491,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                       </button>
                       <button
                         onClick={() => handleOAuthLogin("Twitter")}
-                        className="flex-1 py-2.5 rounded-lg bg-black hover:bg-gray-900 active:bg-gray-800 transition-colors flex items-center justify-center gap-2 border-2 border-gray-600 hover:border-gray-500 active:scale-95"
+                        className="flex-1 py-2.5  bg-black hover:bg-gray-900 active:bg-gray-800 transition-colors flex items-center justify-center gap-2 border-2 border-gray-600 hover:border-gray-500 active:scale-95"
                       >
                         <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
@@ -495,18 +514,18 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         placeholder="メールアドレス"
-                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        className="w-full px-4 py-2.5  bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
                       />
                       <input
                         type="password"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         placeholder="パスワード"
-                        className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
+                        className="w-full px-4 py-2.5  bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors"
                       />
                       <button
                         type="submit"
-                        className="w-full py-3 rounded-lg font-bold border border-amber-500 text-amber-400 hover:bg-amber-500/10 transition-all flex items-center justify-center gap-2"
+                        className="w-full py-3  font-bold border border-amber-500 text-amber-400 hover:bg-amber-500/10 transition-all flex items-center justify-center gap-2"
                       >
                         ログイン
                         <ArrowRight className="w-4 h-4" />
@@ -529,7 +548,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                 </span>
                 <span className="text-muted">さん</span>
                 {authUser?.isAdmin && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                  <span className="text-xs px-1.5 py-0.5  bg-purple-500/20 text-purple-400 border border-purple-500/30">
                     Admin
                   </span>
                 )}
@@ -541,7 +560,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
 
               {/* エラー表示 */}
               {error && (
-                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg">
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 ">
                   {error}
                 </div>
               )}
@@ -552,9 +571,10 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                 <button
                   onClick={() => handlePayment("stripe")}
                   disabled={isProcessing}
-                  className="group relative w-full py-4 px-5 rounded-xl bg-gradient-to-b from-zinc-800 via-zinc-900 to-black border border-zinc-700 hover:border-zinc-500 transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="group relative w-full py-4 px-5 bg-gradient-to-b from-zinc-800 via-zinc-900 to-black border-3 border-zinc-700 hover:border-zinc-500 transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ borderRadius: 0, boxShadow: '3px 3px 0 rgba(0, 0, 0, 0.8)' }}
                 >
-                  <div className="w-12 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-md flex items-center justify-center">
+                  <div className="w-12 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                     <CreditCard className="w-6 h-6 text-white" />
                   </div>
                   <div className="flex-1 text-left">
@@ -571,14 +591,11 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                 <button
                   onClick={() => handlePayment("paypal")}
                   disabled={isProcessing}
-                  className="group w-full py-4 px-5 rounded-xl bg-[#003087] hover:bg-[#001F5C] border border-[#003087] transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="group w-full py-4 px-5 bg-[#003087] hover:bg-[#001F5C] border-3 border-[#003087] transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ borderRadius: 0, boxShadow: '3px 3px 0 rgba(0, 0, 0, 0.8)' }}
                 >
                   <div className="w-12 h-8 flex items-center justify-center">
-                    <svg className="h-6" viewBox="0 0 100 26" fill="white">
-                      <path d="M12.3 5.2h-6c-.4 0-.8.3-.9.7L3 20.6c-.1.3.2.6.5.6h2.9c.4 0 .8-.3.9-.7l.6-3.8c.1-.4.4-.7.9-.7h2c4.1 0 6.5-2 7.1-5.9.3-1.7 0-3-1-4-.9-.9-2.6-1.4-4.6-1.4zm.7 5.8c-.3 2.3-2 2.3-3.6 2.3h-.9l.7-4.2c0-.2.2-.4.4-.4h.4c1.1 0 2.1 0 2.7.6.3.4.4 1 .3 1.7z"/>
-                      <path d="M35.2 10.9h-2.9c-.2 0-.4.2-.4.4l-.1.8-.2-.3c-.6-.9-2-1.2-3.4-1.2-3.2 0-5.9 2.4-6.4 5.8-.3 1.7.1 3.3 1.1 4.4.9 1 2.2 1.4 3.8 1.4 2.7 0 4.1-1.7 4.1-1.7l-.1.8c-.1.3.2.6.5.6h2.6c.4 0 .8-.3.9-.7l1.5-9.7c.1-.3-.2-.6-.5-.6zm-4.1 5.6c-.3 1.6-1.5 2.7-3.2 2.7-.8 0-1.5-.3-1.9-.7-.4-.5-.5-1.2-.4-2 .2-1.6 1.5-2.7 3.1-2.7.8 0 1.5.3 1.9.8.4.4.6 1.1.5 1.9z"/>
-                      <path d="M55.6 10.9h-2.9c-.3 0-.5.1-.6.3l-3.6 5.3-1.5-5.1c-.1-.3-.4-.5-.8-.5h-2.8c-.4 0-.6.4-.5.7l2.9 8.4-2.7 3.8c-.3.4 0 .9.5.9h2.9c.3 0 .5-.1.6-.3l8.6-12.5c.2-.4-.1-.9-.6-.9z"/>
-                    </svg>
+                    <span className="text-white font-extrabold text-base tracking-tight">PayPal</span>
                   </div>
                   <div className="flex-1 text-left">
                     <div className="font-bold text-white">PayPal</div>
@@ -590,7 +607,8 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                 <button
                   onClick={() => handlePayment("paypay")}
                   disabled={isProcessing}
-                  className="group w-full py-4 px-5 rounded-xl bg-[#FF0033] hover:bg-[#E0002E] border border-[#FF0033] transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="group w-full py-4 px-5 bg-[#FF0033] hover:bg-[#E0002E] border-3 border-[#FF0033] transition-all flex items-center gap-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ borderRadius: 0, boxShadow: '3px 3px 0 rgba(0, 0, 0, 0.8)' }}
                 >
                   <div className="w-12 h-8 flex items-center justify-center">
                     <span className="text-white font-extrabold text-lg tracking-tight">Pay</span>
@@ -599,7 +617,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                     <div className="font-bold text-white">PayPay</div>
                     <div className="text-xs text-red-200">PayPayアプリで支払い</div>
                   </div>
-                  <div className="bg-white/20 rounded px-2 py-0.5">
+                  <div className="bg-white/20 px-2 py-0.5" style={{ borderRadius: 0 }}>
                     <span className="text-xs font-bold text-white">人気</span>
                   </div>
                 </button>
@@ -622,7 +640,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
           {/* STEP 3: 完了 */}
           {step === "complete" && (
             <div className="text-center space-y-4 py-4">
-              <div className="w-16 h-16 bg-success/20 rounded-full flex items-center justify-center mx-auto">
+              <div className="w-16 h-16 bg-success/20  flex items-center justify-center mx-auto">
                 <CheckCircle className="w-10 h-10 text-success" />
               </div>
               <h3 className="text-xl font-bold text-white">VIP登録完了！</h3>
@@ -632,7 +650,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
               </p>
               <button
                 onClick={handleClose}
-                className="px-6 py-2 rounded-lg font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 transition-all"
+                className="px-6 py-2  font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 transition-all"
               >
                 閉じる
               </button>
@@ -643,16 +661,16 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
           {step === "status" && authUser && (
             <div className="space-y-6">
               {/* ユーザー情報 */}
-              <div className="bg-gradient-to-br from-amber-500/10 to-yellow-500/10 rounded-lg p-4 border border-amber-500/30">
+              <div className="bg-gradient-to-br from-amber-500/10 to-yellow-500/10  p-4 border border-amber-500/30">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-yellow-300 flex items-center justify-center text-black font-bold text-xl">
+                  <div className="w-12 h-12  bg-gradient-to-br from-amber-400 to-yellow-300 flex items-center justify-center text-black font-bold text-xl">
                     {authUser.name.charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <p className="font-bold text-white">{authUser.name}</p>
                     <p className="text-sm text-muted">{authUser.email}</p>
                   </div>
-                  <div className="ml-auto px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-xs font-bold">
+                  <div className="ml-auto px-3 py-1  bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-xs font-bold">
                     VIP
                   </div>
                 </div>
@@ -673,9 +691,9 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
               <div className="space-y-2">
                 <p className="text-sm font-bold text-muted">有効な特典</p>
                 <div className="flex flex-wrap gap-2">
-                  <span className="px-2 py-1 rounded bg-success/20 text-success text-xs">✓ スキャン240枚/日</span>
-                  <span className="px-2 py-1 rounded bg-success/20 text-success text-xs">✓ 最新モデル先行利用</span>
-                  <span className="px-2 py-1 rounded bg-success/20 text-success text-xs">✓ 広告非表示</span>
+                  <span className="px-2 py-1  bg-success/20 text-success text-xs">✓ スキャン240枚/日</span>
+                  <span className="px-2 py-1  bg-success/20 text-success text-xs">✓ 最新モデル先行利用</span>
+                  <span className="px-2 py-1  bg-success/20 text-success text-xs">✓ 広告非表示</span>
                 </div>
               </div>
 
@@ -692,7 +710,7 @@ export default function VipModal({ isOpen, onClose, authUser }: VipModalProps) {
                 </button>
                 <button
                   onClick={handleClose}
-                  className="px-4 py-2 rounded-lg font-bold bg-gray-700 hover:bg-gray-600 text-white transition-all"
+                  className="px-4 py-2  font-bold bg-gray-700 hover:bg-gray-600 text-white transition-all"
                 >
                   閉じる
                 </button>

@@ -401,7 +401,7 @@ export default function Home() {
           throw new Error(`RATE_LIMITED:${errorData.detail || "レート制限に達しました"}`);
         }
         if (response.status === 503) {
-          throw new Error("MoonKnightモジュールが利用できません");
+          throw new Error("Moonknightモジュールが利用できません");
         }
         throw new Error(`API error: ${response.status}`);
       }
@@ -453,7 +453,7 @@ export default function Home() {
 
                   setGuardProgress({ current: data.iterations, total: data.iterations });
                   addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                  addLog("> MoonKnight保護完了", "process");
+                  addLog("> Moonknight保護完了", "process");
                   addLog("> 防壁構築完了 - 画像は保護されました", "result");
                 } else if (data.type === "error") {
                   throw new Error(data.message);
@@ -480,7 +480,7 @@ export default function Home() {
                 ssim = data.ssim;
                 setGuardProgress({ current: data.iterations, total: data.iterations });
                 addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                addLog("> MoonKnight保護完了", "process");
+                addLog("> Moonknight保護完了", "process");
                 addLog("> 防壁構築完了 - 画像は保護されました", "result");
               } else if (data.type === "error") {
                 throw new Error(data.message);
@@ -627,7 +627,7 @@ export default function Home() {
 
     const text = `【AI学習防止ガード】
 🛡️ PROTECTED
-MoonKnight V3 (旧FastProtect) で画像を保護しました
+Moonknight V3 (旧FastProtect) で画像を保護しました
 
 #AIイラストガード #aicheckers`;
 
@@ -775,8 +775,16 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Pixel Art Background Scenery */}
+      <div className="pixel-scenery">
+        <div className="pixel-stars" />
+        <div className="pixel-moon" />
+        <div className="pixel-sun" />
+        <div className="pixel-horizon" />
+      </div>
+
       {/* Header */}
-      <header className="site-header sticky top-0 z-40 p-4">
+      <header className="site-header sticky top-0 z-40 p-4 relative z-10">
         <div className="container mx-auto flex justify-between items-center">
           {/* 左: ロゴ + メニュー */}
           <div className="flex items-center gap-0">
@@ -805,31 +813,35 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
               </span>
             </div>
 
-            {/* VIP - 控えめなブラックカード（ログイン時は紫の光） */}
+            {/* VIP - Pixel Art風ボタン */}
             <button
               onClick={() => setIsVipModalOpen(true)}
               disabled={isAuthLoading}
-              className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${isAuthLoading
-                ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
+              className={`group relative px-4 py-1.5 font-[family-name:var(--font-press-start-2p)] text-[8px] font-bold tracking-wide transition-all duration-300 ${isAuthLoading
+                ? "text-zinc-600 cursor-wait"
                 : authUser
-                  ? "text-purple-400 border border-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.15)] hover:border-purple-400/60 hover:shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-                  : "text-zinc-500 border border-zinc-700/50 hover:text-zinc-300 hover:border-zinc-600"
+                  ? "text-purple-300"
+                  : "text-zinc-400 hover:text-zinc-200"
                 }`}
+              style={{
+                border: authUser ? '3px solid rgba(168, 85, 247, 0.6)' : '2px solid rgba(113, 113, 122, 0.5)',
+                boxShadow: authUser ? '3px 3px 0 rgba(0, 0, 0, 0.8), 0 0 10px rgba(168, 85, 247, 0.3)' : '2px 2px 0 rgba(0, 0, 0, 0.5)'
+              }}
             >
-              {isAuthLoading ? "..." : "VIP"}
+              {isAuthLoading ? "..." : authUser ? "★VIP★" : "VIP"}
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-grow container mx-auto px-4 py-8">
+      <main className="flex-grow container mx-auto px-4 py-8 relative z-10">
         {/* Intro */}
         <div className="text-center max-w-4xl mx-auto mb-10">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight">AIイラストガードがあなたの作品を無断学習から守ります</h1>
           <p className="text-muted text-lg">
             人間の目には見えないノイズを混ぜることにより、作風の模倣を防ぐAIポイズニングの最新版。<br />
-            複数の技法をかけ合わせた<span className="text-accent font-bold">MoonKnight V3</span>により、生成AIの学習を顕著に妨害します。
+            複数の技法をかけ合わせた<span className="text-accent font-bold">Moonknight V3</span>により、生成AIの学習を顕著に妨害します。
           </p>
           <p className="text-xs text-muted mt-2">
             ※ 作品の質を下げないよう、防壁は最小限のノイズで構成されています
@@ -946,12 +958,12 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-col sm:flex-row flex-wrap sm:justify-between items-start sm:items-center mb-4 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">MoonKnight V3</span></span>
+                <span>使用モデル: <span className="text-accent font-bold">Moonknight V3</span></span>
                 <span>ロジック: DWT + 知覚マスキング</span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
 
-              {/* Progress Bar - MoonKnightと同期 */}
+              {/* Progress Bar - Moonknightと同期 */}
               <div className="mb-6">
                 <div className="flex justify-between text-base mb-1">
                   <span className="font-semibold uppercase text-accent">

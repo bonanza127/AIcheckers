@@ -52,15 +52,23 @@ const jsonLd = {
 export default function FAQ() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+      {/* Pixel Art Background Scenery */}
+      <div className="pixel-scenery">
+        <div className="pixel-stars" />
+        <div className="pixel-moon" />
+        <div className="pixel-sun" />
+        <div className="pixel-horizon" />
+      </div>
+
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       {/* Header */}
-      <header className="site-header border-b border-gray-700/50 backdrop-blur-md sticky top-0 z-50 bg-background/80">
+      <header className="site-header border-b border-gray-700/50 backdrop-blur-md sticky top-0 z-50 bg-background/80 relative z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/guard" className="flex items-center gap-1.5 hover:opacity-80 transition-opacity">
-            <span className="text-xl font-bold bg-gradient-to-r from-accent to-purple-400 bg-clip-text text-transparent">AIイラストガード</span>
+            <span className="text-xl font-bold text-white font-[family-name:var(--font-press-start-2p)]" style={{ textShadow: '2px 2px 0 #000, 0 0 10px rgba(139, 92, 246, 0.5)' }}>AIイラストガード</span>
           </Link>
           <nav className="text-sm">
             <Link href="/guard" className="flex items-center gap-1 text-muted hover:text-white transition-colors">
@@ -72,7 +80,7 @@ export default function FAQ() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-grow container mx-auto px-4 py-12 max-w-3xl">
+      <main className="flex-grow container mx-auto px-4 py-12 max-w-3xl relative z-10">
         <div className="text-center mb-12 flex flex-col items-center">
           <div className="relative mb-4">
             <Shield className="w-16 h-16 text-accent opacity-90" />
@@ -83,27 +91,27 @@ export default function FAQ() {
           <h1 className="text-3xl font-bold mb-3 tracking-tight">よくある質問</h1>
         </div>
 
-        <div className="space-y-10">
+        <div className="space-y-12">
           {faqData.map((item, index) => (
-            <div key={index} className="space-y-4">
-              {/* Question (User) - Right Side */}
+            <div key={index} className="space-y-6">
+              {/* Question (User) - Right Side - シンプルな吹き出し */}
               <div className="flex gap-3 justify-end group">
-                <div className="bg-accent text-white rounded-2xl rounded-tr-none px-5 py-3 max-w-[85%] shadow-lg shadow-accent/5 transition-transform group-hover:-translate-x-1">
+                <div className="bg-white text-black px-5 py-4 max-w-[80%]" style={{ border: '3px solid #000', boxShadow: '4px 4px 0 rgba(0, 0, 0, 0.8)' }}>
                   <p className="text-sm md:text-base font-medium leading-relaxed">{item.q}</p>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0 mt-1 shadow-md border-2 border-gray-600">
-                  <User className="w-5 h-5 text-gray-300" />
+                <div className="w-12 h-12 bg-blue-500 flex items-center justify-center shrink-0" style={{ border: '3px solid #000', boxShadow: '3px 3px 0 rgba(0, 0, 0, 0.8)' }}>
+                  <User className="w-6 h-6 text-white" />
                 </div>
               </div>
 
-              {/* Answer (System) - Left Side */}
+              {/* Answer (System) - Left Side - ゲーム風テキストボックス */}
               <div className="flex gap-3 justify-start group">
-                <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-md overflow-hidden">
+                <div className="w-12 h-12 bg-black flex items-center justify-center shrink-0 overflow-hidden" style={{ border: '3px solid #ffd93d', boxShadow: '3px 3px 0 rgba(0, 0, 0, 0.8)' }}>
                   <img src="/guard-chat-icon.jpg" alt="Guard" className="w-full h-full object-cover" />
                 </div>
-                <div className="bg-gray-800/80 border border-white/5 rounded-2xl rounded-tl-none px-6 py-4 max-w-[90%] md:max-w-[85%] shadow-sm backdrop-blur-sm transition-transform group-hover:translate-x-1">
+                <div className="bg-black px-5 py-4 max-w-[85%] font-[family-name:var(--font-mplus-code)]" style={{ border: '3px solid #ffd93d', boxShadow: '4px 4px 0 rgba(0, 0, 0, 0.8)' }}>
                   {item.a.split('\n').map((line, i) => (
-                    <p key={i} className={`text-sm md:text-base text-gray-200 leading-relaxed ${line === "" ? "h-3" : ""}`} dangerouslySetInnerHTML={{ __html: line.replace(/Lightshade<sup class="text-accent">\*1<\/sup>/g, 'Lightshade<sup class="text-accent font-bold cursor-help" title="See reference below">*1</sup>') }}>
+                    <p key={i} className={`text-sm md:text-base text-yellow-100 leading-relaxed ${line === "" ? "h-4" : ""}`} dangerouslySetInnerHTML={{ __html: line.replace(/Lightshade<sup class="text-accent">\*1<\/sup>/g, 'Lightshade<sup class="text-accent font-bold cursor-help" title="See reference below">*1</sup>') }}>
                     </p>
                   ))}
                 </div>
@@ -127,7 +135,8 @@ export default function FAQ() {
         <div className="mt-16 text-center">
           <Link
             href="/guard"
-            className="inline-flex items-center justify-center px-8 py-4 bg-white text-black font-bold rounded-full hover:bg-gray-100 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] active:scale-95 text-lg"
+            className="inline-flex items-center justify-center px-8 py-4 bg-white text-black font-bold hover:bg-gray-100 transition-all active:scale-95 text-lg font-[family-name:var(--font-press-start-2p)]"
+            style={{ border: '4px solid #000', boxShadow: '6px 6px 0 rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 255, 255, 0.3)' }}
           >
             画像を保護する
           </Link>

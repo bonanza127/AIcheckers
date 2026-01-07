@@ -10,8 +10,16 @@ export const metadata: Metadata = {
 export default function Disclaimer() {
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Pixel Art Background Scenery */}
+      <div className="pixel-scenery">
+        <div className="pixel-stars" />
+        <div className="pixel-moon" />
+        <div className="pixel-sun" />
+        <div className="pixel-horizon" />
+      </div>
+
       {/* Header */}
-      <header className="site-header border-b border-gray-700">
+      <header className="site-header border-b border-gray-700 relative z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-1.5 hover:opacity-80">
             <img src="/logo-transparent.png" alt="AI Checkers" className="w-10 h-10" />
@@ -24,7 +32,7 @@ export default function Disclaimer() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12 max-w-3xl">
+      <main className="container mx-auto px-4 py-12 max-w-3xl relative z-10">
         <div className="text-center mb-10">
           <AlertTriangle className="w-16 h-16 text-accent mx-auto mb-4" />
           <h1 className="text-3xl font-bold">免責事項</h1>
