@@ -35,9 +35,27 @@ const faqData = [
   }
 ];
 
+// Generate JSON-LD for FAQPage
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": faqData.map(item => ({
+    "@type": "Question",
+    "name": item.q,
+    "acceptedAnswer": {
+      "@type": "Answer",
+      "text": item.a.replace(/\n/g, "<br/>") // Handling newlines for HTML output in schema
+    }
+  }))
+};
+
 export default function FAQ() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Header */}
       <header className="site-header border-b border-gray-700/50 backdrop-blur-md sticky top-0 z-50 bg-background/80">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
