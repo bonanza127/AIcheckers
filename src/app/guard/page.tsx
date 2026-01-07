@@ -781,15 +781,15 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
           <div className="flex items-center gap-0">
             <HamburgerMenu variant="guard" />
             <img src="/logo-transparent.png" alt="AI Checkers" className="w-14 h-14" />
-            <h2 className="text-2xl font-bold tracking-tight">
+            <h2 className="text-lg md:text-2xl font-bold tracking-tight whitespace-nowrap">
               AIイラストガード
-              <span className="text-sm font-light text-muted">　//　</span>
-              <a
+              <span className="hidden md:inline text-sm font-light text-muted">　//　</span>
+              <Link
                 href="/guard/how-it-works"
-                className="text-sm font-medium text-muted hover:text-accent hover:bg-accent/5 px-2 py-1 rounded transition-all border border-transparent hover:border-accent/30"
+                className="hidden md:inline text-sm font-medium text-muted hover:text-accent hover:bg-accent/5 px-2 py-1 rounded transition-all border border-transparent hover:border-accent/30"
               >
                 よくある質問
-              </a>
+              </Link>
             </h2>
           </div>
 
@@ -798,7 +798,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
             {/* Server Status */}
             <div className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
-              <span className="text-muted">Server Status:</span>
+              <span className="hidden md:inline text-muted">Server Status:</span>
               <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
                 {backendOnline === null ? "..." : backendOnline ? "Online" : "Offline"}
               </span>
