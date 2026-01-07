@@ -862,8 +862,9 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                       <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-xs text-white rounded">Before</div>
                     </div>
                   ) : (
-                    <div className="scan-placeholder w-full h-72 flex flex-col items-center justify-center border border-dashed border-gray-700 rounded-lg bg-black/10">
-                      <p className="text-muted/30 font-bold text-2xl uppercase tracking-widest">Before</p>
+                    <div className="w-full h-72 flex flex-col items-center justify-center bg-black/10 rounded-lg border border-dashed border-gray-700">
+                      <Upload className="w-12 h-12 text-gray-600 mb-3" />
+                      <p className="text-muted font-light tracking-widest text-sm">BEFORE</p>
                     </div>
                   )}
                   {previewFileName && (
@@ -911,7 +912,10 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                           <span className="text-sm text-accent font-bold tracking-wider">PROTECTING...</span>
                         </div>
                       ) : (
-                        <p className="text-muted/30 font-bold text-2xl uppercase tracking-widest">After</p>
+                        <>
+                          <Shield className="w-12 h-12 text-gray-600 mb-3" />
+                          <p className="text-muted font-light tracking-widest text-sm">AFTER</p>
+                        </>
                       )}
                     </div>
                   )}
