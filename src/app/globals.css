@@ -1188,84 +1188,9 @@ svg[class*="lucide"] {
 }
 
 /* Pixel CPU Icon - システムレディアイコン */
-/* 2Dゲーム風幽霊アイコン（CSS描画） */
-.pixel-cpu-icon {
-  width: 48px;
-  height: 60px;
-  position: relative;
-  margin: 0 auto;
-}
-
-/* 幽霊の頭と体 */
-.pixel-cpu-icon::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 4px;
-  width: 40px;
-  height: 48px;
-  background: #f0f0f0;
-  border: 3px solid #000;
-  border-radius: 50% 50% 0 0;
-  box-shadow:
-    inset 0 4px 0 rgba(255, 255, 255, 0.8),
-    3px 3px 0 rgba(0, 0, 0, 0.3);
-}
-
-/* 幽霊の裾（波型） */
-.pixel-cpu-icon::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 4px;
-  width: 40px;
-  height: 16px;
-  background:
-    radial-gradient(circle at 10px 0, transparent 8px, #f0f0f0 8px, #f0f0f0 100%) 0 0,
-    radial-gradient(circle at 30px 0, transparent 8px, #f0f0f0 8px, #f0f0f0 100%) 20px 0;
-  background-size: 20px 16px;
-  background-repeat: no-repeat;
-  border-left: 3px solid #000;
-  border-right: 3px solid #000;
-  border-bottom: 3px solid #000;
-}
-
-/* 幽霊の目 */
-.ghost-eyes {
-  position: absolute;
-  top: 18px;
-  left: 14px;
-  width: 24px;
-  height: 8px;
-  z-index: 1;
-}
-
-.ghost-eyes::before,
-.ghost-eyes::after {
-  content: '';
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  background: #000;
-  border-radius: 50%;
-}
-
-.ghost-eyes::before {
-  left: 0;
-}
-
-.ghost-eyes::after {
-  right: 0;
-}
-
-/* 幽霊の口 */
-.ghost-mouth {
-  position: absolute;
-  top: 32px;
-  left: 18px;
-  width: 16px;
-  height: 6px;
-  background: #000;
-  border-radius: 0 0 8px 8px;
-  z-index: 1;
+/* 2Dゲーム風幽霊アイコン（SVG化済み） */
+.pixelated {
+  image-rendering: -moz-crisp-edges;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }

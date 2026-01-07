@@ -878,8 +878,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   ? "bg-gradient-to-br from-purple-600 to-violet-500 text-white border-3 border-yellow-400 hover:shadow-[0_0_20px_rgba(168,85,247,0.6)]"
                   : "bg-zinc-900 text-zinc-400 border-2 border-zinc-700 hover:text-zinc-200 hover:border-zinc-500"
                 }`}
-              style={{ 
-                borderRadius: 0, 
+              style={{
+                borderRadius: 0,
                 boxShadow: authUser ? '3px 3px 0 rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(255, 215, 0, 0.2)' : '2px 2px 0 rgba(0, 0, 0, 0.5)',
                 textShadow: authUser ? '1px 1px 0 #000' : 'none'
               }}
@@ -941,9 +941,8 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     </div>
                   ) : (
                     <div className="scan-placeholder w-full h-48 md:h-72 flex flex-col items-center justify-center">
-                      <div className="pixel-cpu-icon mb-2">
-                        <div className="ghost-eyes"></div>
-                        <div className="ghost-mouth"></div>
+                      <div className="mb-4">
+                        <img src="/ghost-pixel.svg" alt="System Ready" className="w-12 h-12 pixelated" />
                       </div>
                       <p className="text-muted font-light">SYSTEM READY FOR INFERENCE</p>
                     </div>
