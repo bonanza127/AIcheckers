@@ -181,6 +181,7 @@ USERS_DATA_PATH = Path("/home/techne/aicheckers/data/users.json")
 # Enterprise API設定
 ENTERPRISE_KEYS_PATH = Path("/home/techne/aicheckers/data/enterprise_keys.json")
 ENTERPRISE_USAGE_PATH = Path("/home/techne/aicheckers/data/enterprise_usage.json")
+PATROL_EMBEDDINGS_PATH = Path("/home/techne/aicheckers/data/patrol_embeddings.json")
 
 # ユーザーデータ管理
 def load_users() -> dict:
@@ -1000,6 +1001,72 @@ def get_verdict(ai_score: float) -> str:
         return "HUMAN CONFIRMED"
 
 
+def extract_dinov3_embedding(image: Image.Image) -> np.ndarray:
+    """
+    DINOv3のCLSトークン（768次元）を抽出
+
+    Args:
+        image: RGB画像
+
+    Returns:
+        768次元のnumpy配列
+    """
+    if dinov3_model is None:
+        raise Exception("DINOv3 model not loaded")
+
+    inputs = dinov3_processor(images=image, return_tensors="pt")
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = dinov3_model(**inputs)
+        hidden_states = outputs.last_hidden_state
+        cls_token = hidden_states[:, 0, :]  # CLS token (1, 768)
+
+    return cls_token.cpu().numpy()[0]  # (768,)
+
+
+def save_patrol_embedding(user_id: str, embedding: np.ndarray, watermark_hash: str):
+    """
+    Patrol用にDINOv3埋め込み + タイムスタンプ + 透かしハッシュをDB保存
+
+    Args:
+        user_id: ユーザーID（Enterprise APIキー or レート制限キー）
+        embedding: 768次元のDINOv3埋め込み
+        watermark_hash: 61bitのバイナリ文字列（TrustMark透かし）
+    """
+    db_path = PATROL_EMBEDDINGS_PATH
+
+    # データ構造: {user_id: [{embedding: [...], timestamp: "...", watermark_hash: "..."}]}
+    data = {}
+
+    # ファイルロック付き読み込み
+    if db_path.exists():
+        with open(db_path, "r") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+            try:
+                data = json.load(f)
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    # 新しいエントリを追加
+    if user_id not in data:
+        data[user_id] = []
+
+    data[user_id].append({
+        "embedding": embedding.tolist(),  # numpy -> list
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "watermark_hash": watermark_hash
+    })
+
+    # ファイルロック付き書き込み
+    with open(db_path, "w") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            json.dump(data, f, indent=2)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 async def analyze_with_dinov3(image: Image.Image) -> dict:
     """DINOv3 (ローカル) で解析 - Attention Map + フォレンジック分析付き"""
     if dinov3_model is None or dinov3_classifier is None:
@@ -1322,6 +1389,35 @@ async def guard_image(
         contents = await validate_file_size(file)
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
+        # ユーザーID取得（Enterprise APIキー or レート制限キー）
+        if is_enterprise:
+            user_id = enterprise_info["api_key"]
+        else:
+            user_id = key
+
+        # TrustMark透かし埋め込み（alpha=1.15、FastProtect前）
+        watermark_hash = None
+        if TRUSTMARK_ENABLED:
+            global trustmark_encoder
+            if trustmark_encoder is None:
+                import trustmark as tm
+                trustmark_encoder = tm.TrustMark()
+
+            # タイムスタンプ生成
+            timestamp_str = datetime.utcnow().isoformat() + "Z"
+
+            # 透かし埋め込み
+            image = embed_watermark(
+                trustmark_encoder,
+                image,
+                user_id,
+                timestamp_str,
+                alpha=1.15
+            )
+
+            # 透かしハッシュ生成（DB保存用）
+            watermark_hash = create_user_watermark_mapping(user_id, timestamp_str, capacity=61)
+
         # MoonKnightエンジンの遅延初期化
         if moonknight_engine is None:
             moonknight_engine = MoonKnightV3(
@@ -1333,9 +1429,14 @@ async def guard_image(
         # 保護実行（PIL -> PIL）
         # MoonKnightはiterationsパラメータを使用しません（ワンショット生成）
         protected_image = moonknight_engine.poison(image, strength=strength)
-        
+
         # 変数名の互換性のため（以降の処理で使用）
         poisoned_image = protected_image
+
+        # DINOv3埋め込み抽出（最終画像から）
+        if TRUSTMARK_ENABLED and watermark_hash is not None:
+            embedding = extract_dinov3_embedding(poisoned_image)
+            save_patrol_embedding(user_id, embedding, watermark_hash)
 
         # SSIM計算（品質検証）
         from skimage.metrics import structural_similarity as ssim
