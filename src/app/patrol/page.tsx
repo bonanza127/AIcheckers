@@ -243,7 +243,7 @@ export default function PatrolPage() {
 
                     {/* 2. Flippable Detail View */}
                     {selectedAlert ? (
-                        <div className="relative w-full h-[600px] [perspective:1000px] flex-shrink-0">
+                        <div className="relative w-full flex-grow [perspective:1000px]">
                             <div className={`relative w-full h-full transition-transform duration-700 [transform-style:preserve-3d] ${isFlipped ? "[transform:rotateY(180deg)]" : ""}`}>
 
                                 {/* FRONT: Detail View */}
@@ -359,7 +359,7 @@ export default function PatrolPage() {
                             </div>
                         </div>
                     ) : (
-                        <div className="card-panel p-8 text-center flex flex-col items-center justify-center h-[600px] border-dashed border-2 border-zinc-800 bg-transparent opacity-50">
+                        <div className="card-panel p-8 text-center flex flex-col items-center justify-center flex-grow border-dashed border-2 border-zinc-800 bg-transparent opacity-50">
                             <Search className="text-zinc-700 mb-4" size={32} />
                             <p className="text-zinc-500 text-sm">Select an alert to view details</p>
                         </div>
