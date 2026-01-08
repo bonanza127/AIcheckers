@@ -56,6 +56,17 @@ except ImportError as e:
     MOONKNIGHT_ENABLED = False
     moonknight_engine = None
 
+# TrustMark透かし（オプショナル）
+try:
+    import trustmark
+    from lib.trustmark_helper import embed_watermark, extract_watermark, create_user_watermark_mapping
+    TRUSTMARK_ENABLED = True
+    trustmark_encoder = None  # Lazy initialization
+except ImportError as e:
+    print(f"Warning: TrustMark import failed: {e}")
+    TRUSTMARK_ENABLED = False
+    trustmark_encoder = None
+
 
 class URLAnalyzeRequest(BaseModel):
     url: str
