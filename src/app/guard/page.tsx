@@ -679,9 +679,14 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
       return { text: "構築中...", className: "verdict-loading" };
     }
     // スキャン完了時のみ結果を表示
+    // スキャン完了時のみ結果を表示
     if (phase === "complete") {
-      // ガードページでは常に「完了」表示（紫色）
-      return { text: "PROTECTED", className: "verdict-protected" };
+      // 成功判定: currentProtectedImageがある場合のみPROTECTED
+      if (currentProtectedImage) {
+        return { text: "PROTECTED", className: "verdict-protected" };
+      } else {
+        return { text: "FAILED", className: "verdict-error text-danger" };
+      }
     }
     return { text: "待機中", className: "verdict-pending" };
   };
