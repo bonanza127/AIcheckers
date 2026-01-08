@@ -10,6 +10,7 @@ import time
 import base64
 import re
 import hashlib
+import fcntl
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -101,6 +102,9 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "1.1"))
 # ファイルサイズ制限（DoS攻撃対策）
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
+# レート制限データの永続化パス
+RATE_LIMIT_DATA_PATH = Path("/home/techne/aicheckers/data/rate_limits.json")
+
 # IP -> {"tokens": int, "last_recovery": datetime}
 # IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
@@ -175,9 +179,14 @@ def load_users() -> dict:
     return {}
 
 def save_users(data: dict):
+    """ファイルロックを使った安全な保存"""
     USERS_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(USERS_DATA_PATH, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # 排他ロック
+        try:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # ロック解放
 
 def create_jwt_token(user_id: str, email: str) -> str:
     expire = datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS)
@@ -205,9 +214,14 @@ def load_vip_users() -> dict:
     return {}
 
 def save_vip_users(data: dict):
+    """ファイルロックを使った安全な保存"""
     VIP_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(VIP_DATA_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # 排他ロック
+        try:
+            json.dump(data, f, indent=2)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # ロック解放
 
 vip_users: dict = {}  # 起動時にロード
 
@@ -221,10 +235,14 @@ def load_enterprise_keys() -> dict:
 
 
 def save_enterprise_keys(data: dict):
-    """Enterprise APIキーを保存"""
+    """Enterprise APIキーを保存（ファイルロック使用）"""
     ENTERPRISE_KEYS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(ENTERPRISE_KEYS_PATH, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # 排他ロック
+        try:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # ロック解放
 
 
 def load_enterprise_usage() -> dict:
@@ -236,10 +254,67 @@ def load_enterprise_usage() -> dict:
 
 
 def save_enterprise_usage(data: dict):
-    """Enterprise API使用量を保存"""
+    """Enterprise API使用量を保存（ファイルロック使用）"""
     ENTERPRISE_USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(ENTERPRISE_USAGE_PATH, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # 排他ロック
+        try:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # ロック解放
+
+
+def load_rate_limits() -> tuple[dict, dict]:
+    """レート制限データをロード"""
+    if RATE_LIMIT_DATA_PATH.exists():
+        with open(RATE_LIMIT_DATA_PATH, "r") as f:
+            data = json.load(f)
+            # datetimeをパース
+            checker = {}
+            for key, val in data.get("checker", {}).items():
+                checker[key] = {
+                    "tokens": val["tokens"],
+                    "last_recovery": datetime.fromisoformat(val["last_recovery"])
+                }
+            guard = {}
+            for key, val in data.get("guard", {}).items():
+                guard[key] = {
+                    "tokens": val["tokens"],
+                    "last_recovery": datetime.fromisoformat(val["last_recovery"])
+                }
+            return checker, guard
+    return {}, {}
+
+
+def save_rate_limits(checker_data: dict, guard_data: dict):
+    """レート制限データを保存（ファイルロック使用）"""
+    RATE_LIMIT_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # datetimeをISO形式文字列に変換
+    checker_serializable = {}
+    for key, val in checker_data.items():
+        checker_serializable[key] = {
+            "tokens": val["tokens"],
+            "last_recovery": val["last_recovery"].isoformat()
+        }
+    guard_serializable = {}
+    for key, val in guard_data.items():
+        guard_serializable[key] = {
+            "tokens": val["tokens"],
+            "last_recovery": val["last_recovery"].isoformat()
+        }
+
+    data = {
+        "checker": checker_serializable,
+        "guard": guard_serializable,
+        "last_saved": datetime.now().isoformat()
+    }
+
+    with open(RATE_LIMIT_DATA_PATH, "w") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # 排他ロック
+        try:
+            json.dump(data, f, indent=2)
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # ロック解放
 
 
 def generate_api_key() -> str:
@@ -294,6 +369,12 @@ async def lifespan(app: FastAPI):
     enterprise_keys = load_enterprise_keys()
     enterprise_usage = load_enterprise_usage()
     print(f"Loaded {len(enterprise_keys)} enterprise API keys")
+
+    # レート制限データをロード
+    checker_limits, guard_limits = load_rate_limits()
+    rate_limit_data.update(checker_limits)
+    rate_limit_guard.update(guard_limits)
+    print(f"Loaded rate limits: {len(rate_limit_data)} checker, {len(rate_limit_guard)} guard")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -351,6 +432,9 @@ async def lifespan(app: FastAPI):
     # クリーンアップ
     # Enterprise使用量を保存
     save_enterprise_usage(enterprise_usage)
+    # レート制限データを保存
+    save_rate_limits(dict(rate_limit_data), dict(rate_limit_guard))
+    print("Rate limits saved to disk")
     del dinov3_model, dinov3_processor, dinov3_classifier
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
