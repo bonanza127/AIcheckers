@@ -1182,7 +1182,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 </span>
                 {!authUser?.isAdmin && rateLimitRemaining !== -1 && (
                   <span className="text-xs opacity-70 font-normal">
-                    (1時間刻みで{authUser?.isVip ? "10" : "1"}枚回復)
+                    (午前0時にリセット)
                   </span>
                 )}
               </button>

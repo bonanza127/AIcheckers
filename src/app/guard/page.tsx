@@ -1190,7 +1190,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                 </span>
                 {!authUser?.isAdmin && rateLimitRemaining !== -1 && (
                   <span className="text-xs opacity-70 font-normal">
-                    (8時間刻みで{authUser?.isVip ? "5" : "1"}枚回復)
+                    (午前0時にリセット)
                   </span>
                 )}
               </button>
