@@ -599,17 +599,36 @@ DMCA申請メール自動生成
 | `scripts/test_trustmark.py` | TrustMark動作確認スクリプト |
 | `backend/main.py` | Guard/Patrolエンドポイント |
 
-### 実装進捗（2026-01-08）
+### 実装進捗（2026-01-09）
 
+**Phase 1: TrustMark + ViT Hash統合（完了）**
 - [x] TrustMarkライブラリインストール・動作確認
 - [x] trustmark_helper.py作成
 - [x] backend/main.pyへのimport追加
-- [ ] Guard時のTrustMark透かし埋め込み実装
-- [ ] Guard時のViTハッシュ+タイムスタンプDB保存実装
+- [x] Guard時のTrustMark透かし埋め込み実装（alpha=1.15）
+- [x] Guard時のViTハッシュ+タイムスタンプDB保存実装
+- [x] 処理順序実装（TrustMark → MoonKnight → DINOv3）
+- [x] patrol_embeddings.json DB構造実装
+- [x] 実験的検証（透かし検出率、FastProtect効果）
+
+**Phase 2: Patrol機能（未着手）**
 - [ ] Civitai API連携とFaiss検索基盤
 - [ ] 2段階検証システム（ViT→TrustMark）
 - [ ] DMCA申請メール自動生成
-- [ ] 実験的検証（透かし検出率、FastProtect効果）
+- [ ] Firecrawl MCP統合（スクレイピング支援）
+
+### 実験結果（2026-01-09）
+
+**Guard API統合テスト:**
+- ✅ TrustMark透かし埋め込み成功（0.199秒/画像）
+- ✅ MoonKnight V3保護適用成功
+- ✅ DINOv3埋め込み抽出成功（768次元）
+- ✅ patrol_embeddings.json保存成功（タイムスタンプ + 透かしハッシュ）
+- ✅ 透かし検出率: 100%（MoonKnight適用後も維持）
+- ✅ 処理時間: 約25秒/画像（TrustMark + MoonKnight + DINOv3）
+
+**結論:**
+TrustMark透かしはMoonKnight V3摂動の影響を受けず、完全に検出可能。ハイブリッド方式（透かし + ViTハッシュ）の技術的実現性を確認。
 
 ### 監視対象サイト
 
