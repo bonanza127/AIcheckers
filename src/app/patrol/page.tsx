@@ -30,38 +30,40 @@ type Stat = {
 };
 
 // Mock Data Generator (A-Z)
-const generateMockAlerts = (): Alert[] => {
-    const alerts: Alert[] = [];
-    const sites = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-
-    sites.forEach((char, index) => {
-        const id = (index + 1).toString();
-        const bgColor = ["1a1a1a", "2a2a2a", "0f0f0f", "111827"][index % 4];
-        const textColor = ["666666", "888888", "444444", "9ca3af"][index % 4];
+// Mock Data Generator
+const generateMockAlerts = (count: number): Alert[] => {
+    return Array.from({ length: count }).map((_, index) => {
+        // Hydrationエラーを防ぐため、ランダムではなくインデックスに基づいた決定論的な値を生成
+        const scoreBase = [91.4, 96.8, 87.8, 92.8, 89.4, 94.8];
+        const matchScore = scoreBase[index % scoreBase.length].toFixed(1);
 
         // Mock TrustMark data
-        const mockTimestamp = new Date(Date.now() - index * 86400000).toISOString();
-        const mockHash = Array.from({ length: 61 }, () => Math.random() > 0.5 ? '1' : '0').join('');
+        // 日付も固定化する
+        const mockDate = new Date("2024-01-08T14:00:00.000Z");
+        mockDate.setDate(mockDate.getDate() - index);
+        const mockTimestamp = mockDate.toISOString();
 
-        alerts.push({
-            id: id,
-            thumbnail: `https://placehold.co/400x600/${bgColor}/${textColor}?text=Image+${char}`,
-            sourceUrl: `https://pirate-site-${char.toLowerCase()}.com/gallery/user/123456`,
-            sourceSite: `Pirate-Site-${char}.com`,
-            similarity: Math.floor(Math.random() * (99 - 85) + 85) + (Math.random() > 0.5 ? 0.4 : 0.8),
-            timestamp: `2024-01-08 ${String(14 - Math.floor(index / 2)).padStart(2, '0')}:${String((index * 15) % 60).padStart(2, '0')}`,
-            status: index > 20 ? "ignored" : "pending",
+        // ハッシュもインデックスベースで生成
+        const mockHash = Array.from({ length: 61 }, (_, i) => ((index + i) % 2).toString()).join('');
+
+        return {
+            id: `alert-${index + 1}`,
+            thumbnail: `/api/placeholder/400/300?text=Scan+Result+${index + 1}`,
+            sourceUrl: `https://pirate-site-${String.fromCharCode(65 + (index % 5))}.com/gallery/user/${12345 + index}`,
+            sourceSite: `Pirate-Site-${String.fromCharCode(65 + (index % 5))}.com`,
+            similarity: parseFloat(matchScore),
+            timestamp: mockTimestamp, // 使用されていないようだが型にあるので
+            status: "pending",
             // TrustMark情報
             watermarkHash: mockHash,
             protectionTimestamp: mockTimestamp,
             protectedBy: `user_${String(1000 + index).slice(-4)}`,
-            dinov3Similarity: 0.95 + Math.random() * 0.04,
-        });
+            dinov3Similarity: 0.95 + (index % 5) * 0.01,
+        };
     });
-    return alerts;
 };
 
-const MOCK_ALERTS = generateMockAlerts();
+const MOCK_ALERTS = generateMockAlerts(26);
 
 // DMCA Template with TrustMark Evidence
 const getDmcaTemplate = (alert: Alert) => {
