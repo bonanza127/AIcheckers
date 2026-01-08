@@ -443,7 +443,7 @@ export default function PatrolPage() {
             {/* Footer */}
             <footer className="site-footer p-4 border-t border-white/5 bg-black/40 backdrop-blur-sm relative z-10 flex-shrink-0">
                 <div className="container mx-auto text-center text-xs text-zinc-500">
-                    <p><Link href="/disclaimer" className="hover:text-zinc-300 transition-colors">免責事項</Link> | &copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="hover:text-zinc-300 transition-colors">お問い合わせ</a></p>
+                    <p><Link href="/patrol/disclaimer" className="hover:text-zinc-300 transition-colors">免責事項</Link> | &copy; 2025 AIチェッカー All rights reserved. | <a href="mailto:contact@aicheckers.net" className="hover:text-zinc-300 transition-colors">お問い合わせ</a></p>
                 </div>
             </footer>
 
