@@ -1,0 +1,30 @@
+nohup: ignoring input
+=== v2 Patch Stats Re-extraction ===
+Using mid-layer (Block 8) for unsupervised statistics
+
+📁 pony_ai: 19857 images from /home/techne/aicheckers/data/animedl2m_dataset_release/civitai_subset/image/Pony
+   Running...
+     [3] patch_var:      19.8243 ± 1.5663
+     [4] anisotropy:     0.037414 ± 0.029328
+     [5] norm_var:       210.3137 ± 47.4930
+     [6] norm_range:     77.0329 ± 11.5334
+   ✅ Done
+
+📁 illustrious_ai: 4824 images from /home/techne/aicheckers/data/animedl2m_dataset_release/civitai_subset/image/Illustrious
+   Running...
+     [3] patch_var:      19.6217 ± 1.7980
+     [4] anisotropy:     0.039364 ± 0.030029
+     [5] norm_var:       212.1305 ± 49.4596
+     [6] norm_range:     77.3501 ± 11.8394
+   ✅ Done
+
+📁 sdxl10_ai: 8916 images from /home/techne/aicheckers/data/animedl2m_dataset_release/civitai_subset/image/SDXL 1.0
+   Running...
+     [3] patch_var:      19.2806 ± 1.7674
+     [4] anisotropy:     0.042186 ± 0.033766
+     [5] norm_var:       208.8497 ± 55.1925
+     [6] norm_range:     76.6694 ± 12.6412
+   ✅ Done
+
+📁 sd15_ai: 9985 images from /home/techne/aicheckers/data/animedl2m_dataset_release/civitai_subset/image/SD 1.5
+   Running...

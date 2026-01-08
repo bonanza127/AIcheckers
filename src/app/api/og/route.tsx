@@ -8,8 +8,17 @@ export async function GET(request: NextRequest) {
 
   const verdict = searchParams.get("verdict") || "AI DETECTED";
   const score = searchParams.get("score") || "98";
-  const trace = searchParams.get("trace") || "";
   const time = searchParams.get("time") || "0.00";
+
+  // 短縮traceコード（tr）を展開
+  const trCode = searchParams.get("tr") || "";
+  const expandTrace = (tr: string): string => {
+    if (tr === "ai") return "均一テクスチャ、不自然なエッジ処理";
+    if (tr === "mx") return "特徴混在 - 追加検証を推奨";
+    if (tr === "hu") return "有機的筆致、自然なテクスチャ";
+    return tr;
+  };
+  const trace = trCode ? expandTrace(trCode) : (searchParams.get("trace") || "");
 
   // 5段階判定
   type VerdictType = "ai" | "high" | "middle" | "low" | "human";

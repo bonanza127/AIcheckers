@@ -756,8 +756,16 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
         : verdictText === "MIDDLE CAUTION" ? "mc"
           : verdictText === "LOW SIMILARITY" ? "ls"
             : "h";
-    const traceParam = result.artifacts ? `&trace=${encodeURIComponent(result.artifacts)}` : "";
-    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}&t=${elapsedTime.toFixed(2)}${traceParam}`;
+    // traceを短いコードに変換（URLを短縮するため）
+    const getTraceCode = (artifacts: string): string => {
+      if (artifacts.includes("均一テクスチャ") || artifacts.includes("不自然")) return "ai";
+      if (artifacts.includes("特徴混在") || artifacts.includes("追加検証")) return "mx";
+      if (artifacts.includes("有機的") || artifacts.includes("自然なテクスチャ")) return "hu";
+      return "";
+    };
+    const traceCode = result.artifacts ? getTraceCode(result.artifacts) : "";
+    const traceParam = traceCode ? `&tr=${traceCode}` : "";
+    const shareUrl = `https://aicheckers.net/share?v=${vParam}&s=${Math.round(result.aiScore)}${traceParam}`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
 
     window.open(twitterUrl, "_blank", "width=550,height=420");

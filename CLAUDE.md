@@ -159,3 +159,49 @@ modal run scripts/modal_kohya_lora.py --status
 - モデルを再学習したら、**全embeddingを再抽出**する必要がある
 - 抽出コマンド: `python3 scripts/extract_embeddings_v2.py --dir /path --name name`
 - 抽出時は775d分類器（`models/dinov3_classifier.pt`）を使用する
+
+---
+
+## 🧠 パッチ統計 v2 アーキテクチャ（2026-01 改訂）
+
+### 設計原則
+
+1. **中間層から「分類器を通さない」** - 必須条件
+2. **統計量は必ず教師なし（unsupervised）** - cosine, variance, norm等
+3. **次元は7〜10次元に抑える** - 20次元超えると過学習リスク
+
+### 採用する統計量（7次元）
+
+| # | 統計量 | 説明 | 理論的根拠 |
+|---|--------|------|-----------|
+| 1 | `adj_sim_mean` | 隣接パッチ平均類似度 | AI画像は局所的に滑らか |
+| 2 | `adj_sim_var` | 隣接パッチ類似度分散 | 人間絵は筆致で揺らぐ |
+| 3 | `high_sim_ratio` | 高類似度率（>0.9) | AI画像は高類似度が多い |
+| 4 | `patch_var` | パッチ埋め込み分散 | AIはモード収束で低分散 |
+| 5 | `anisotropy` | 縦横類似度差 | CNN/Attention由来の方向バイアス |
+| 6 | `norm_var` | ノルム分散 | AI画像はノルムが均質 |
+| 7 | `norm_range` | ノルムレンジ | 人間絵は極端値が出やすい |
+
+### 特徴抽出レイヤー
+
+- **最終層CLS (768d)**: 高レベルセマンティクス（画像全体の意味）
+- **中間層パッチ統計 (7d)**: 低〜中レベル構造（テクスチャ、アーティファクト）
+- **推奨レイヤー**: Block 6 or 8（テクスチャ情報が残っている）
+
+### 入力構成
+
+```
+最終モデル入力: [CLS_final (768d)] + [MidLayer_PatchStats (7d)] = 775d
+```
+
+### やってはいけないこと
+
+- ❌ 中間層に線形分類器を新設（過学習の温床）
+- ❌ 中間層CLSを使う（DINOは中間CLSを最適化していない）
+- ❌ patchごとの「AI確率」を計算（定義不能、現状の穴）
+
+### 実装ファイル
+
+- `lib/patch_stats.py` - 統計量計算（`compute_patch_stats_v2`）
+- `scripts/extract_embeddings_v2.py` - 中間層からの抽出対応
+- `backend/main.py` - 推論時の計算

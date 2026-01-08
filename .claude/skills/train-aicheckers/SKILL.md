@@ -13,18 +13,28 @@ description: AIcheckersモデルの学習ワークフロー。ユーザーが「
 - **新しいテストスクリプトを作らない** - 必ず`diagnose`スキルを使う
 - **パッチ統計計算を独自実装しない** - 既存のcompute_patch_stats関数を使う
 
-## 重要: パッチ統計計算の一貫性（2024-12-25 修正済み）
+## 学習後の必須作業
 
-パッチ統計（patch_stats）の計算は**必ず同じ分類器**を使う必要がある。
+> ⚠️ **学習が完了したら、必ずこのスキルファイルの「データソースディレクトリ」テーブルを更新すること。**
+> - 各カテゴリの枚数を最新の値に更新
+> - 新しいデータソースを追加した場合はテーブルに追記
+> - 日付を更新（例: 2026-01時点 → 2026-02時点）
 
-**修正済み:**
-- `extract_embeddings_v2.py`: 775d分類器の先頭768dを使用（`classifier.weight[:, :768]`）
-- `backend/main.py`: 同上
-- 両者が同じ計算方法を使うため、学習と推論の一貫性が確保された
+## 重要: パッチ統計量v2アーキテクチャ（2026-01 改訂）
 
-**重要な注意:**
-- 分類器を再学習したら、**全embeddingを再抽出する必要がある**
-- 抽出には `models/dinov3_classifier.pt`（775d）を使用する
+パッチ統計量v2は**教師なし（unsupervised）**で、中間層（Block 8）から抽出される。
+
+**設計原則:**
+- 中間層から「分類器を通さない」統計量を抽出
+- 7次元: adj_sim_mean, adj_sim_var, high_sim_ratio, patch_var, anisotropy, norm_var, norm_range
+- 未知のAIモデルに対する汎化性能を重視
+
+**v1からの変更点:**
+- `extract_embeddings_v2.py`: 分類器不要、中間層から直接統計量を計算
+- `backend/main.py`: 同上、`output_hidden_states=True`で中間層取得
+- **分類器再学習後もembedding再抽出が必要**（統計量の意味が変わったため）
+
+> ⚠️ **v1からv2への移行時は、全embeddingの再抽出が必須です。**
 
 ---
 
@@ -47,17 +57,42 @@ python3 scripts/dedup_images.py --dir /path/to/images --threshold 9
 
 ### 2. Embedding抽出
 
-`extract_embeddings_v2.py`は775d分類器の先頭768dを使用してパッチ統計を計算する。
-`backend/main.py`と同じ計算方法なので、学習と推論の一貫性が確保されている。
+`extract_embeddings_v2.py`は中間層（Block 8）から教師なしパッチ統計量を計算する。
+分類器は不要。
 
 ```bash
 python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name
 ```
 
+オプション:
+- `--mid-layer N`: 中間層インデックス (0-11, デフォルト: 8)
+- `--degradation-prob P`: 劣化Augmentation確率 (0.0-1.0)
+
 出力:
-- `embeddings/{category_name}.npy` - CLSトークン (N, 768)
-- `embeddings/{category_name}_patch_stats.npy` - パッチ統計 (N, 7)
+- `embeddings/{category_name}.npy` - CLSトークン (N, 768) - 最終層
+- `embeddings/{category_name}_patch_stats.npy` - パッチ統計v2 (N, 7) - 中間層
 - `embeddings/{category_name}_files.txt` - ファイル名リスト
+
+#### データソースディレクトリ（2026-01時点）
+
+| カテゴリ | ソースディレクトリ | 枚数 |
+|----------|-------------------|------|
+| **AI (civitai_subset)** | | |
+| pony_ai | `data/animedl2m_dataset_release/civitai_subset/image/Pony` | ~19,857 |
+| illustrious_ai | `data/animedl2m_dataset_release/civitai_subset/image/Illustrious` | ~4,824 |
+| sdxl10_ai | `data/animedl2m_dataset_release/civitai_subset/image/SDXL 1.0` | ~8,916 |
+| sd15_ai | `data/animedl2m_dataset_release/civitai_subset/image/SD 1.5` | ~9,985 |
+| flux1d_ai | `data/animedl2m_dataset_release/civitai_subset/image/Flux.1 D` | ~1,843 |
+| other_ai | `data/animedl2m_dataset_release/civitai_subset/image/Other` | ~4,555 |
+| **AI (NovelAI系)** | | |
+| novelai_ai | `data/novelai` | ~1,283 |
+| novelai_combined_ai | `data/novelai_combined` | ~21,878 |
+| novelai_artist_tagged_ai | `data/novelai_artist_tagged` | ~846 |
+| pixai_ai | `data/pixai` | ~1,018 |
+| **Real (人間の絵)** | | |
+| danbooru_real | `data/animedl2m_dataset_release/real_images/images` | ~49,998 |
+
+> 注: パスは `/home/techne/aicheckers/` からの相対パス
 
 ### 3. 学習スクリプト更新
 
@@ -118,6 +153,7 @@ journalctl --user -u aicheckers-backend -f  # ログ確認
 | `scripts/extract_embeddings_v2.py` | Embedding抽出 |
 | `scripts/dedup_images.py` | pHash重複削除 |
 | `.claude/skills/diagnose/scripts/diagnose.py` | テスト・診断（これを使う）|
+| `models/dinov3-vitb16/` | **DINOv3ベースモデル（ローカル、327MB）** |
 | `models/dinov3_classifier.pt` | 本番モデル (775次元) |
 | `models/dinov3_classifier_cls_only.pt` | CLS-only分類器 (768次元) |
 | `embeddings/*.npy` | 保存済みEmbedding |

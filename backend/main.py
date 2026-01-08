@@ -36,7 +36,10 @@ from transformers import AutoImageProcessor, AutoModel
 # 共通モジュール（パッチ統計計算、署名検出）
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from lib.patch_stats import compute_patch_stats_inference
+from lib.patch_stats import compute_patch_stats_inference, compute_patch_stats_v2
+
+# 中間層設定（パッチ統計量v2用）
+MID_LAYER_INDEX = 8  # Block 8からパッチ統計量を抽出
 
 # 署名検出（オプショナル - モジュールがない場合はスキップ）
 try:
@@ -357,10 +360,10 @@ def track_enterprise_usage(api_key: str, endpoint: str):
 enterprise_keys: dict = {}  # 起動時にロード
 enterprise_usage: dict = {}  # 起動時にロード
 
-DINOV3_MODEL_NAME = "facebook/dinov3-vitb16-pretrain-lvd1689m"
+# DINOv3モデル（ローカルディレクトリからロード）
+DINOV3_MODEL_PATH = Path("/home/techne/aicheckers/models/dinov3-vitb16")
 DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
 EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
-HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 
 @asynccontextmanager
@@ -391,30 +394,16 @@ async def lifespan(app: FastAPI):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Moonlight (DINOv3) ロード
-    print(f"Loading Moonlight (DINOv3): {DINOV3_MODEL_NAME}")
-    
-    # HF_TOKENチェック
-    if HF_TOKEN:
-        print(f"HF_TOKEN detected (length: {len(HF_TOKEN)})")
-        try:
-            import huggingface_hub
-            huggingface_hub.login(token=HF_TOKEN)
-            print("Hugging Face login successful")
-        except Exception as e:
-            print(f"Warning: Hugging Face login failed: {e}")
-    else:
-        print("Warning: HF_TOKEN is missing")
+    # Moonlight (DINOv3) ロード（ローカルディレクトリから）
+    print(f"Loading Moonlight (DINOv3) from: {DINOV3_MODEL_PATH}")
 
     try:
-        # ダウンロード済みモデルを使用する前提だが、Gated Modelのため認証が必要
-        # HF_TOKENがない場合はローカルキャッシュのみを使用してみる
+        if not DINOV3_MODEL_PATH.exists():
+            raise FileNotFoundError(f"DINOv3 model not found at {DINOV3_MODEL_PATH}")
         
-        dinov3_processor = AutoImageProcessor.from_pretrained(DINOV3_MODEL_NAME, token=HF_TOKEN, local_files_only=True)
+        dinov3_processor = AutoImageProcessor.from_pretrained(str(DINOV3_MODEL_PATH))
         dinov3_model = AutoModel.from_pretrained(
-            DINOV3_MODEL_NAME,
-            token=HF_TOKEN,
-            local_files_only=True,
+            str(DINOV3_MODEL_PATH),
             attn_implementation="eager"
         )
         dinov3_model.to(device)
@@ -1068,7 +1057,10 @@ def save_patrol_embedding(user_id: str, embedding: np.ndarray, watermark_hash: s
 
 
 async def analyze_with_dinov3(image: Image.Image) -> dict:
-    """DINOv3 (ローカル) で解析 - Attention Map + フォレンジック分析付き"""
+    """DINOv3 (ローカル) で解析 - Attention Map + フォレンジック分析付き
+    
+    v2.1: 中間層から教師なしパッチ統計量を抽出
+    """
     if dinov3_model is None or dinov3_classifier is None:
         raise Exception("DINOv3 model or classifier not loaded")
 
@@ -1076,26 +1068,31 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     inputs = dinov3_processor(images=image, return_tensors="pt")
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    # 特徴抽出 + Attention Map
+    # 特徴抽出 + Attention Map + 中間層
     with torch.no_grad():
-        outputs = dinov3_model(**inputs, output_attentions=True)
+        outputs = dinov3_model(**inputs, output_attentions=True, output_hidden_states=True)
         hidden_states = outputs.last_hidden_state
         features = hidden_states[:, 0, :]  # CLS token (1, 768)
 
-        # パッチ埋め込みを取得（フォレンジック分析用に常に取得）
+        # 最終層のパッチ埋め込み（ヒートマップ可視化用）
         # DINOv3: [CLS, REG1-4, PATCH1-196] なので 5: がパッチ
-        patch_embeddings = hidden_states[:, 5:5+196, :]  # (1, 196, 768)
+        patch_embeddings_final = hidden_states[:, 5:5+196, :]  # (1, 196, 768)
 
-        # パッチ統計量を追加（use_patch_statsがTrueの場合）+ パッチスコア取得
+        # 中間層のパッチ埋め込み（統計量v2用）
+        mid_hidden = outputs.hidden_states[MID_LAYER_INDEX + 1]  # +1 because index 0 is initial embedding
+        patch_embeddings_mid = mid_hidden[:, 5:5+196, :]  # (1, 196, 768)
+
+        # パッチ統計量v2を追加（use_patch_statsがTrueの場合）
         patch_scores_np = None
         if use_patch_stats:
-            patch_stats, patch_scores = compute_patch_stats(patch_embeddings, dinov3_classifier, return_scores=True)
-            features = torch.cat([features, patch_stats], dim=1)  # (1, 774)
-            patch_scores_np = patch_scores.cpu().numpy()
+            # v2: 教師なし統計量（中間層から）
+            patch_stats_v2, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
+            features = torch.cat([features, patch_stats_v2], dim=1)  # (1, 775)
+            patch_scores_np = heatmap_v2.cpu().numpy()  # 可視化用のヒートマップ
         else:
-            # use_patch_statsがFalseでもフォレンジック用にパッチスコアを計算
-            _, patch_scores = compute_patch_stats(patch_embeddings, dinov3_classifier, return_scores=True)
-            patch_scores_np = patch_scores.cpu().numpy()
+            # use_patch_statsがFalseでもフォレンジック用にヒートマップを計算
+            _, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
+            patch_scores_np = heatmap_v2.cpu().numpy()
 
         # 分類（Temperature Scalingで確率を平滑化）
         logits = dinov3_classifier(features)
@@ -1109,13 +1106,14 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             image_flipped = image.transpose(Image.FLIP_LEFT_RIGHT)
             inputs_flipped = dinov3_processor(images=image_flipped, return_tensors="pt")
             inputs_flipped = {k: v.to(device) for k, v in inputs_flipped.items()}
-            outputs_flipped = dinov3_model(**inputs_flipped)
+            outputs_flipped = dinov3_model(**inputs_flipped, output_hidden_states=True)
             hidden_states_flipped = outputs_flipped.last_hidden_state
             features_flipped = hidden_states_flipped[:, 0, :]
             if use_patch_stats:
-                patch_embeddings_flipped = hidden_states_flipped[:, 5:5+196, :]
-                patch_stats_flipped = compute_patch_stats(patch_embeddings_flipped, dinov3_classifier)
-                features_flipped = torch.cat([features_flipped, patch_stats_flipped], dim=1)
+                mid_hidden_flipped = outputs_flipped.hidden_states[MID_LAYER_INDEX + 1]
+                patch_embeddings_mid_flipped = mid_hidden_flipped[:, 5:5+196, :]
+                patch_stats_v2_flipped = compute_patch_stats_v2(patch_embeddings_mid_flipped)
+                features_flipped = torch.cat([features_flipped, patch_stats_v2_flipped], dim=1)
             logits_flipped = dinov3_classifier(features_flipped)
             probs_flipped = torch.softmax(logits_flipped / TEMPERATURE, dim=1)[0]
             ai_prob_flipped = probs_flipped[1].item()

@@ -4,7 +4,7 @@ import Link from "next/link";
 type Props = {
   searchParams: Promise<{
     verdict?: string; score?: string; time?: string; trace?: string;
-    v?: string; s?: string; t?: string;  // 短縮版
+    v?: string; s?: string; t?: string; tr?: string;  // 短縮版
   }>;
 };
 
@@ -27,13 +27,21 @@ function expandVerdict(v: string): string {
   return v;
 }
 
+// 短縮traceコードを展開
+function expandTrace(tr: string): string {
+  if (tr === "ai") return "均一テクスチャ、不自然なエッジ処理";
+  if (tr === "mx") return "特徴混在 - 追加検証を推奨";
+  if (tr === "hu") return "有機的筆致、自然なテクスチャ";
+  return tr;
+}
+
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const params = await searchParams;
   // 短縮パラメータ優先、なければ通常パラメータ
   const verdict = params.v ? expandVerdict(params.v) : (params.verdict || "AI DETECTED");
   const score = params.s || params.score || "98";
   const time = params.t || params.time || "0.00";
-  const trace = params.trace || "";
+  const trace = params.tr ? expandTrace(params.tr) : (params.trace || "");
   const verdictType = getVerdictType(verdict);
 
   const title = `${verdict} (${score}%) - AI Checkers`;
