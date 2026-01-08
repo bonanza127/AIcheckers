@@ -1211,6 +1211,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
         isOpen={isVipModalOpen}
         onClose={() => setIsVipModalOpen(false)}
         authUser={authUser}
+        feature="checker"
       />
     </div>
   );

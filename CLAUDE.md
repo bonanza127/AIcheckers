@@ -318,6 +318,9 @@ models/baseline_before_gate/
 
 LoRA学習を妨害するための摂動技術を研究中。
 
+**⚠️ 注意: Guard進捗バーはシミュレーション (2026-01-08)**
+`src/app/guard/page.tsx` でSSE進捗を無効化し、22-24秒のシミュレーション進捗に変更。リアルタイム進捗に戻すには、`setGuardProgress`呼び出しのコメントアウトを解除。
+
 ---
 
 ### 現在のベスト: SAP v3

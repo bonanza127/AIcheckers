@@ -67,7 +67,7 @@ export default function Home() {
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [isScanning, setIsScanning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [strength, setStrength] = useState(0.6);
+  const [strength, setStrength] = useState(0.4);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -358,10 +358,12 @@ export default function Home() {
       reader.readAsDataURL(file);
     });
 
-    // 処理開始時にphaseをscanningに設定
+    // 処理開始時にphaseをscanningに設定し、前回の結果をクリア
     setPhase("scanning");
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
+    setCurrentProtectedImage(null);  // Clear previous result for batch processing
+    setGuardProgress({ current: 0, total: 0 });  // Reset progress bar immediately
 
     // ファイルサイズを取得
     const fileSizeKB = (file.size / 1024).toFixed(1);
@@ -437,11 +439,8 @@ export default function Home() {
                 const data = JSON.parse(jsonStr);
 
                 if (data.type === "progress") {
-                  // flushSyncで即座にDOMを更新（Reactのバッチングを回避）
-                  flushSync(() => {
-                    setGuardProgress({ current: data.current, total: data.total });
-                  });
-                  // 進捗ログ（10ステップごと）
+                  // SSE progress disabled - using simulated progress instead
+                  // Progress log only (no UI update)
                   if (data.current % 10 === 0 && data.current !== lastProgress) {
                     addLog(`> Semantic Attack: ${data.current}/${data.total} iterations...`, "detail");
                     lastProgress = data.current;
@@ -451,7 +450,7 @@ export default function Home() {
                   processingTime = data.processing_time;
                   ssim = data.ssim;
 
-                  setGuardProgress({ current: data.iterations, total: data.iterations });
+                  // SSE progress update disabled - simulated progress handles UI
                   addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
                   addLog("> MoonKnight保護完了", "process");
                   addLog("> 防壁構築完了 - 画像は保護されました", "result");
@@ -478,7 +477,7 @@ export default function Home() {
                 protectedImage = data.protected_image;
                 processingTime = data.processing_time;
                 ssim = data.ssim;
-                setGuardProgress({ current: data.iterations, total: data.iterations });
+                // SSE progress update disabled - simulated progress handles UI
                 addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
                 addLog("> MoonKnight保護完了", "process");
                 addLog("> 防壁構築完了 - 画像は保護されました", "result");
@@ -531,6 +530,27 @@ export default function Home() {
 
     // Remove from queue after complete
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
+
+    // Simulate progress bar over 22-24 seconds (randomized)
+    const minDuration = 22000 + Math.random() * 2000; // 22-24 seconds random
+    const elapsed = Date.now() - fileStartTime;
+    const remainingTime = Math.max(0, minDuration - elapsed);
+
+    if (remainingTime > 0) {
+      // Simulate gradual progress fill
+      const totalSteps = 100;
+      const intervalMs = remainingTime / totalSteps;
+
+      for (let step = 0; step <= totalSteps; step++) {
+        setGuardProgress({ current: step, total: totalSteps });
+        if (step < totalSteps) {
+          await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+      }
+    } else {
+      // If already past duration, just set to 100%
+      setGuardProgress({ current: 100, total: 100 });
+    }
 
     setPhase("complete");
     // 結果をステートにセット
@@ -1110,7 +1130,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
                     </button>
                   </div>
                   {/* Slider for strength, placed after the queue items */}
-                  <div className="mt-4">
+                  <div className="mt-4 hidden">
                     <label htmlFor="strength-slider" className="block text-sm font-medium text-muted mb-2">
                       保護強度: <span className="font-bold text-accent">{(strength * 100).toFixed(0)}%</span>
                     </label>
@@ -1199,6 +1219,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
         isOpen={isVipModalOpen}
         onClose={() => setIsVipModalOpen(false)}
         authUser={authUser}
+        feature="guard"
       />
       {/* Image Comparison Modal */}
       {isImageModalOpen && previewImage && (

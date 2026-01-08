@@ -1,0 +1,17 @@
+application protocol failed to receive SSL data
+protocol: <asyncio.sslproto.SSLProtocol object at 0x7838e1cef460>
+transport: <_SelectorSocketTransport fd=7 read=polling write=<idle, bufsize=0>>
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/asyncio/sslproto.py", line 551, in data_received
+    self._app_protocol.data_received(chunk)
+  File "/home/techne/.local/lib/python3.10/site-packages/grpclib/protocol.py", line 716, in data_received
+    events = self.connection.feed(data)
+  File "/home/techne/.local/lib/python3.10/site-packages/grpclib/protocol.py", line 189, in feed
+    return self._connection.receive_data(data)  # type: ignore
+  File "/home/techne/.local/lib/python3.10/site-packages/h2/connection.py", line 1514, in receive_data
+    events.extend(self._receive_frame(frame))
+  File "/home/techne/.local/lib/python3.10/site-packages/h2/connection.py", line 1540, in _receive_frame
+    frames, events = self._frame_dispatch_table[frame.__class__](frame)
+AttributeError: 'H2Connection' object has no attribute '_frame_dispatch_table'
+✓ Uploaded directory '/home/techne/aicheckers/data/fastprotect_train_512/' to 
+'/train_images/'

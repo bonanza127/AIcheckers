@@ -74,20 +74,20 @@ use_patch_stats = False  # パッチ統計量を使用するかどうか
 # キャッシュ: 画像ハッシュ -> 解析結果（最大10,000件、約1MB）
 result_cache: LRUCache = LRUCache(maxsize=10000)
 
-# レート制限: 1時間刻みで回復
+# レート制限: 日本時間の午前0時にリセット (Midnight JST Reset)
 RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"  # 本番: true（デフォルト）
 MAX_TOKENS = 24  # 通常ユーザー: 上限24枚
 MAX_TOKENS_VIP = 240  # VIPユーザー: 上限240枚
-RECOVERY_INTERVAL_HOURS = 1  # 1時間ごとに回復
-RECOVERY_AMOUNT = 1  # 通常: 1枚回復
-RECOVERY_AMOUNT_VIP = 10  # VIP: 10枚回復
+# RECOVERY_INTERVAL_HOURS = 1  # 無効化 - 午前0時リセットに変更
+# RECOVERY_AMOUNT = 1  # 無効化
+# RECOVERY_AMOUNT_VIP = 10  # 無効化
 
 # Guard用レート制限 (別枠)
 GUARD_MAX_TOKENS = 3
 GUARD_MAX_TOKENS_VIP = 30
-GUARD_RECOVERY_INTERVAL_HOURS = 8
-GUARD_RECOVERY_AMOUNT = 1
-GUARD_RECOVERY_AMOUNT_VIP = 5
+# GUARD_RECOVERY_INTERVAL_HOURS = 8  # 無効化 - 午前0時リセットに変更
+# GUARD_RECOVERY_AMOUNT = 1  # 無効化
+# GUARD_RECOVERY_AMOUNT_VIP = 5  # 無効化
 
 # 管理者アカウント（レート制限免除）
 ADMIN_EMAILS = {"hokhok7676@gmail.com", "dlsite-trial@aicheckers.net"}
@@ -129,7 +129,7 @@ JWT_EXPIRE_DAYS = 30
 # Stripe設定
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # 月額300円のPrice ID
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # 月額500円のPrice ID
 stripe.api_key = STRIPE_SECRET_KEY
 
 # PayPal設定
@@ -406,43 +406,35 @@ def get_image_hash(image_bytes: bytes) -> str:
 
 
 def _recover_tokens(ip: str, is_vip: bool = False, limit_type: str = "checker") -> None:
-    """経過時間に基づいてトークンを回復"""
+    """日本時間の午前0時にトークンをリセット (Midnight JST Reset)"""
+    import pytz
+    
     if limit_type == "guard":
         data = rate_limit_guard[ip]
         max_tokens = GUARD_MAX_TOKENS_VIP if is_vip else GUARD_MAX_TOKENS
-        recovery_amount = GUARD_RECOVERY_AMOUNT_VIP if is_vip else GUARD_RECOVERY_AMOUNT
-        interval_hours = GUARD_RECOVERY_INTERVAL_HOURS
     else:
         # Default Checker
         data = rate_limit_data[ip]
         max_tokens = MAX_TOKENS_VIP if is_vip else MAX_TOKENS
-        recovery_amount = RECOVERY_AMOUNT_VIP if is_vip else RECOVERY_AMOUNT
-        interval_hours = RECOVERY_INTERVAL_HOURS
 
-    now = datetime.now()
+    # 日本時間で現在時刻と最終リセット日を取得
+    jst = pytz.timezone('Asia/Tokyo')
+    now_jst = datetime.now(jst)
+    
+    # last_recoveryがtimezone-naiveの場合はJSTとして扱う
     last_recovery = data["last_recovery"]
-
-    # 最終回復時刻から現在までに経過した「時間の境界」の数を計算
-    # 8時間刻みなら、0:00, 8:00, 16:00... が境界
+    if last_recovery.tzinfo is None:
+        last_recovery = jst.localize(last_recovery)
+    else:
+        last_recovery = last_recovery.astimezone(jst)
     
-    # 簡易実装: 純粋な経過時間で計算 (前回回復時からの差分)
-    # これにより "8時間刻み" の厳密な境界（固定時刻）ではなく、前回の回復から8時間後となる
-    # 固定時刻（例：毎日0時リセット）にしたい場合はロジック変更が必要だが、
-    # ユーザー要件「8時間刻みで1回復」は経過時間依存と解釈する。
+    # 日付が変わったかチェック（午前0時を跨いだか）
+    today_midnight_jst = now_jst.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    elapsed_seconds = (now - last_recovery).total_seconds()
-    required_seconds = interval_hours * 3600
-    
-    if elapsed_seconds >= required_seconds:
-        intervals_passed = int(elapsed_seconds // required_seconds)
-        tokens_to_recover = intervals_passed * recovery_amount
-        
-        # 回復
-        data["tokens"] = min(max_tokens, data["tokens"] + tokens_to_recover)
-        
-        # 最終回復時刻を更新（端数は切り捨てて、インターバルごとの時刻にする）
-        # 例: 9時間経過(Interval 8h) -> 8時間分だけ時間を進める（残り1時間は次回に持ち越し）
-        data["last_recovery"] = last_recovery + timedelta(hours=intervals_passed * interval_hours)
+    if last_recovery < today_midnight_jst:
+        # 日付が変わった → フルリセット
+        data["tokens"] = max_tokens
+        data["last_recovery"] = now_jst.replace(tzinfo=None)  # Store as naive for compatibility
 
 
 def verify_enterprise_api_key(request: Request) -> dict | None:
