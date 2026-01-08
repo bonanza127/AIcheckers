@@ -181,9 +181,10 @@ export default function Home() {
       const name = params.get("name");
       const email = params.get("email");
       const isVip = params.get("is_vip") === "true";
+      const isAdmin = params.get("is_admin") === "true";
 
       if (token && name && email) {
-        setAuthUser({ name, email, token, isVip });
+        setAuthUser({ name, email, token, isVip, isAdmin });
         localStorage.setItem("auth_token", token);
         setIsVipModalOpen(true); // VIPモーダルを開いて決済へ
       }

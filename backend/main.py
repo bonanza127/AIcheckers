@@ -1917,11 +1917,12 @@ async def auth_google_callback(request: Request):
         # JWT発行
         jwt_token = create_jwt_token(user_id, email)
 
-        # VIPステータス確認（ADMIN_EMAILSも自動VIP）
-        is_vip = email in vip_users or email in ADMIN_EMAILS
+        # VIPステータス・管理者確認（ADMIN_EMAILSも自動VIP/Admin）
+        is_admin = email in ADMIN_EMAILS
+        is_vip = email in vip_users or is_admin
 
         return RedirectResponse(
-            f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}"
+            f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}&is_admin={str(is_admin).lower()}"
         )
     except Exception as e:
         print(f"Google OAuth error: {e}")
@@ -1978,11 +1979,12 @@ async def auth_twitter_callback(request: Request):
         # JWT発行
         jwt_token = create_jwt_token(user_id, email)
 
-        # VIPステータス確認（Twitterユーザーはusernameで確認、ADMIN_EMAILSも自動VIP）
-        is_vip = email in vip_users or f"@{username}" in vip_users or email in ADMIN_EMAILS
+        # VIPステータス・管理者確認（Twitterユーザーはusernameで確認、ADMIN_EMAILSも自動VIP/Admin）
+        is_admin = email in ADMIN_EMAILS
+        is_vip = email in vip_users or f"@{username}" in vip_users or is_admin
 
         return RedirectResponse(
-            f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}"
+            f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}&is_admin={str(is_admin).lower()}"
         )
     except Exception as e:
         print(f"Twitter OAuth error: {e}")
