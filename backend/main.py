@@ -98,6 +98,9 @@ TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
 # Temperature Scaling: ECE最適化済み（2025-01-01検証: T=1.1が最良）
 TEMPERATURE = float(os.getenv("TEMPERATURE", "1.1"))
 
+# ファイルサイズ制限（DoS攻撃対策）
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
 # IP -> {"tokens": int, "last_recovery": datetime}
 # IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
@@ -122,7 +125,14 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 TWITTER_CLIENT_ID = os.getenv("TWITTER_CLIENT_ID", "")
 TWITTER_CLIENT_SECRET = os.getenv("TWITTER_CLIENT_SECRET", "")
-JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    # 本番環境ではJWT_SECRETが必須
+    if not DEBUG:
+        raise RuntimeError("CRITICAL: JWT_SECRET environment variable must be set in production!")
+    # 開発環境では警告を出しつつデフォルト値を使用
+    print("WARNING: JWT_SECRET not set. Using random value (tokens will be invalidated on restart)")
+    JWT_SECRET = secrets.token_hex(32)
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 30
 
@@ -403,6 +413,17 @@ if TWITTER_CLIENT_ID and TWITTER_CLIENT_SECRET:
 def get_image_hash(image_bytes: bytes) -> str:
     """画像バイトからSHA256ハッシュを生成"""
     return hashlib.sha256(image_bytes).hexdigest()
+
+
+async def validate_file_size(file: UploadFile) -> bytes:
+    """ファイルサイズを検証し、大きすぎる場合は例外を投げる"""
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"ファイルサイズが大きすぎます（上限: {MAX_FILE_SIZE // (1024 * 1024)}MB）"
+        )
+    return contents
 
 
 def _recover_tokens(ip: str, is_vip: bool = False, limit_type: str = "checker") -> None:
@@ -1083,8 +1104,8 @@ async def analyze_image(
     try:
         start_time = time.time()
 
-        # 画像読み込み
-        contents = await file.read()
+        # 画像読み込み（サイズチェック含む）
+        contents = await validate_file_size(file)
         image_hash = get_image_hash(contents)
 
         # キャッシュチェック
@@ -1153,7 +1174,10 @@ async def analyze_image(
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        if DEBUG:
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        else:
+            raise HTTPException(status_code=500, detail="画像の解析中にエラーが発生しました。しばらく経ってから再度お試しください。")
 
 
 @app.post("/guard")
@@ -1199,8 +1223,8 @@ async def guard_image(
     try:
         start_time = time.time()
 
-        # 画像読み込み
-        contents = await file.read()
+        # 画像読み込み（サイズチェック含む）
+        contents = await validate_file_size(file)
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
         # MoonKnightエンジンの遅延初期化
@@ -1257,7 +1281,10 @@ async def guard_image(
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Guard processing failed: {str(e)}")
+        if DEBUG:
+            raise HTTPException(status_code=500, detail=f"Guard processing failed: {str(e)}")
+        else:
+            raise HTTPException(status_code=500, detail="画像保護の処理中にエラーが発生しました。しばらく経ってから再度お試しください。")
     finally:
         # レート制限ヘッダー用の情報を取得 (エラー時も確実にヘッダーを返すため)
         # ただし、Enterprise APIの場合は常に-1
@@ -1562,7 +1589,10 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"URL解析失敗: {str(e)}")
+        if DEBUG:
+            raise HTTPException(status_code=500, detail=f"URL解析失敗: {str(e)}")
+        else:
+            raise HTTPException(status_code=500, detail="URL解析中にエラーが発生しました。URLが正しいか確認してください。")
 
 
 # ==================== FANBOX VIP連携 ====================
@@ -1688,10 +1718,16 @@ async def create_checkout_session(body: CreateCheckoutRequest):
 
     except stripe.error.StripeError as e:
         print(f"Stripe error: {e}")
-        raise HTTPException(status_code=500, detail=f"決済セッションの作成に失敗しました: {str(e)}")
+        if DEBUG:
+            raise HTTPException(status_code=500, detail=f"決済セッションの作成に失敗しました: {str(e)}")
+        else:
+            raise HTTPException(status_code=500, detail="決済セッションの作成に失敗しました。しばらく経ってから再度お試しください。")
     except Exception as e:
         print(f"Checkout session error: {e}")
-        raise HTTPException(status_code=500, detail="決済セッションの作成に失敗しました")
+        if DEBUG:
+            raise HTTPException(status_code=500, detail=f"予期しないエラー: {str(e)}")
+        else:
+            raise HTTPException(status_code=500, detail="決済セッションの作成に失敗しました。しばらく経ってから再度お試しください。")
 
 
 @app.post("/stripe-webhook")
