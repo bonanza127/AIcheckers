@@ -15,6 +15,11 @@ type Alert = {
     similarity: number; // 0-100
     timestamp: string;
     status: "pending" | "ignored" | "reported";
+    // TrustMark情報（Guard保護時に埋め込まれた情報）
+    watermarkHash?: string;       // 61bitの透かしハッシュ
+    protectionTimestamp?: string; // 保護した日時（UTC）
+    protectedBy?: string;         // 保護したユーザーID（匿名化済み）
+    dinov3Similarity?: number;    // DINOv3類似度（0-1）
 };
 
 type Stat = {
@@ -34,6 +39,10 @@ const generateMockAlerts = (): Alert[] => {
         const bgColor = ["1a1a1a", "2a2a2a", "0f0f0f", "111827"][index % 4];
         const textColor = ["666666", "888888", "444444", "9ca3af"][index % 4];
 
+        // Mock TrustMark data
+        const mockTimestamp = new Date(Date.now() - index * 86400000).toISOString();
+        const mockHash = Array.from({ length: 61 }, () => Math.random() > 0.5 ? '1' : '0').join('');
+
         alerts.push({
             id: id,
             thumbnail: `https://placehold.co/400x600/${bgColor}/${textColor}?text=Image+${char}`,
@@ -42,6 +51,11 @@ const generateMockAlerts = (): Alert[] => {
             similarity: Math.floor(Math.random() * (99 - 85) + 85) + (Math.random() > 0.5 ? 0.4 : 0.8),
             timestamp: `2024-01-08 ${String(14 - Math.floor(index / 2)).padStart(2, '0')}:${String((index * 15) % 60).padStart(2, '0')}`,
             status: index > 20 ? "ignored" : "pending",
+            // TrustMark情報
+            watermarkHash: mockHash,
+            protectionTimestamp: mockTimestamp,
+            protectedBy: `user_${String(1000 + index).slice(-4)}`,
+            dinov3Similarity: 0.95 + Math.random() * 0.04,
         });
     });
     return alerts;
@@ -49,25 +63,71 @@ const generateMockAlerts = (): Alert[] => {
 
 const MOCK_ALERTS = generateMockAlerts();
 
-// DMCA Template
+// DMCA Template with TrustMark Evidence
 const getDmcaTemplate = (alert: Alert) => {
+    const hasWatermark = alert.watermarkHash && alert.protectionTimestamp;
+    const protectionDate = alert.protectionTimestamp
+        ? new Date(alert.protectionTimestamp).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '[保護日時不明]';
+
+    const evidenceSection = hasWatermark ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+▼ DIGITAL WATERMARK EVIDENCE (電子透かし証拠)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This image contains an invisible digital watermark embedded using AIイラストガード (AI Illustration Guard) that proves my ownership.
+この画像には、私の所有権を証明するAIイラストガードによる不可視の電子透かしが埋め込まれています。
+
+■ Protection Date (保護日時): ${protectionDate}
+■ Watermark Hash (透かしハッシュ): ${alert.watermarkHash}
+■ Visual Similarity (視覚類似度): ${alert.similarity}%
+■ AI Embedding Match (AI埋込一致度): ${alert.dinov3Similarity ? (alert.dinov3Similarity * 100).toFixed(1) : 'N/A'}%
+
+This watermark can be independently verified using the AIチェッカー Patrol system.
+この透かしはAIチェッカーのPatrolシステムで独立して検証可能です。
+Verification URL: https://aicheckers.net/patrol/verify?hash=${alert.watermarkHash?.slice(0, 16)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━` : '';
+
     return {
         to: `dmca@${alert.sourceSite.toLowerCase()}`,
-        subject: `DMCA Takedown Notice - ${alert.sourceSite}`,
+        subject: `DMCA Takedown Notice - ${alert.sourceSite} [Digital Watermark Evidence Attached]`,
         body: `To The Administrator of ${alert.sourceSite},
 
 I am the copyright owner of the artwork being displayed on your website without my permission. I hereby request specifically that you remove the following infringing material from your website and servers.
 
-Infringing URL: ${alert.sourceUrl}
+▼ INFRINGING CONTENT (侵害コンテンツ)
+URL: ${alert.sourceUrl}
+Discovery Date: ${alert.timestamp}
+${evidenceSection}${hasWatermark ? `
+▼ ADDITIONAL REFERENCES (補足情報・任意)
+※ The digital watermark above serves as the primary proof of ownership.
+※ 上記の電子透かしが所有権の主要な証拠です。
 
-My Original Work: [URL to your original post]
+Original Post URL (if available): [あれば記入]
+Social Media Profile: [SNSプロフィールURL]` : `
+▼ MY ORIGINAL WORK (私のオリジナル作品)
+Original Post URL: [あなたの元投稿のURL]
+Creation Date: [作成日]`}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+▼ LEGAL DECLARATION (法的宣誓)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 I have a good faith belief that use of the material in the manner complained of is not authorized by the copyright owner, its agent, or the law.
+
 I swear, under penalty of perjury, that the information in the notification is accurate, and that I am the copyright owner or am authorized to act on behalf of the owner of an exclusive right that is allegedly infringed.
 
-Sincerely,
-[Your Name]
-[Your Contact Information]`
+私は、問題となっている方法での素材の使用が著作権者、その代理人、または法律により許可されていないと誠実に信じています。
+
+私は、偽証罪の罰則の下、この通知の情報が正確であり、私が著作権者であるか、侵害されているとされる排他的権利の所有者を代表して行動する権限を与えられていることを誓います。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Sincerely / 敬具,
+[Your Name / お名前]
+[Your Contact Information / 連絡先]
+[Your Address (Required for DMCA) / 住所（DMCA必須）]`
     };
 };
 
@@ -307,6 +367,18 @@ export default function PatrolPage() {
                                             <button onClick={() => setIsFlipped(false)} className="text-zinc-500 hover:text-white transition-colors bg-zinc-800 p-1 rounded-full">
                                                 <RotateCcw size={14} />
                                             </button>
+                                        </div>
+
+                                        {/* Reminder Banner */}
+                                        <div className="bg-amber-950/40 border-b border-amber-900/50 p-3 flex items-start gap-3 backdrop-blur-sm relative z-10 animate-in fade-in slide-in-from-top-2 duration-500">
+                                            <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={16} />
+                                            <div className="text-xs text-amber-200/90 leading-relaxed">
+                                                <p className="font-bold mb-1 text-amber-400">送信前の書き換えチェック</p>
+                                                <ul className="list-disc list-inside opacity-90 space-y-1">
+                                                    <li>（もしあれば）補足情報のOriginal Post URLとSNSのURLを入力</li>
+                                                    <li>末尾の <span className="text-white font-mono bg-white/10 px-1 rounded mx-1">[名前]</span> <span className="text-white font-mono bg-white/10 px-1 rounded mx-1">[連絡先]</span> <span className="text-white font-mono bg-white/10 px-1 rounded mx-1">[住所]</span> は自分のものに書き換え</li>
+                                                </ul>
+                                            </div>
                                         </div>
 
                                         <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar bg-black/20">
