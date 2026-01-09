@@ -36,11 +36,7 @@ REAL_CATEGORIES = [
 
 
 def load_embeddings(use_patch_stats=True):
-    """全embeddingsを読み込んで結合
-
-    Args:
-        use_patch_stats: TrueならCLS+patch_stats(774次元)、FalseならCLSのみ(768次元)
-    """
+    """全embeddingsを読み込んで結合し、クラスバランスを調整"""
     ai_embeddings = []
     real_embeddings = []
 
@@ -55,11 +51,20 @@ def load_embeddings(use_patch_stats=True):
 
         cls_emb = np.load(cls_path)
 
+        # SD1.5制限（10,000枚）
+        if cat == "sd15_ai" and cls_emb.shape[0] > 10000:
+            print(f"  {cat}: Capping {cls_emb.shape[0]} -> 10000")
+            indices = np.random.choice(cls_emb.shape[0], 10000, replace=False)
+            cls_emb = cls_emb[indices]
+
         if use_patch_stats:
             if not stats_path.exists():
                 print(f"  {cat}: patch_stats NOT FOUND, skipping")
                 continue
             stats = np.load(stats_path)
+            if cat == "sd15_ai" and stats.shape[0] > 10000:
+                stats = stats[indices] # 使用したインデックスを再利用
+            
             # CLS + patch_stats を結合
             emb = np.concatenate([cls_emb, stats], axis=1)
             print(f"  {cat}: {emb.shape[0]} samples ({emb.shape[1]} dims)")
@@ -96,12 +101,29 @@ def load_embeddings(use_patch_stats=True):
     if not ai_embeddings or not real_embeddings:
         raise ValueError("No embeddings loaded!")
 
-    # 結合
+    # 一時結合
     ai_all = np.concatenate(ai_embeddings, axis=0)
     real_all = np.concatenate(real_embeddings, axis=0)
 
-    print(f"\nTotal AI samples: {ai_all.shape[0]}")
-    print(f"Total Real samples: {real_all.shape[0]}")
+    n_ai = ai_all.shape[0]
+    n_real = real_all.shape[0]
+    
+    print(f"\nBefore balancing: AI={n_ai}, Real={n_real}")
+    
+    # バランス調整（少ない方に合わせる）
+    n_target = min(n_ai, n_real)
+    
+    if n_ai > n_target:
+        print(f"Subsampling AI: {n_ai} -> {n_target}")
+        idx = np.random.choice(n_ai, n_target, replace=False)
+        ai_all = ai_all[idx]
+        
+    if n_real > n_target:
+        print(f"Subsampling Real: {n_real} -> {n_target}")
+        idx = np.random.choice(n_real, n_target, replace=False)
+        real_all = real_all[idx]
+
+    print(f"Final Count: AI={ai_all.shape[0]}, Real={real_all.shape[0]} (Total {ai_all.shape[0]*2})")
     print(f"Feature dimension: {ai_all.shape[1]}")
 
     # ラベル作成
@@ -114,9 +136,9 @@ def load_embeddings(use_patch_stats=True):
     return X, y, ai_all.shape[1]  # input_dimも返す
 
 
-def train_classifier(X, y, input_dim, epochs=30, lr=0.001,
+def train_classifier(X, y, input_dim, epochs=60, lr=0.001,
                      vat_epsilon=0.005, vat_alpha_start=0.05, vat_alpha_end=0.3,
-                     entropy_start_epoch=20, entropy_alpha_end=0.05,
+                     entropy_start_epoch=20, entropy_alpha_end=0.02,
                      entropy_threshold=0.8, entropy_temperature=0.6,
                      cons_start_epoch=5, cons_alpha=0.15,
                      cons_weak_sigma=0.02, cons_strong_sigma=0.08, cons_mask_ratio=0.2,
@@ -339,7 +361,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train Linear Probe classifier")
     parser.add_argument("--cls-only", action="store_true",
                         help="Use CLS only (768 dims) instead of CLS+patch_stats (774 dims)")
-    parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=60, help="Number of epochs")
     parser.add_argument("--output", type=str, default=None,
                         help="Output path (default: models/dinov3_classifier.pt)")
     parser.add_argument("--label-smoothing", type=float, default=0.0,

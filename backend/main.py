@@ -107,11 +107,16 @@ GUARD_MAX_TOKENS_VIP = 30
 # 管理者アカウント（レート制限免除）
 ADMIN_EMAILS = {"hokhok7676@gmail.com", "dlsite-trial@aicheckers.net"}
 
-# Test Time Augmentation (TTA): 水平反転で2回推論し平均化
+# Test Time Augmentation (TTA): 水平反転＋軽い縮小で推論し平均化
 TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
+TTA_EXTRA_ENABLED = os.getenv("TTA_EXTRA_ENABLED", "true").lower() == "true"
+TTA_EXTRA_SCALE = float(os.getenv("TTA_EXTRA_SCALE", "0.85"))
 
-# Temperature Scaling: ECE最適化済み（2025-01-01検証: T=1.1が最良）
-TEMPERATURE = float(os.getenv("TEMPERATURE", "1.1"))
+# Temperature Scaling: ECE最適化済み（2025-01-09検証: T=0.9が最良）
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.9"))
+
+# 開発者IP（レート制限免除）
+DEVELOPER_IPS = set(ip.strip() for ip in os.getenv("DEVELOPER_IPS", "").split(",") if ip.strip())
 
 # ファイルサイズ制限（DoS攻撃対策）
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
@@ -605,6 +610,11 @@ def get_rate_limit_key(request: Request) -> tuple[str, bool, bool]:
     # ローカル開発環境(localhost)からのアクセスは管理者扱いとする
     if ip in ["127.0.0.1", "::1", "localhost"]:
         return ip, True, True
+    
+    # 開発者IP（環境変数 DEVELOPER_IPS で設定）は管理者扱い
+    if ip in DEVELOPER_IPS:
+        print(f"[AUTH DEBUG] Developer IP detected: {ip}")
+        return ip, True, True
 
     return ip, False, False
 
@@ -1096,31 +1106,52 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
         # 分類（Temperature Scalingで確率を平滑化）
         logits = dinov3_classifier(features)
+        
+        # DEBUG: Print features and logits
+        print(f"[DEBUG] CLS mean: {features[0, :768].mean().item():.4f}, var: {features[0, :768].var().item():.4f}")
+        if use_patch_stats:
+            print(f"[DEBUG] Stats: {features[0, 768:].tolist()}")
+        print(f"[DEBUG] Logits: {logits.tolist()}")
+        
         probs = torch.softmax(logits / TEMPERATURE, dim=1)[0]
         ai_prob = probs[1].item()  # class 1 = AI
 
-        # TTA: 水平反転で追加推論し平均化
+        # TTA: 水平反転＋軽い縮小で追加推論し平均化
         tta_log = None
         if TTA_ENABLED:
+            def infer_ai_prob(image_tta: Image.Image) -> float:
+                inputs_tta = dinov3_processor(images=image_tta, return_tensors="pt")
+                inputs_tta = {k: v.to(device) for k, v in inputs_tta.items()}
+                outputs_tta = dinov3_model(**inputs_tta, output_hidden_states=True)
+                hidden_tta = outputs_tta.last_hidden_state
+                features_tta = hidden_tta[:, 0, :]
+                if use_patch_stats:
+                    mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1]
+                    patch_embeddings_mid_tta = mid_hidden_tta[:, 5:5+196, :]
+                    patch_stats_v2_tta = compute_patch_stats_v2(patch_embeddings_mid_tta)
+                    features_tta = torch.cat([features_tta, patch_stats_v2_tta], dim=1)
+                logits_tta = dinov3_classifier(features_tta)
+                probs_tta = torch.softmax(logits_tta / TEMPERATURE, dim=1)[0]
+                return probs_tta[1].item()
+
             ai_prob_original = ai_prob
+            tta_probs = [("元画像", ai_prob_original)]
+
             image_flipped = image.transpose(Image.FLIP_LEFT_RIGHT)
-            inputs_flipped = dinov3_processor(images=image_flipped, return_tensors="pt")
-            inputs_flipped = {k: v.to(device) for k, v in inputs_flipped.items()}
-            outputs_flipped = dinov3_model(**inputs_flipped, output_hidden_states=True)
-            hidden_states_flipped = outputs_flipped.last_hidden_state
-            features_flipped = hidden_states_flipped[:, 0, :]
-            if use_patch_stats:
-                mid_hidden_flipped = outputs_flipped.hidden_states[MID_LAYER_INDEX + 1]
-                patch_embeddings_mid_flipped = mid_hidden_flipped[:, 5:5+196, :]
-                patch_stats_v2_flipped = compute_patch_stats_v2(patch_embeddings_mid_flipped)
-                features_flipped = torch.cat([features_flipped, patch_stats_v2_flipped], dim=1)
-            logits_flipped = dinov3_classifier(features_flipped)
-            probs_flipped = torch.softmax(logits_flipped / TEMPERATURE, dim=1)[0]
-            ai_prob_flipped = probs_flipped[1].item()
-            # 平均化
-            ai_prob = (ai_prob_original + ai_prob_flipped) / 2
-            # TTAログ生成
-            tta_log = f"TTA検証: 元画像 {ai_prob_original*100:.1f}% ↔ 反転画像 {ai_prob_flipped*100:.1f}% → 統合値 {ai_prob*100:.1f}%"
+            ai_prob_flipped = infer_ai_prob(image_flipped)
+            tta_probs.append(("反転画像", ai_prob_flipped))
+
+            if TTA_EXTRA_ENABLED:
+                width, height = image.size
+                scale = max(0.5, min(1.0, TTA_EXTRA_SCALE))
+                scaled_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+                image_scaled = image.resize(scaled_size, Image.LANCZOS).resize((width, height), Image.LANCZOS)
+                ai_prob_scaled = infer_ai_prob(image_scaled)
+                tta_probs.append((f"縮小{scale:.2f}", ai_prob_scaled))
+
+            ai_prob = sum(prob for _, prob in tta_probs) / len(tta_probs)
+            tta_log_parts = [f\"{label} {prob*100:.1f}%\" for label, prob in tta_probs]
+            tta_log = f\"TTA検証: {' / '.join(tta_log_parts)} → 統合値 {ai_prob*100:.1f}%\"
 
     # Attention Map生成 + フォレンジック分析
     attention_heatmap = None
