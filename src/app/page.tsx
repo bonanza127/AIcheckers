@@ -682,13 +682,27 @@ export default function Home() {
     setIsScanning(false);
     setStartTime(null);
 
+    // 処理したファイル数と現在の_pendingFilesを比較
+    const currentPendingFiles = (window as unknown as { _pendingFiles?: File[] })._pendingFiles || [];
+    const newlyAddedCount = currentPendingFiles.length - files.length;
+
     if (completedCount === files.length) {
       addLog("--- BATCH SCAN COMPLETE (一括解析完了) ---", "heading");
       addLog(`STATUS: 全ての${files.length}個のアーティファクトの処理が完了しました。`, "process");
-    }
 
-    // Clear pending files
-    (window as unknown as { _pendingFiles: File[] })._pendingFiles = [];
+      if (newlyAddedCount > 0) {
+        // 処理中に追加された画像がある場合、処理済み分のみ削除
+        (window as unknown as { _pendingFiles: File[] })._pendingFiles = currentPendingFiles.slice(files.length);
+        addLog(`INFO: 処理中に${newlyAddedCount}個の新しい画像が追加されました。再度「スキャン開始」を押してください。`, "info");
+      } else {
+        // 全てクリア
+        (window as unknown as { _pendingFiles: File[] })._pendingFiles = [];
+      }
+    } else {
+      // レート制限等で中断された場合、未処理分を保持
+      const processedFiles = completedCount;
+      (window as unknown as { _pendingFiles: File[] })._pendingFiles = currentPendingFiles.slice(processedFiles);
+    }
   };
 
   const resetUI = () => {
@@ -1002,9 +1016,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     AI POSSIBILITY
                   </span>
                   <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
-                    (result?.aiScore ?? 0) >= 60 ? "text-yellow-500" :
-                      (result?.aiScore ?? 0) >= 40 ? "text-gray-400" :
-                        (result?.aiScore ?? 0) >= 20 ? "text-blue-400" : "text-success"
+                    (result?.aiScore ?? 0) >= 60 ? "text-orange-600" :
+                      (result?.aiScore ?? 0) >= 40 ? "text-yellow-500" :
+                        (result?.aiScore ?? 0) >= 20 ? "text-success" : "text-blue-500"
                     }`}>
                     {result?.aiScore ?? 0}%
                   </span>
@@ -1013,7 +1027,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <div
                     className={`progress-bar-fill ${(result?.aiScore ?? 0) >= 80 ? "ai" :
                       (result?.aiScore ?? 0) >= 60 ? "high-alert" :
-                        (result?.aiScore ?? 0) >= 40 ? "unknown" :
+                        (result?.aiScore ?? 0) >= 40 ? "middle-caution" :
                           (result?.aiScore ?? 0) >= 20 ? "low-risk" : "human"
                       }`}
                     style={{ width: `${result?.aiScore ?? 0}%` }}
@@ -1053,7 +1067,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-middle" : score >= 20 ? "result-low" : "result-human";
                     const labelClass = score >= 80 ? "bg-danger text-black" : score >= 60 ? "bg-orange-600 text-black" : score >= 40 ? "bg-yellow-500 text-black" : score >= 20 ? "bg-success text-black" : "bg-blue-500 text-black";
                     const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "M" : score >= 20 ? "L" : "人";
-                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-500" : score >= 40 ? "text-yellow-400" : score >= 20 ? "text-success" : "text-blue-400";
+                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-600" : score >= 40 ? "text-yellow-500" : score >= 20 ? "text-success" : "text-blue-500";
 
                     return (
                       <div

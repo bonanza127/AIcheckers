@@ -290,11 +290,15 @@ body {
 }
 
 .progress-bar-fill.high-alert {
-  background-color: #F59E0B;
+  background-color: #EA580C;
 }
 
 .progress-bar-fill.unknown {
   background-color: #9CA3AF;
+}
+
+.progress-bar-fill.middle-caution {
+  background-color: #EAB308;
 }
 
 .progress-bar-fill.low-risk {

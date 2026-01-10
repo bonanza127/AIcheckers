@@ -97,9 +97,9 @@ export default async function SharePage({ searchParams }: Props) {
   // カラー定義（5段階対応）
   const colorClasses = {
     ai: { bg: "bg-red-500/10", border: "border-red-500", text: "text-red-500" },
-    high: { bg: "bg-orange-600/10", border: "border-orange-600", text: "text-orange-500" },
-    middle: { bg: "bg-yellow-500/10", border: "border-yellow-500", text: "text-yellow-400" },
-    low: { bg: "bg-green-500/10", border: "border-green-500", text: "text-green-500" },
+    high: { bg: "bg-orange-600/10", border: "border-orange-600", text: "text-orange-600" },
+    middle: { bg: "bg-yellow-500/10", border: "border-yellow-500", text: "text-yellow-500" },
+    low: { bg: "bg-emerald-500/10", border: "border-emerald-500", text: "text-emerald-500" },
     human: { bg: "bg-blue-500/10", border: "border-blue-500", text: "text-blue-500" },
   };
   const colors = colorClasses[verdictType];

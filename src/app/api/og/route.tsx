@@ -44,10 +44,10 @@ export async function GET(request: NextRequest) {
   // スコア表示用の色（本物のUIと同じ）
   const scoreColors: Record<VerdictType, string> = {
     ai: "#EF4444",      // text-danger
-    high: "#EAB308",    // text-yellow-500
-    middle: "#9CA3AF",  // text-gray-400
-    low: "#60A5FA",     // text-blue-400
-    human: "#10B981",   // text-success
+    high: "#EA580C",    // text-orange-600
+    middle: "#EAB308",  // text-yellow-500
+    low: "#10B981",     // text-success
+    human: "#3B82F6",   // text-blue-500
   };
 
   return new ImageResponse(
