@@ -416,8 +416,20 @@ body {
   background-color: var(--danger);
 }
 
+.bg-high-alert {
+  background-color: #EA580C;
+}
+
+.bg-middle-caution {
+  background-color: #EAB308;
+}
+
 .bg-success {
   background-color: var(--success);
+}
+
+.bg-human-confirmed {
+  background-color: var(--human-confirmed);
 }
 
 /* ============================================
@@ -571,6 +583,22 @@ body {
 
 .text-danger {
   color: var(--danger);
+}
+
+.text-high-alert {
+  color: #EA580C;
+}
+
+.text-middle-caution {
+  color: #EAB308;
+}
+
+.text-low-risk {
+  color: var(--success);
+}
+
+.text-human-confirmed {
+  color: var(--human-confirmed);
 }
 
 .text-primary {

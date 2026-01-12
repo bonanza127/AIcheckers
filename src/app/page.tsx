@@ -1016,9 +1016,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     AI POSSIBILITY
                   </span>
                   <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
-                    (result?.aiScore ?? 0) >= 60 ? "text-orange-600" :
-                      (result?.aiScore ?? 0) >= 40 ? "text-yellow-500" :
-                        (result?.aiScore ?? 0) >= 20 ? "text-success" : "text-blue-500"
+                    (result?.aiScore ?? 0) >= 60 ? "text-high-alert" :
+                      (result?.aiScore ?? 0) >= 40 ? "text-middle-caution" :
+                        (result?.aiScore ?? 0) >= 20 ? "text-low-risk" : "text-human-confirmed"
                     }`}>
                     {result?.aiScore ?? 0}%
                   </span>
@@ -1065,9 +1065,9 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                     // 5段階判定: AI(80+), H(60-79), M(40-59), L(20-39), 人(0-19)
                     const score = item.aiScore;
                     const resultClass = score >= 80 ? "result-ai" : score >= 60 ? "result-high" : score >= 40 ? "result-middle" : score >= 20 ? "result-low" : "result-human";
-                    const labelClass = score >= 80 ? "bg-danger text-black" : score >= 60 ? "bg-orange-600 text-black" : score >= 40 ? "bg-yellow-500 text-black" : score >= 20 ? "bg-success text-black" : "bg-blue-500 text-black";
+                    const labelClass = score >= 80 ? "bg-danger text-black" : score >= 60 ? "bg-high-alert text-black" : score >= 40 ? "bg-middle-caution text-black" : score >= 20 ? "bg-success text-black" : "bg-human-confirmed text-black";
                     const labelText = score >= 80 ? "AI" : score >= 60 ? "H" : score >= 40 ? "M" : score >= 20 ? "L" : "人";
-                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-orange-600" : score >= 40 ? "text-yellow-500" : score >= 20 ? "text-success" : "text-blue-500";
+                    const scoreClass = score >= 80 ? "text-danger" : score >= 60 ? "text-high-alert" : score >= 40 ? "text-middle-caution" : score >= 20 ? "text-low-risk" : "text-human-confirmed";
 
                     return (
                       <div
