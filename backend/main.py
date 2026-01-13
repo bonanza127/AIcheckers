@@ -20,11 +20,14 @@ import httpx
 from dotenv import load_dotenv
 
 # .envファイルを読み込む (backend/.env)
-load_dotenv(Path(__file__).parent / ".env")
+BACKEND_DIR = Path(__file__).parent
+PROJECT_ROOT = BACKEND_DIR.parent
+load_dotenv(BACKEND_DIR / ".env")
 
 from cachetools import LRUCache
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,10 +39,14 @@ from transformers import AutoImageProcessor, AutoModel
 # 共通モジュール（パッチ統計計算、署名検出）
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from lib.patch_stats import compute_patch_stats_inference, compute_patch_stats_v2
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+from lib.patch_stats import compute_patch_stats_inference, compute_patch_stats_v2, compute_patch_stats_v3
+from lib.cpu_stats import compute_cpu_stats
+from lib.extra_stats import compute_extra_stats
+from lib.boundary_stats import compute_boundary_stats
 
 # 中間層設定（パッチ統計量v2用）
-MID_LAYER_INDEX = 8  # Block 8からパッチ統計量を抽出
+MID_LAYER_INDEX = 6  # Block 6からパッチ統計量を抽出（学習時と一致させる）
 
 # 署名検出（オプショナル - モジュールがない場合はスキップ）
 try:
@@ -84,7 +91,20 @@ device = None
 dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
+two_head_model = None
+two_head_mode = False
+two_head_gpu_v3_idx = None
+two_head_cpu_v2_idx = None
+two_head_cpu_v3_idx = None
+feature_mean = None
+feature_std = None
+additional_scale = 1.0  # 追加特徴量のスケールファクター
+gate_values = None  # 次元ごとゲート値（オプショナル）
 use_patch_stats = False  # パッチ統計量を使用するかどうか
+# 777d構成用インデックス
+patch_indices = None
+extra_indices = None
+boundary_indices = None
 
 # キャッシュ: 画像ハッシュ -> 解析結果（最大10,000件、約1MB）
 result_cache: LRUCache = LRUCache(maxsize=10000)
@@ -122,12 +142,15 @@ DEVELOPER_IPS = set(ip.strip() for ip in os.getenv("DEVELOPER_IPS", "").split(",
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 # レート制限データの永続化パス
-RATE_LIMIT_DATA_PATH = Path("/home/techne/aicheckers/data/rate_limits.json")
+RATE_LIMIT_DATA_PATH = PROJECT_ROOT / "data" / "rate_limits.json"
 
 # IP -> {"tokens": int, "last_recovery": datetime}
 # IP -> {"tokens": int, "last_recovery": datetime}
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
 rate_limit_guard: dict[str, dict] = defaultdict(lambda: {"tokens": GUARD_MAX_TOKENS, "last_recovery": datetime.now()})
+
+# CORSなどで使用するデバッグフラグ（ローカル開発用にデフォルトtrue）
+DEBUG = os.getenv("DEBUG", "true").lower() == "true"
 
 # FANBOX VIP連携
 import json
@@ -183,13 +206,13 @@ FANBOX_CREATOR_ID = "aicheckers"  # マスターのFANBOXクリエイターID
 
 # Discord Webhook（マジックリンク経由スキャン通知）
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
-VIP_DATA_PATH = Path("/home/techne/aicheckers/data/vip_users.json")
-USERS_DATA_PATH = Path("/home/techne/aicheckers/data/users.json")
+VIP_DATA_PATH = PROJECT_ROOT / "data" / "vip_users.json"
+USERS_DATA_PATH = PROJECT_ROOT / "data" / "users.json"
 
 # Enterprise API設定
-ENTERPRISE_KEYS_PATH = Path("/home/techne/aicheckers/data/enterprise_keys.json")
-ENTERPRISE_USAGE_PATH = Path("/home/techne/aicheckers/data/enterprise_usage.json")
-PATROL_EMBEDDINGS_PATH = Path("/home/techne/aicheckers/data/patrol_embeddings.json")
+ENTERPRISE_KEYS_PATH = PROJECT_ROOT / "data" / "enterprise_keys.json"
+ENTERPRISE_USAGE_PATH = PROJECT_ROOT / "data" / "enterprise_usage.json"
+PATROL_EMBEDDINGS_PATH = PROJECT_ROOT / "data" / "patrol_embeddings.json"
 
 # ユーザーデータ管理
 def load_users() -> dict:
@@ -366,15 +389,19 @@ enterprise_keys: dict = {}  # 起動時にロード
 enterprise_usage: dict = {}  # 起動時にロード
 
 # DINOv3モデル（ローカルディレクトリからロード）
-DINOV3_MODEL_PATH = Path("/home/techne/aicheckers/models/dinov3-vitb16")
-DINOV3_CLASSIFIER_PATH = Path("/home/techne/aicheckers/models/dinov3_classifier.pt")
-EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
+DINOV3_MODEL_PATH = PROJECT_ROOT / "models" / "dinov3-vitb16"
+DINOV3_CLASSIFIER_PATH = PROJECT_ROOT / "models" / "dinov3_classifier.pt"
+EMBEDDINGS_DIR = PROJECT_ROOT / "embeddings"
+TWO_HEAD_DIR = PROJECT_ROOT / "models" / "two_head_29d_ep30"
+TWO_HEAD_GPU_V3_IDX = [1, 3, 5, 6]  # adj_sim_var, patch_var, norm_var, norm_range
+TWO_HEAD_CPU16_V2_IDX = [0, 1, 2, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15]
+TWO_HEAD_CPU20_V3_IDX = [0, 1, 2, 3, 4, 5, 8, 10, 15, 16, 17]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """起動時にMoonlight (DINOv3) をロード"""
-    global device, dinov3_model, dinov3_processor, dinov3_classifier, use_patch_stats, vip_users, users_db
+    global device, dinov3_model, dinov3_processor, dinov3_classifier, use_patch_stats, feature_mean, feature_std, vip_users, users_db
     global enterprise_keys, enterprise_usage, rate_limit_data, rate_limit_guard
 
     # ユーザーデータをロード
@@ -415,16 +442,65 @@ async def lifespan(app: FastAPI):
         dinov3_model.eval()
 
         # 分類器ロード（入力次元を動的に取得）
+        global MID_LAYER_INDEX, patch_indices, extra_indices, boundary_indices
         if DINOV3_CLASSIFIER_PATH.exists():
-            checkpoint = torch.load(DINOV3_CLASSIFIER_PATH, map_location=device)
+            checkpoint = torch.load(DINOV3_CLASSIFIER_PATH, map_location=device, weights_only=False)
             input_dim = checkpoint.get("input_dim", 768)  # デフォルト768（後方互換）
             dinov3_classifier = nn.Linear(input_dim, 2).to(device)
             dinov3_classifier.load_state_dict(checkpoint["classifier"])
             dinov3_classifier.eval()
             use_patch_stats = checkpoint.get("use_patch_stats", input_dim > 768)  # 774次元なら自動でTrue
-            print(f"Moonlight classifier loaded! (input_dim: {input_dim}, patch_stats: {use_patch_stats}, val_acc: {checkpoint.get('val_acc', 'N/A')})")
+            # 中間層インデックスをチェックポイントから読み込み（後方互換: デフォルト6）
+            MID_LAYER_INDEX = checkpoint.get("mid_layer", MID_LAYER_INDEX)
+            # 777d構成用インデックス（オプショナル）
+            patch_indices = checkpoint.get("patch_indices", None)
+            extra_indices = checkpoint.get("extra_indices", None)
+            boundary_indices = checkpoint.get("boundary_indices", None)
+            # 安全性チェック: input_dim > 775 なのにindicesが未設定は不整合
+            if input_dim > 775:
+                if patch_indices is None or extra_indices is None or boundary_indices is None:
+                    raise Exception(f"input_dim={input_dim} requires patch_indices, extra_indices, boundary_indices in checkpoint")
+            if "feature_mean" in checkpoint and "feature_std" in checkpoint:
+                feature_mean = torch.tensor(checkpoint["feature_mean"], device=device, dtype=torch.float32)
+                feature_std = torch.tensor(checkpoint["feature_std"], device=device, dtype=torch.float32)
+            # 追加特徴量スケールファクター（オプショナル、デフォルト1.0）
+            global additional_scale, gate_values
+            additional_scale = checkpoint.get("additional_scale", 1.0)
+            # 次元ごとゲート値（オプショナル）
+            if "gate_values" in checkpoint:
+                gate_values = torch.tensor(checkpoint["gate_values"], device=device, dtype=torch.float32)
+            else:
+                gate_values = None
+            extra_info = f", extra/boundary: {extra_indices is not None}" if input_dim > 775 else ""
+            scale_info = f", scale: {additional_scale}x" if additional_scale != 1.0 else ""
+            gate_info = f", gates: [{', '.join(f'{g:.2f}' for g in gate_values.cpu().numpy())}]" if gate_values is not None else ""
+            print(f"Moonlight classifier loaded! (input_dim: {input_dim}, patch_stats: {use_patch_stats}, mid_layer: {MID_LAYER_INDEX}{extra_info}{scale_info}{gate_info}, val_acc: {checkpoint.get('val_acc', 'N/A')})")
         else:
-            raise Exception(f"Classifier not found at {DINOV3_CLASSIFIER_PATH}")
+            print(f"[WARN] Classifier not found at {DINOV3_CLASSIFIER_PATH}")
+
+        # 29d Two-Head (single model) ロード
+        global two_head_model, two_head_mode
+        global two_head_gpu_v3_idx, two_head_cpu_v2_idx, two_head_cpu_v3_idx
+
+        if TWO_HEAD_DIR.exists():
+            try:
+                model_path = TWO_HEAD_DIR / "model.pt"
+                if not model_path.exists():
+                    raise FileNotFoundError("two-head model.pt missing")
+
+                two_head_model = TwoHeadClassifier29d().to(device)
+                two_head_model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+                two_head_model.eval()
+
+                two_head_gpu_v3_idx = TWO_HEAD_GPU_V3_IDX
+                two_head_cpu_v2_idx = TWO_HEAD_CPU16_V2_IDX
+                two_head_cpu_v3_idx = TWO_HEAD_CPU20_V3_IDX
+                two_head_mode = True
+                use_patch_stats = True
+                print(f"Two-head 29d loaded: {TWO_HEAD_DIR}")
+            except Exception as e:
+                print(f"[WARN] Failed to load two-head 29d model: {e}")
+                two_head_mode = False
 
         print("Moonlight loaded successfully!")
     except Exception as e:
@@ -454,7 +530,6 @@ app = FastAPI(
 )
 
 # CORS設定（フロントエンドからのアクセス許可）
-DEBUG = os.getenv("DEBUG", "true").lower() == "true"  # ローカル開発用にデフォルトtrue
 CORS_ORIGINS = [
     "https://aicheckers.net",
     "https://www.aicheckers.net",
@@ -503,6 +578,143 @@ if TWITTER_CLIENT_ID and TWITTER_CLIENT_SECRET:
 def get_image_hash(image_bytes: bytes) -> str:
     """画像バイトからSHA256ハッシュを生成"""
     return hashlib.sha256(image_bytes).hexdigest()
+
+
+def normalize_features(features: torch.Tensor) -> torch.Tensor:
+    """学習時の統計量で特徴量を標準化（存在する場合のみ）+ 追加特徴スケーリング/ゲート"""
+    if feature_mean is None or feature_std is None:
+        return features
+    normalized = (features - feature_mean) / feature_std
+    # 追加特徴量（768:）にスケーリングまたはゲートを適用
+    if normalized.shape[-1] > 768:
+        normalized = normalized.clone()
+        if gate_values is not None:
+            # 次元ごとゲートを適用
+            normalized[..., 768:] *= gate_values
+        elif additional_scale != 1.0:
+            # 単純スケーリングを適用
+            normalized[..., 768:] *= additional_scale
+    return normalized
+
+
+def _letterbox_512(image: Image.Image) -> tuple[np.ndarray, np.ndarray]:
+    """PIL画像を512レターボックス + mask生成（cpu_stats_v2用）"""
+    img = image.convert("RGB")
+    w, h = img.size
+    scale = 512 / max(h, w)
+    nh = max(1, int(round(h * scale)))
+    nw = max(1, int(round(w * scale)))
+    if (nw, nh) != img.size:
+        img = img.resize((nw, nh), Image.LANCZOS)
+    canvas = Image.new("RGB", (512, 512), (128, 128, 128))
+    x0 = (512 - nw) // 2
+    y0 = (512 - nh) // 2
+    canvas.paste(img, (x0, y0))
+    mask = np.zeros((512, 512), dtype=bool)
+    mask[y0:y0 + nh, x0:x0 + nw] = True
+    return np.array(canvas), mask
+
+
+def _compute_cpu_v2_from_image(image: Image.Image) -> np.ndarray:
+    """cpu_stats_v2の18dを画像から計算"""
+    from extract_cpu_stats_v2 import extract_features as _cpu_v2_extract
+    img_rgb, mask = _letterbox_512(image)
+    feats = _cpu_v2_extract(img_rgb, mask)
+    return feats
+
+
+def _compute_new3_torch(mid_patches: torch.Tensor, mid_cls: torch.Tensor) -> torch.Tensor:
+    """GPU8用の新規3d (B,3)"""
+    pn = F.normalize(mid_patches, dim=-1)
+    cn = F.normalize(mid_cls, dim=-1)
+    sim = torch.bmm(pn, pn.transpose(1, 2))
+    adj = ((sim > 0.7).float() * (1 - torch.eye(sim.shape[1], device=sim.device)))
+    degree = adj.sum(dim=-1)
+
+    adj_sq = torch.bmm(adj, adj)
+    triangles = (adj_sq * adj).sum(dim=(1, 2)) / 6
+    possible = (degree * (degree - 1) / 2).sum(dim=-1)
+    local_eff = triangles / (possible + 1e-8)
+
+    edge_idx = list(range(14)) + list(range(14, 182, 14)) + \
+               list(range(27, 196, 14)) + list(range(182, 196))
+    edge_idx = list(set(edge_idx))
+    interior_idx = [i for i in range(196) if i not in edge_idx]
+    edge_mean = sim[:, edge_idx, :][:, :, edge_idx].mean(dim=(1, 2))
+    interior_mean = sim[:, interior_idx, :][:, :, interior_idx].mean(dim=(1, 2))
+    edge_gap = interior_mean - edge_mean
+
+    cls_sims = torch.bmm(pn, cn.unsqueeze(-1)).squeeze(-1)
+    cls_grid = cls_sims.view(sim.shape[0], 14, 14)
+    coords = torch.stack(torch.meshgrid(
+        torch.arange(14, device=sim.device, dtype=torch.float32),
+        torch.arange(14, device=sim.device, dtype=torch.float32),
+        indexing="ij"
+    ), dim=-1)
+    center = torch.tensor([6.5, 6.5], device=sim.device)
+    dist_from_center = ((coords - center) ** 2).sum(dim=-1).sqrt().flatten()
+    center_corr = []
+    for b in range(cls_grid.shape[0]):
+        cls_flat = cls_grid[b].flatten()
+        r = torch.corrcoef(torch.stack([dist_from_center, cls_flat]))[0, 1]
+        center_corr.append(0.0 if torch.isnan(r) else r)
+    center_corr = torch.stack(center_corr)
+
+    return torch.stack([local_eff, edge_gap, center_corr], dim=1)
+
+
+def compute_mid_adj_sim_var(patches: torch.Tensor) -> torch.Tensor:
+    """中間層パッチから隣接類似度分散 (B,1) を計算"""
+    bsz, _, dim = patches.shape
+    grid = patches.reshape(bsz, 14, 14, dim)
+    h_sim = F.cosine_similarity(
+        grid[:, :, :-1].reshape(-1, dim),
+        grid[:, :, 1:].reshape(-1, dim),
+        dim=1
+    ).reshape(bsz, 14, 13)
+    v_sim = F.cosine_similarity(
+        grid[:, :-1, :].reshape(-1, dim),
+        grid[:, 1:, :].reshape(-1, dim),
+        dim=1
+    ).reshape(bsz, 13, 14)
+    all_sim = torch.cat([h_sim.reshape(bsz, -1), v_sim.reshape(bsz, -1)], dim=1)
+    return all_sim.var(dim=1, keepdim=True)
+
+
+class TwoHeadClassifier29d(nn.Module):
+    """29d Two-Head classifier: CLS 768d + GPU 5d + CPU 24d"""
+
+    def __init__(self, cls_dim=768, gpu_dim=5, cpu_dim=24, hidden_dim=256):
+        super().__init__()
+        total_dim = cls_dim + gpu_dim + cpu_dim
+        self.bn_input = nn.BatchNorm1d(total_dim)
+        self.fc1 = nn.Linear(total_dim, hidden_dim)
+        self.bn1 = nn.BatchNorm1d(hidden_dim)
+        self.dropout1 = nn.Dropout(0.3)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim // 2)
+        self.bn2 = nn.BatchNorm1d(hidden_dim // 2)
+        self.dropout2 = nn.Dropout(0.2)
+        self.fc3 = nn.Linear(hidden_dim // 2, 1)
+
+        self.register_buffer("cls_mean", torch.zeros(cls_dim))
+        self.register_buffer("cls_std", torch.ones(cls_dim))
+        self.register_buffer("gpu_mean", torch.zeros(gpu_dim))
+        self.register_buffer("gpu_std", torch.ones(gpu_dim))
+        self.register_buffer("cpu_mean", torch.zeros(cpu_dim))
+        self.register_buffer("cpu_std", torch.ones(cpu_dim))
+
+    def forward(self, cls_feat, gpu_feat, cpu_feat):
+        std_floor = 1e-3
+        cls_norm = (cls_feat - self.cls_mean) / (torch.clamp(self.cls_std, min=std_floor) + 1e-8)
+        gpu_norm = (gpu_feat - self.gpu_mean) / (torch.clamp(self.gpu_std, min=std_floor) + 1e-8)
+        cpu_norm = (cpu_feat - self.cpu_mean) / (torch.clamp(self.cpu_std, min=std_floor) + 1e-8)
+        x = torch.cat([cls_norm, gpu_norm, cpu_norm], dim=-1)
+        x = self.bn_input(x)
+        x = F.gelu(self.bn1(self.fc1(x)))
+        x = self.dropout1(x)
+        x = F.gelu(self.bn2(self.fc2(x)))
+        x = self.dropout2(x)
+        return self.fc3(x)
 
 
 async def validate_file_size(file: UploadFile) -> bytes:
@@ -842,6 +1054,11 @@ def generate_forensic_analysis(attention_map: np.ndarray, features: torch.Tensor
     patch_analysis_log = None
     high_score_regions = []
     if patch_scores is not None:
+        patch_scores = np.asarray(patch_scores).reshape(-1)
+        if patch_scores.size != 196:
+            patch_scores = None
+
+    if patch_scores is not None:
         # 14x14グリッドに変換
         grid = patch_scores.reshape(14, 14)
         patch_mean = patch_scores.mean()
@@ -1016,7 +1233,7 @@ def extract_dinov3_embedding(image: Image.Image) -> np.ndarray:
     inputs = dinov3_processor(images=image, return_tensors="pt")
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    with torch.no_grad():
+    with torch.inference_mode():
         outputs = dinov3_model(**inputs)
         hidden_states = outputs.last_hidden_state
         cls_token = hidden_states[:, 0, :]  # CLS token (1, 768)
@@ -1071,15 +1288,17 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     
     v2.1: 中間層から教師なしパッチ統計量を抽出
     """
-    if dinov3_model is None or dinov3_classifier is None:
-        raise Exception("DINOv3 model or classifier not loaded")
+    if dinov3_model is None:
+        raise Exception("DINOv3 model not loaded")
+    if not two_head_mode and dinov3_classifier is None:
+        raise Exception("DINOv3 classifier not loaded")
 
     # 前処理
     inputs = dinov3_processor(images=image, return_tensors="pt")
     inputs = {k: v.to(device) for k, v in inputs.items()}
 
     # 特徴抽出 + Attention Map + 中間層
-    with torch.no_grad():
+    with torch.inference_mode():
         outputs = dinov3_model(**inputs, output_attentions=True, output_hidden_states=True)
         hidden_states = outputs.last_hidden_state
         features = hidden_states[:, 0, :]  # CLS token (1, 768)
@@ -1091,30 +1310,68 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         # 中間層のパッチ埋め込み（統計量v2用）
         mid_hidden = outputs.hidden_states[MID_LAYER_INDEX + 1]  # +1 because index 0 is initial embedding
         patch_embeddings_mid = mid_hidden[:, 5:5+196, :]  # (1, 196, 768)
+        mid_cls = mid_hidden[:, 0, :]  # (1, 768)
 
         # パッチ統計量v2を追加（use_patch_statsがTrueの場合）
         patch_scores_np = None
         if use_patch_stats:
             # v2: 教師なし統計量（中間層から）
             patch_stats_v2, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
-            features = torch.cat([features, patch_stats_v2], dim=1)  # (1, 775)
-            patch_scores_np = heatmap_v2.cpu().numpy()  # 可視化用のヒートマップ
+            patch_scores_np = heatmap_v2.detach().flatten().cpu().numpy()  # 可視化用のヒートマップ
+
+            # 777d構成: patch[indices] + extra[indices] + boundary[indices]
+            if patch_indices is not None and extra_indices is not None and boundary_indices is not None:
+                # パッチ統計から選択
+                patch_stats_np = patch_stats_v2.cpu().numpy()[0]  # (7,)
+                patch_sel = patch_stats_np[patch_indices]  # (2,)
+
+                # 元画像からextra_stats, boundary_statsを計算
+                img_rgb = np.array(image.convert("RGB"))
+                extra_stats_full = compute_extra_stats(img_rgb)  # (15,)
+                boundary_stats_full = compute_boundary_stats(img_rgb)  # (5,)
+
+                extra_sel = extra_stats_full[extra_indices]  # (5,)
+                boundary_sel = boundary_stats_full[boundary_indices]  # (2,)
+
+                # 追加特徴量をテンソル化して結合
+                additional_stats = np.concatenate([patch_sel, extra_sel, boundary_sel])  # (9,)
+                additional_tensor = torch.tensor(additional_stats, dtype=torch.float32, device=device).unsqueeze(0)
+                features = torch.cat([features, additional_tensor], dim=1)  # (1, 777)
+            else:
+                # 旧775d構成: そのまま全パッチ統計を結合
+                features = torch.cat([features, patch_stats_v2], dim=1)  # (1, 775)
         else:
             # use_patch_statsがFalseでもフォレンジック用にヒートマップを計算
             _, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
-            patch_scores_np = heatmap_v2.cpu().numpy()
+            patch_scores_np = heatmap_v2.detach().flatten().cpu().numpy()
 
-        # 分類（Temperature Scalingで確率を平滑化）
-        logits = dinov3_classifier(features)
-        
-        # DEBUG: Print features and logits
-        print(f"[DEBUG] CLS mean: {features[0, :768].mean().item():.4f}, var: {features[0, :768].var().item():.4f}")
-        if use_patch_stats:
-            print(f"[DEBUG] Stats: {features[0, 768:].tolist()}")
-        print(f"[DEBUG] Logits: {logits.tolist()}")
-        
-        probs = torch.softmax(logits / TEMPERATURE, dim=1)[0]
-        ai_prob = probs[1].item()  # class 1 = AI
+        # 分類
+        if two_head_mode:
+            cpu_v2_18d, cpu_v3_20d = compute_cpu_stats(image)
+            cpu_13d = cpu_v2_18d[two_head_cpu_v2_idx]
+            cpu_11d = cpu_v3_20d[two_head_cpu_v3_idx]
+            cpu_24d = np.concatenate([cpu_13d, cpu_11d]).astype(np.float32)
+            cpu_tensor = torch.tensor(cpu_24d, dtype=torch.float32, device=device).unsqueeze(0)
+
+            stats_v3 = compute_patch_stats_v3(patch_embeddings_mid, mid_cls)
+            gpu_4d = stats_v3[:, two_head_gpu_v3_idx]
+            mid_adj_var = compute_mid_adj_sim_var(patch_embeddings_mid)
+            gpu_5d = torch.cat([gpu_4d, mid_adj_var], dim=1)
+
+            cls_features = hidden_states[:, 0, :]
+            logits = two_head_model(cls_features, gpu_5d, cpu_tensor)
+            ai_prob = torch.sigmoid(logits)[0].item()
+        else:
+            features = normalize_features(features)
+            logits = dinov3_classifier(features)
+            if DEBUG:
+                print(f"[DEBUG] CLS mean: {features[0, :768].mean().item():.4f}, var: {features[0, :768].var().item():.4f}")
+                if use_patch_stats:
+                    print(f"[DEBUG] Stats: {features[0, 768:].tolist()}")
+                print(f"[DEBUG] Logits: {logits.tolist()}")
+
+            probs = torch.softmax(logits / TEMPERATURE, dim=1)[0]
+            ai_prob = probs[1].item()  # class 1 = AI
 
         # TTA: 水平反転＋軽い縮小で追加推論し平均化
         tta_log = None
@@ -1125,11 +1382,40 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 outputs_tta = dinov3_model(**inputs_tta, output_hidden_states=True)
                 hidden_tta = outputs_tta.last_hidden_state
                 features_tta = hidden_tta[:, 0, :]
+                mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1]
+                patch_embeddings_mid_tta = mid_hidden_tta[:, 5:5+196, :]
+                mid_cls_tta = mid_hidden_tta[:, 0, :]
+
+                if two_head_mode:
+                    cpu_v2_tta, cpu_v3_tta = compute_cpu_stats(image_tta)
+                    cpu_13d_tta = cpu_v2_tta[two_head_cpu_v2_idx]
+                    cpu_11d_tta = cpu_v3_tta[two_head_cpu_v3_idx]
+                    cpu_24d_tta = np.concatenate([cpu_13d_tta, cpu_11d_tta]).astype(np.float32)
+                    cpu_tensor_tta = torch.tensor(cpu_24d_tta, dtype=torch.float32, device=device).unsqueeze(0)
+
+                    stats_v3_tta = compute_patch_stats_v3(patch_embeddings_mid_tta, mid_cls_tta)
+                    gpu_4d_tta = stats_v3_tta[:, two_head_gpu_v3_idx]
+                    mid_adj_var_tta = compute_mid_adj_sim_var(patch_embeddings_mid_tta)
+                    gpu_5d_tta = torch.cat([gpu_4d_tta, mid_adj_var_tta], dim=1)
+
+                    logits_tta = two_head_model(features_tta, gpu_5d_tta, cpu_tensor_tta)
+                    return torch.sigmoid(logits_tta)[0].item()
+
+                # fallback: legacy classifier
                 if use_patch_stats:
-                    mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1]
-                    patch_embeddings_mid_tta = mid_hidden_tta[:, 5:5+196, :]
                     patch_stats_v2_tta = compute_patch_stats_v2(patch_embeddings_mid_tta)
-                    features_tta = torch.cat([features_tta, patch_stats_v2_tta], dim=1)
+                    if patch_indices is not None and extra_indices is not None and boundary_indices is not None:
+                        patch_stats_np_tta = patch_stats_v2_tta.cpu().numpy()[0]
+                        patch_sel_tta = patch_stats_np_tta[patch_indices]
+                        img_rgb_tta = np.array(image_tta.convert("RGB"))
+                        extra_sel_tta = compute_extra_stats(img_rgb_tta)[extra_indices]
+                        boundary_sel_tta = compute_boundary_stats(img_rgb_tta)[boundary_indices]
+                        additional_tta = np.concatenate([patch_sel_tta, extra_sel_tta, boundary_sel_tta])
+                        additional_tensor_tta = torch.tensor(additional_tta, dtype=torch.float32, device=device).unsqueeze(0)
+                        features_tta = torch.cat([features_tta, additional_tensor_tta], dim=1)
+                    else:
+                        features_tta = torch.cat([features_tta, patch_stats_v2_tta], dim=1)
+                features_tta = normalize_features(features_tta)
                 logits_tta = dinov3_classifier(features_tta)
                 probs_tta = torch.softmax(logits_tta / TEMPERATURE, dim=1)[0]
                 return probs_tta[1].item()
@@ -1150,8 +1436,8 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 tta_probs.append((f"縮小{scale:.2f}", ai_prob_scaled))
 
             ai_prob = sum(prob for _, prob in tta_probs) / len(tta_probs)
-            tta_log_parts = [f\"{label} {prob*100:.1f}%\" for label, prob in tta_probs]
-            tta_log = f\"TTA検証: {' / '.join(tta_log_parts)} → 統合値 {ai_prob*100:.1f}%\"
+            tta_log_parts = [f"{label} {prob*100:.1f}%" for label, prob in tta_probs]
+            tta_log = f"TTA検証: {' / '.join(tta_log_parts)} → 統合値 {ai_prob*100:.1f}%"
 
     # Attention Map生成 + フォレンジック分析
     attention_heatmap = None
@@ -1167,7 +1453,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
             # DINOv3のトークン順序: [CLS(0), REG1-4(1-4), PATCH(5-)]
             # レジスタトークン(4個)を除外してパッチのみのattentionを取得
-            num_register_tokens = 4  # dinov3_model.config.num_register_tokens
+            num_register_tokens = getattr(dinov3_model.config, "num_register_tokens", 4)
             patch_start_idx = 1 + num_register_tokens  # CLS + REG を除外
             cls_attention = attention_avg[0, patch_start_idx:]  # CLSからパッチへのattention
 
@@ -1185,7 +1471,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 attention_map_norm = (attention_map_raw - attention_map_raw.min()) / (attention_map_raw.max() - attention_map_raw.min() + 1e-8)
 
                 # パッチAIスコアを14x14にreshape（Attention × AIスコアの合成マップ）
-                if patch_scores_np is not None and len(patch_scores_np) == 196:
+                if patch_scores_np is not None and patch_scores_np.size == 196:
                     patch_scores_grid = patch_scores_np.reshape(14, 14)
                     # 合成: AIスコアをベースに、Attentionで透明度を調整
                     # 「モデルが注目していて、かつAIスコアが高い場所」が強調される
@@ -1417,6 +1703,7 @@ async def guard_image(
         # 画像読み込み（サイズチェック含む）
         contents = await validate_file_size(file)
         image = Image.open(io.BytesIO(contents)).convert("RGB")
+        original_image = image.copy()
 
         # ユーザーID取得（Enterprise APIキー or レート制限キー）
         if is_enterprise:
@@ -1445,7 +1732,11 @@ async def guard_image(
             )
 
             # 透かしハッシュ生成（DB保存用）
-            watermark_hash = create_user_watermark_mapping(user_id, timestamp_str, capacity=61)
+            watermark_hash = create_user_watermark_mapping(
+                user_id,
+                timestamp_str,
+                capacity=trustmark_encoder.schemaCapacity()
+            )
 
         # MoonKnightエンジンの遅延初期化
         if moonknight_engine is None:
@@ -1470,8 +1761,8 @@ async def guard_image(
         # SSIM計算（品質検証）
         from skimage.metrics import structural_similarity as ssim
         import numpy as np
-        orig_arr = np.array(image)
-        pois_arr = np.array(poisoned_image.resize(image.size))
+        orig_arr = np.array(original_image)
+        pois_arr = np.array(poisoned_image.resize(original_image.size))
         ssim_value = ssim(orig_arr, pois_arr, channel_axis=2, data_range=255)
 
         # Base64エンコード
@@ -1556,8 +1847,9 @@ async def guard_image_stream(
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid file type")
 
-    contents = await file.read()
+    contents = await validate_file_size(file)
     filename = file.filename
+    user_id = enterprise_info["api_key"] if is_enterprise else key
 
     async def generate():
         import queue
@@ -1575,6 +1867,29 @@ async def guard_image_stream(
                 start_time = time.time()
 
                 image = Image.open(io.BytesIO(contents)).convert("RGB")
+                original_image = image.copy()
+
+                # TrustMark透かし埋め込み（alpha=1.15、FastProtect前）
+                watermark_hash = None
+                if TRUSTMARK_ENABLED:
+                    global trustmark_encoder
+                    if trustmark_encoder is None:
+                        import trustmark as tm
+                        trustmark_encoder = tm.TrustMark()
+
+                    timestamp_str = datetime.utcnow().isoformat() + "Z"
+                    image = embed_watermark(
+                        trustmark_encoder,
+                        image,
+                        user_id,
+                        timestamp_str,
+                        alpha=1.15
+                    )
+                    watermark_hash = create_user_watermark_mapping(
+                        user_id,
+                        timestamp_str,
+                        capacity=trustmark_encoder.schemaCapacity()
+                    )
 
                 # 初期化
                 if moonknight_engine is None:
@@ -1596,10 +1911,15 @@ async def guard_image_stream(
                 )
                 poisoned_image = protected_image # Alias
 
+                # DINOv3埋め込み抽出（最終画像から）
+                if TRUSTMARK_ENABLED and watermark_hash is not None:
+                    embedding = extract_dinov3_embedding(poisoned_image)
+                    save_patrol_embedding(user_id, embedding, watermark_hash)
+
                 # SSIM計算
                 from skimage.metrics import structural_similarity as ssim
-                orig_arr = np.array(image)
-                pois_arr = np.array(poisoned_image.resize(image.size))
+                orig_arr = np.array(original_image)
+                pois_arr = np.array(poisoned_image.resize(original_image.size))
                 ssim_value = ssim(orig_arr, pois_arr, channel_axis=2, data_range=255)
 
                 # Base64エンコード
@@ -1651,9 +1971,6 @@ async def guard_image_stream(
         if result_holder["error"]:
             yield f"data: {json.dumps({'type': 'error', 'message': result_holder['error']})}\n\n"
         else:
-            # レート制限更新
-            if not is_enterprise:
-                increment_rate_limit(key)
             yield f"data: {json.dumps({'type': 'complete', **result_holder['result']})}\n\n"
 
     return StreamingResponse(
@@ -2292,6 +2609,9 @@ async def magic_link_login(token: str):
         email = payload.get("email")
         name = payload.get("name", "Developer")
         is_admin = payload.get("is_admin", False)
+
+        # マジックリンククリックをログ出力
+        print(f"[MAGIC LINK CLICKED] email={email}, name={name}, is_admin={is_admin}")
 
         # 通常のログイン用JWTを発行（有効期限はマジックリンクの期限を引き継ぐ）
         exp = payload.get("exp")
