@@ -96,6 +96,7 @@ two_head_mode = False
 two_head_gpu_v3_idx = None
 two_head_cpu_v2_idx = None
 two_head_cpu_v3_idx = None
+two_head_use_mid_adj = False
 feature_mean = None
 feature_std = None
 additional_scale = 1.0  # 追加特徴量のスケールファクター
@@ -392,7 +393,7 @@ enterprise_usage: dict = {}  # 起動時にロード
 DINOV3_MODEL_PATH = PROJECT_ROOT / "models" / "dinov3-vitb16"
 DINOV3_CLASSIFIER_PATH = PROJECT_ROOT / "models" / "dinov3_classifier.pt"
 EMBEDDINGS_DIR = PROJECT_ROOT / "embeddings"
-TWO_HEAD_DIR = PROJECT_ROOT / "models" / "two_head_29d_ep30"
+TWO_HEAD_DIR = PROJECT_ROOT / "models" / "two_head_28d_plus_60"
 TWO_HEAD_GPU_V3_IDX = [1, 3, 5, 6]  # adj_sim_var, patch_var, norm_var, norm_range
 TWO_HEAD_CPU16_V2_IDX = [0, 1, 2, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15]
 TWO_HEAD_CPU20_V3_IDX = [0, 1, 2, 3, 4, 5, 8, 10, 15, 16, 17]
@@ -478,8 +479,8 @@ async def lifespan(app: FastAPI):
         else:
             print(f"[WARN] Classifier not found at {DINOV3_CLASSIFIER_PATH}")
 
-        # 29d Two-Head (single model) ロード
-        global two_head_model, two_head_mode
+        # Two-Head (single model) ロード
+        global two_head_model, two_head_mode, two_head_use_mid_adj
         global two_head_gpu_v3_idx, two_head_cpu_v2_idx, two_head_cpu_v3_idx
 
         if TWO_HEAD_DIR.exists():
@@ -488,18 +489,47 @@ async def lifespan(app: FastAPI):
                 if not model_path.exists():
                     raise FileNotFoundError("two-head model.pt missing")
 
-                two_head_model = TwoHeadClassifier29d().to(device)
-                two_head_model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+                config_path = TWO_HEAD_DIR / "config.json"
+                cfg_gpu_dim = None
+                cfg_cpu_dim = None
+                if config_path.exists():
+                    try:
+                        with open(config_path, "r") as f:
+                            cfg = json.load(f)
+                        cfg_gpu_dim = cfg.get("gpu_dim")
+                        cfg_cpu_dim = cfg.get("cpu_dim")
+                    except Exception as e:
+                        print(f"[WARN] Failed to read config.json: {e}")
+
+                state_dict = torch.load(model_path, map_location=device, weights_only=False)
+                sd_gpu_dim = None
+                sd_cpu_dim = None
+                if isinstance(state_dict, dict):
+                    if "gpu_mean" in state_dict:
+                        sd_gpu_dim = state_dict["gpu_mean"].shape[0]
+                    if "cpu_mean" in state_dict:
+                        sd_cpu_dim = state_dict["cpu_mean"].shape[0]
+
+                gpu_dim = sd_gpu_dim or cfg_gpu_dim or 4
+                cpu_dim = sd_cpu_dim or cfg_cpu_dim or 24
+                if sd_gpu_dim is not None and cfg_gpu_dim is not None and sd_gpu_dim != cfg_gpu_dim:
+                    print(f"[WARN] gpu_dim mismatch: config={cfg_gpu_dim}, state_dict={sd_gpu_dim} (using state_dict)")
+                if sd_cpu_dim is not None and cfg_cpu_dim is not None and sd_cpu_dim != cfg_cpu_dim:
+                    print(f"[WARN] cpu_dim mismatch: config={cfg_cpu_dim}, state_dict={sd_cpu_dim} (using state_dict)")
+
+                two_head_model = TwoHeadClassifier29d(gpu_dim=gpu_dim, cpu_dim=cpu_dim).to(device)
+                two_head_model.load_state_dict(state_dict)
                 two_head_model.eval()
 
                 two_head_gpu_v3_idx = TWO_HEAD_GPU_V3_IDX
                 two_head_cpu_v2_idx = TWO_HEAD_CPU16_V2_IDX
                 two_head_cpu_v3_idx = TWO_HEAD_CPU20_V3_IDX
+                two_head_use_mid_adj = gpu_dim == 5
                 two_head_mode = True
                 use_patch_stats = True
-                print(f"Two-head 29d loaded: {TWO_HEAD_DIR}")
+                print(f"Two-head model loaded: {TWO_HEAD_DIR} (gpu_dim={gpu_dim}, cpu_dim={cpu_dim}, mid_adj={two_head_use_mid_adj})")
             except Exception as e:
-                print(f"[WARN] Failed to load two-head 29d model: {e}")
+                print(f"[WARN] Failed to load two-head model: {e}")
                 two_head_mode = False
 
         print("Moonlight loaded successfully!")
@@ -682,9 +712,9 @@ def compute_mid_adj_sim_var(patches: torch.Tensor) -> torch.Tensor:
 
 
 class TwoHeadClassifier29d(nn.Module):
-    """29d Two-Head classifier: CLS 768d + GPU 5d + CPU 24d"""
+    """Two-Head classifier: CLS 768d + GPU {gpu_dim}d + CPU {cpu_dim}d"""
 
-    def __init__(self, cls_dim=768, gpu_dim=5, cpu_dim=24, hidden_dim=256):
+    def __init__(self, cls_dim=768, gpu_dim=4, cpu_dim=24, hidden_dim=256):
         super().__init__()
         total_dim = cls_dim + gpu_dim + cpu_dim
         self.bn_input = nn.BatchNorm1d(total_dim)
@@ -1312,12 +1342,12 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         patch_embeddings_mid = mid_hidden[:, 5:5+196, :]  # (1, 196, 768)
         mid_cls = mid_hidden[:, 0, :]  # (1, 768)
 
-        # パッチ統計量v2を追加（use_patch_statsがTrueの場合）
-        patch_scores_np = None
-        if use_patch_stats:
-            # v2: 教師なし統計量（中間層から）
-            patch_stats_v2, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
-            patch_scores_np = heatmap_v2.detach().flatten().cpu().numpy()  # 可視化用のヒートマップ
+        # パッチ統計量v2（フォレンジック用ヒートマップは常に計算）
+        patch_stats_v2, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
+        patch_scores_np = heatmap_v2.detach().flatten().cpu().numpy()  # 可視化・ログ用
+
+        # two-head以外: patch_stats_v2を特徴量に結合
+        if use_patch_stats and not two_head_mode:
 
             # 777d構成: patch[indices] + extra[indices] + boundary[indices]
             if patch_indices is not None and extra_indices is not None and boundary_indices is not None:
@@ -1340,10 +1370,6 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             else:
                 # 旧775d構成: そのまま全パッチ統計を結合
                 features = torch.cat([features, patch_stats_v2], dim=1)  # (1, 775)
-        else:
-            # use_patch_statsがFalseでもフォレンジック用にヒートマップを計算
-            _, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
-            patch_scores_np = heatmap_v2.detach().flatten().cpu().numpy()
 
         # 分類
         if two_head_mode:
@@ -1355,11 +1381,14 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
             stats_v3 = compute_patch_stats_v3(patch_embeddings_mid, mid_cls)
             gpu_4d = stats_v3[:, two_head_gpu_v3_idx]
-            mid_adj_var = compute_mid_adj_sim_var(patch_embeddings_mid)
-            gpu_5d = torch.cat([gpu_4d, mid_adj_var], dim=1)
+            if two_head_use_mid_adj:
+                mid_adj_var = compute_mid_adj_sim_var(patch_embeddings_mid)
+                gpu_features = torch.cat([gpu_4d, mid_adj_var], dim=1)
+            else:
+                gpu_features = gpu_4d
 
             cls_features = hidden_states[:, 0, :]
-            logits = two_head_model(cls_features, gpu_5d, cpu_tensor)
+            logits = two_head_model(cls_features, gpu_features, cpu_tensor)
             ai_prob = torch.sigmoid(logits)[0].item()
         else:
             features = normalize_features(features)
@@ -1395,10 +1424,13 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
                     stats_v3_tta = compute_patch_stats_v3(patch_embeddings_mid_tta, mid_cls_tta)
                     gpu_4d_tta = stats_v3_tta[:, two_head_gpu_v3_idx]
-                    mid_adj_var_tta = compute_mid_adj_sim_var(patch_embeddings_mid_tta)
-                    gpu_5d_tta = torch.cat([gpu_4d_tta, mid_adj_var_tta], dim=1)
+                    if two_head_use_mid_adj:
+                        mid_adj_var_tta = compute_mid_adj_sim_var(patch_embeddings_mid_tta)
+                        gpu_features_tta = torch.cat([gpu_4d_tta, mid_adj_var_tta], dim=1)
+                    else:
+                        gpu_features_tta = gpu_4d_tta
 
-                    logits_tta = two_head_model(features_tta, gpu_5d_tta, cpu_tensor_tta)
+                    logits_tta = two_head_model(features_tta, gpu_features_tta, cpu_tensor_tta)
                     return torch.sigmoid(logits_tta)[0].item()
 
                 # fallback: legacy classifier
