@@ -532,8 +532,8 @@ export default function Home() {
     // Remove from queue after complete
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
 
-    // Simulate progress bar over 22-24 seconds (randomized)
-    const minDuration = 22000 + Math.random() * 2000; // 22-24 seconds random
+    // Simulate progress bar over 6-8 seconds (randomized)
+    const minDuration = 6000 + Math.random() * 2000; // 6-8 seconds random
     const elapsed = Date.now() - fileStartTime;
     const remainingTime = Math.max(0, minDuration - elapsed);
 
