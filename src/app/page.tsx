@@ -787,6 +787,17 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
   const canExecute = queue.length > 0 && !isScanning;
 
+  // ファイル名を省略（拡張子を維持）
+  const truncateFileName = (name: string, maxLength: number = 35) => {
+    if (name.length <= maxLength) return name;
+    const lastDot = name.lastIndexOf('.');
+    const ext = lastDot > 0 ? name.slice(lastDot) : '';
+    const nameWithoutExt = lastDot > 0 ? name.slice(0, lastDot) : name;
+    const truncatedLength = maxLength - ext.length - 3; // 3 for "..."
+    if (truncatedLength <= 0) return name.slice(0, maxLength - 3) + '...';
+    return nameWithoutExt.slice(0, truncatedLength) + '...' + ext;
+  };
+
   const getLogClass = (type: LogEntry["type"]) => {
     const classes: Record<LogEntry["type"], string> = {
       system: "log-system",
@@ -957,7 +968,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   )}
                   {previewFileName && (
                     <div className="flex items-center justify-center gap-2 mt-3">
-                      <p className="text-sm text-muted truncate font-mono">{previewFileName}</p>
+                      <p className="text-sm text-muted font-mono" title={previewFileName}>{truncateFileName(previewFileName)}</p>
                       {showHeatmap && <span className="text-xs text-accent font-semibold">[ATTENTION MAP]</span>}
                     </div>
                   )}
@@ -1015,22 +1026,29 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                   <span className="font-semibold uppercase text-danger">
                     AI POSSIBILITY
                   </span>
-                  <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
-                    (result?.aiScore ?? 0) >= 60 ? "text-high-alert" :
-                      (result?.aiScore ?? 0) >= 40 ? "text-middle-caution" :
-                        (result?.aiScore ?? 0) >= 20 ? "text-low-risk" : "text-human-confirmed"
-                    }`}>
-                    {result?.aiScore ?? 0}%
-                  </span>
+                  {result?.verdict === "RATE LIMITED" ? (
+                    <span className="font-bold text-warning animate-pulse">
+                      LIMIT
+                    </span>
+                  ) : (
+                    <span className={`font-bold ${(result?.aiScore ?? 0) >= 80 ? "text-danger" :
+                      (result?.aiScore ?? 0) >= 60 ? "text-high-alert" :
+                        (result?.aiScore ?? 0) >= 40 ? "text-middle-caution" :
+                          (result?.aiScore ?? 0) >= 20 ? "text-low-risk" : "text-human-confirmed"
+                      }`}>
+                      {result?.aiScore ?? 0}%
+                    </span>
+                  )}
                 </div>
                 <div className="progress-bar-bg">
                   <div
-                    className={`progress-bar-fill ${(result?.aiScore ?? 0) >= 80 ? "ai" :
-                      (result?.aiScore ?? 0) >= 60 ? "high-alert" :
-                        (result?.aiScore ?? 0) >= 40 ? "middle-caution" :
-                          (result?.aiScore ?? 0) >= 20 ? "low-risk" : "human"
+                    className={`progress-bar-fill ${result?.verdict === "RATE LIMITED" ? "rate-limited" :
+                      (result?.aiScore ?? 0) >= 80 ? "ai" :
+                        (result?.aiScore ?? 0) >= 60 ? "high-alert" :
+                          (result?.aiScore ?? 0) >= 40 ? "middle-caution" :
+                            (result?.aiScore ?? 0) >= 20 ? "low-risk" : "human"
                       }`}
-                    style={{ width: `${result?.aiScore ?? 0}%` }}
+                    style={{ width: result?.verdict === "RATE LIMITED" ? "100%" : `${result?.aiScore ?? 0}%` }}
                   />
                 </div>
               </div>

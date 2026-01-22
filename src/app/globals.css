@@ -309,6 +309,26 @@ body {
   background-color: var(--human-confirmed);
 }
 
+.progress-bar-fill.rate-limited {
+  background: repeating-linear-gradient(
+    45deg,
+    #F59E0B,
+    #F59E0B 10px,
+    #D97706 10px,
+    #D97706 20px
+  );
+  animation: rate-limit-stripe 0.5s linear infinite;
+}
+
+@keyframes rate-limit-stripe {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 40px 0;
+  }
+}
+
 .progress-bar-fill.guard-progress {
   background: linear-gradient(90deg, var(--accent), #a855f7);
   box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
@@ -599,6 +619,10 @@ body {
 
 .text-human-confirmed {
   color: var(--human-confirmed);
+}
+
+.text-warning {
+  color: #F59E0B;
 }
 
 .text-primary {
