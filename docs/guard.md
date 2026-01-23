@@ -1,226 +1,372 @@
-# AIイラストガード（保護ツール）
+# AIイラストガード（画像保護ツール）
 
-LoRA学習を妨害するための摂動技術を研究中。
+LoRA学習を妨害するための摂動技術。見た目はほぼ変わらないのに、AI学習に使うと品質が劣化する「毒」を画像に仕込む。
 
-**⚠️ 注意: Guard進捗バーはシミュレーション (2026-01-08)**
-`src/app/guard/page.tsx` でSSE進捗を無効化し、22-24秒のシミュレーション進捗に変更。リアルタイム進捗に戻すには、`setGuardProgress`呼び出しのコメントアウトを解除。
+**最終更新**: 2026-01-23
 
 ---
 
-## 現在のベスト: SAP v3
+## 仕組み（3行まとめ）
 
-**スクリプト**: `scripts/sap_v3.py`
+1. **VAE攻撃**: 画像をSDXLのVAEに通したとき、本来と違うlatentになるよう摂動を加える
+2. **適応スケーリング**: 目立つ部分は弱く、目立たない部分は強く摂動をかける（LPIPS空間マップ）
+3. **Micro-Warping**: 微細な幾何学的変形で、浄化ツール（LightShed等）への耐性を持たせる
 
-VAE+CLIP攻撃。視認性とVAE攻撃効果のバランスが最も良い。
+---
 
-```bash
-# 1枚テスト（約1分）
-modal run scripts/sap_v3.py --test --warp-magnitude 0.01 --iterations 50
+## 本番システム構成
+
 ```
-
-### 攻撃構成
-
-| 攻撃 | 手法 | 効果 |
-|------|------|------|
-| **VAE攻撃** | latent cos sim最小化 | 構造情報の破壊 |
-| **CLIPネガティブ誘導** | "low quality, blurry, noise"に近づける | 低品質タグとの結合 |
-| **CLIP概念混乱** | 元画像から離脱 + 無関係概念へ誘導 | 意味情報の汚染 |
-| **適応型マスク** | エッジ5%、平坦1%（Sobel） | 視認性を維持しつつ攻撃強化 |
-| **Micro-Warping** | 幾何学的変形（kornia elastic） | LightShed等の浄化耐性 |
-
-### ベンチマーク結果
-
-| 指標 | 値 | 評価 |
-|------|-----|------|
-| LPIPS | 0.0445 | ✅ 視覚差ほぼなし |
-| VAE Cos Sim | **0.81** | ✅ 構造乖離 |
-| CLIP to Original | **-0.26** | ✅ 負の値＝完全離脱 |
-| CLIP to Negative | 0.28 | ✅ 低品質概念に接近 |
-| 処理時間 | **56秒** | ✅ 1分以内 |
-
-### ネガティブ概念リスト
-```python
-NEGATIVE_CONCEPTS = [
-    "low quality, worst quality, blurry",
-    "jpeg artifacts, noise, grainy",
-    "text, watermark, signature",
-    "error, glitch, corrupted",
-]
-```
-
-### 混乱概念リスト
-```python
-CONFUSION_CONCEPTS = [
-    "a photograph of mountains and trees",
-    "3d render of geometric shapes",
-    "satellite image of earth",
-    "medical x-ray scan",
-    "infrared thermal image",
-]
+┌─────────────────────────────────────────────────────────────┐
+│  Web UI (Guard ページ)                                       │
+│  src/app/guard/page.tsx                                      │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ POST /guard-stream
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Backend API                                                 │
+│  backend/main.py                                             │
+│  └── MoonKnightV3 インスタンス                               │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│  MoonKnight V3 推論エンジン                                  │
+│  scripts/moonknight_v3.py                                    │
+│                                                              │
+│  必要モデル:                                                 │
+│  └── models/fastprotect/                                     │
+│      ├── checkpoint_step25000.pt  (学習済み摂動)             │
+│      ├── kmeans_model.pkl         (クラスタリング)           │
+│      └── target_entropies.json    (ターゲット選択用)         │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## SAP v3 Variants (Perlin実験)
+## MoonKnight V3 詳細仕様
 
-**スクリプト**: `scripts/sap_v3_variants.py`
+### 処理フロー
 
-v3の適応型マスクにPerlinノイズを導入。平坦部の摂動を空間的にバラけさせる。
-
-```bash
-# scale64 + 画像ハッシュベースシード（推奨）
-modal run scripts/sap_v3_variants.py --test --perlin-scale 64
+```
+入力画像 (任意サイズ)
+    │
+    ▼
+512x512 にリサイズ
+    │
+    ▼
+SDXL VAE で Encode → latent (64x64x4)
+    │
+    ▼
+latent の Entropy (分散) を計算
+    │
+    ▼
+Entropy に基づいてターゲット選択 (低/中/高)
+    │
+    ▼
+K-means でクラスタ割り当て (K=4)
+    │
+    ▼
+学習済み摂動を適用: delta_g(target) + Delta[target, k]
+    │
+    ▼
+パッチLPIPS で「どこが目立つか」を空間マップ化
+    │
+    ▼
+目立つ部分は弱く、目立たない部分は強くスケーリング
+    │
+    ▼
+元解像度に Bicubic アップスケール
+    │
+    ▼
+(Optional) Micro-Warping で微細変形
+    │
+    ▼
+出力画像
 ```
 
-### 改良点
+### 主要パラメータ
 
-| 項目 | v3 | v3 Variants |
-|------|-----|-------------|
-| 平坦部マスク | 一様1% | Perlin 0.75〜1.5% |
-| シード | 固定/ランダム | **画像ハッシュベース** |
-| CLIPネガティブ | 5概念 | **8概念**（abstract texture等追加） |
+| パラメータ | デフォルト | 説明 |
+|------------|-----------|------|
+| `strength` | 0.6 | 摂動強度（0.0〜1.0）。高いほど攻撃効果大だが視認性に影響 |
+| `use_adaptive` | True | パッチLPIPSによる適応スケーリング |
+| `use_warping` | True | Micro-Warping有効化 |
+| `warp_magnitude` | None | 指定時は全画像で同じmagnitude。Noneならconfig依存 |
 
-### 推奨パラメータ
+### Micro-Warping 多様化（2026-01-23）
 
-| パラメータ | 値 | 理由 |
+画像ごとに3パターンからランダム選択（画像ハッシュベースで決定的）：
+
+| パターン | kernel_size | sigma | magnitude | 特徴 |
+|----------|-------------|-------|-----------|------|
+| 細かい・弱い | 31 | 6.0 | 0.005 | 繊細な絵向け |
+| 中程度 | 63 | 12.0 | 0.006 | 標準 |
+| 粗い・強い | 95 | 18.0 | 0.007 | 浄化耐性重視 |
+
+**選択ロジック**:
+```python
+img_bytes = image_tensor.numpy().tobytes()
+seed = int(hashlib.sha256(img_bytes).hexdigest()[:8], 16)
+config = warp_configs[seed % 3]
+```
+
+同じ画像なら常に同じconfigが選ばれる（再現可能）。
+
+### Edge-Aware Warp（2026-01-23）
+
+エッジ（輪郭線）付近のwarp強度を減衰させ、線画の崩れを防止。
+
+| パラメータ | デフォルト | 説明 |
+|------------|-----------|------|
+| `use_edge_aware_warp` | True | Sobel法でエッジ検出し、warp減衰を適用 |
+| `edge_avoid_strength` | 0.7 | エッジでの減衰率（0.0=減衰なし, 1.0=エッジ完全回避） |
+
+**処理フロー**:
+```python
+Y = 0.299*R + 0.587*G + 0.114*B  # 輝度
+edge_mag = kornia.filters.sobel(Y)
+edge_mag = edge_mag / (edge_mag.max() + 1e-8)  # 正規化
+attenuation = 1.0 - edge_avoid_strength * edge_mag
+noise = noise * attenuation  # エッジ付近のwarpを抑制
+```
+
+### Chrominance-Only Warp（2026-01-23）
+
+LAB色空間の色度チャンネル（a/b）のみに変形を適用し、輝度（L）を保持。
+
+**根拠**: 人間の視覚は輝度に敏感だが色度には鈍感（Weber-Fechner則）。視認性への影響を最小化しつつ浄化耐性を維持。
+
+| パラメータ | デフォルト | 説明 |
+|------------|-----------|------|
+| `chrominance_only_warp` | True | True時はLAB a/bのみにwarp適用 |
+
+**処理フロー**:
+```
+RGB → LAB → Lを保存 → a,bにelastic transform → L + warped(a,b) → RGB
+```
+
+### CoupledTPS（2026-01-23）
+
+Thin Plate Spline（薄板スプライン）による滑らかなグローバル変形。Elastic Transformがローカルな歪みを生成するのに対し、TPSは画像全体を滑らかに変形。
+
+**特徴**:
+- 少数の制御点（4×4=16点）で自然な変形
+- 複数回（steps）適用することで多様性を確保
+- デフォルトOFF（実験的機能）
+
+| パラメータ | デフォルト | 説明 |
+|------------|-----------|------|
+| `use_coupled_tps` | False | TPSを適用するか |
+| `tps_steps` | 2 | TPS適用回数（累積変形） |
+| `tps_grid` | 4 | 制御点グリッドサイズ（4→16点） |
+| `tps_magnitude` | 0.004 | 制御点の移動量（正規化座標） |
+| `tps_margin` | 0.08 | 画像端からのマージン（端のアーティファクト防止） |
+
+**処理フロー**:
+```python
+points_src = make_grid(4x4, margin=0.08)  # 正規化座標[0,1]
+for _ in range(steps):
+    offsets = randn() * magnitude
+    points_dst = clamp(points_src + offsets, 0, 1)
+    kernel, affine = get_tps_transform(points_dst, points_src)
+    image = warp_image_tps(image, points_src, kernel, affine)
+```
+
+**Elastic Transform vs TPS**:
+| 項目 | Elastic Transform | CoupledTPS |
+|------|-------------------|------------|
+| 変形タイプ | ローカル（ピクセル単位） | グローバル（制御点ベース） |
+| 滑らかさ | ガウシアンフィルタ依存 | 数学的に滑らか |
+| 計算量 | 軽い | やや重い |
+| 用途 | 基本的な浄化耐性 | 高度な浄化ツール対策 |
+
+### 低周波ガンマゆらぎ（2026-01-23）
+
+輝度チャンネルに微細な明暗変化を追加。Denoise系ツールで消えにくい低周波成分。
+
+| パラメータ | デフォルト | 説明 |
+|------------|-----------|------|
+| `use_gamma` | True | ガンマゆらぎを適用するか |
+| `gamma_strength` | 0.05 | ガンマ変動幅（±5%） |
+
+**内部パラメータ**:
+- 低解像度ノイズ: 16×16 → Bicubicアップスケール
+- LPIPS制御: 目立つ部分は80%減衰
+- strength連動: protection strengthに応じて0.5〜1.5倍にスケール
+
+**処理フロー**:
+```
+16x16ノイズ生成 → Bicubicアップスケール → gamma_map
+RGB → 輝度Y計算 → Y' = Y^(1+gamma_map) → 輝度比でRGBスケール
+```
+
+### Entropy計算
+
+latentの分散で計算（学習時と統一）：
+```python
+z_flat = latent.view(B, -1)
+entropy = z_flat.var(dim=1)
+```
+
+### MoP（Mixture of Perturbations）
+
+- **K=4**: 画像をK-meansで4クラスタに分類
+- **ターゲット3種**: 低/中/高エントロピー画像に向けて誘導
+- **摂動構成**: `delta_g`（共通） + `Delta[k]`（クラスタ別） + `delta_t`（ターゲット別）
+- 実装上は `delta_g` がターゲット別に保持されるため、`delta_g(target)` + `Delta[target,k]` の形
+
+### バックエンド設定（backend/main.py）
+
+```python
+moonknight_engine = MoonKnightV3(
+    model_dir="/home/techne/aicheckers/models/fastprotect",
+    device="cuda",
+    use_adaptive=True,
+    use_warping=True,  # Micro-Warping有効
+)
+
+# 保護実行
+protected_image = moonknight_engine.poison(image, strength=0.6)
+```
+
+---
+
+## FastProtect 学習仕様
+
+### 概要
+
+摂動を「学習」しておき、推論時は適用するだけ。1枚あたり数秒で保護可能。
+
+### 学習スクリプト
+
+```bash
+# Modal上で実行
+modal run scripts/fastprotect_train.py --train --data-dir /vol/train_images --steps 40000
+```
+
+### 学習パラメータ
+
+| パラメータ | 値 | 説明 |
 |------------|-----|------|
-| perlin_scale | **64** | scale128より攻撃効果が高い |
-| perlin_seed | None（画像ハッシュ） | 再現可能 + 画像ごとに異なる |
+| steps | 40,000 | 学習ステップ数 |
+| batch_size | 16 | A10G向け |
+| lr | 0.0002 | Adam (β=0.5, 0.99) |
+| η | 8/255 (~0.031) | 摂動予算（L∞） |
+| λ | 3.5×10⁻⁵ | Multi-Layer Loss重み |
+| K | 4 | MoPクラスタ数 |
 
-### ベンチマーク結果 (scale64, image-hash seed)
+### Differentiable Augmentation（2026-01-23 強化）
 
-| 指標 | 値 | 評価 |
-|------|-----|------|
-| LPIPS | 0.047 | ✅ 視覚差なし |
-| VAE Cos Sim | 0.80 | ✅ 構造乖離 |
-| CLIP to Original | -0.19 | ⚠️ v3(-0.26)より低下 |
-| CLIP to Negative | 0.28 | ✅ |
+学習中にランダム変換を適用し、圧縮耐性を向上：
 
-### 設計思想
+| 変換 | 実装 | 説明 |
+|------|------|------|
+| **resize** | bilinear | 480-544px → 512px（微小リサイズ） |
+| **jpeg** | **kornia RandomJPEG** | DCTベースの本物のJPEG圧縮シミュレーション（quality 60-90） |
+| **crop** | 4-16px切り取り | 端のクロップ |
 
-- **Perlinノイズ**: ホワイトノイズより浄化耐性・JPEG耐性が高い
-- **画像ハッシュベースシード**: 攻撃パターンが画像ごとに異なり学習されにくい
-- **scale64**: 細かすぎず粗すぎないバランス
+**JPEGシミュレーション改善**:
+- 旧: ガウシアンブラーで近似
+- 新: kornia `RandomJPEG`（DCTベースの微分可能JPEG）
 
----
+### 出力ファイル
 
-## SAP v4 (アーカイブ: WD14実験)
-
-**スクリプト**: `archive/sap_experiments/sap_v4.py`
-
-WD14 Tagger攻撃を試みたが、視認性とのトレードオフが厳しく、v3の方がバランスが良いため保留。
-
-**課題**: 平坦部へのWD14攻撃がノイズとして目立つ。知覚マスク等で改善を試みたが、VAE攻撃効果との両立が困難。
-
----
-
-## スクリプト一覧
-
-| スクリプト | 用途 | 状態 |
-|------------|------|------|
-| `sap_v3.py` | VAE+CLIP+Warping（ベースライン） | ✅ 使用中 |
-| `sap_v3_variants.py` | **Perlin + 画像ハッシュシード** | ✅ 実験中 |
-| `sap_v2.py` | VAE+CLIP+Warping（旧版） | 参考用 |
-| `archive/sap_experiments/sap_v4.py` | WD14+VAE実験 | アーカイブ |
+```
+models/fastprotect/
+├── checkpoint_step25000.pt   # 学習済み摂動
+│   ├── delta_g              # ターゲット別摂動 (num_targets, 3, 512, 512)
+│   ├── Delta                # クラスタ別摂動 (K, 3, 512, 512)
+│   ├── K                    # クラスタ数
+│   └── num_targets          # ターゲット数
+├── kmeans_model.pkl          # K-meansモデル
+└── target_entropies.json     # ターゲットエントロピー値
+```
 
 ---
 
-## 開発履歴
+## 依存パッケージ
 
-1. **highfreq_attack.py** - エッジ適応 + VAE攻撃（Cos Sim 0.92程度）
-2. **sap_v2.py** - CLIP攻撃追加 + Micro-Warping
-3. **sap_v3.py** - ネガティブ概念誘導 + 概念混乱追加（Cos Sim 0.81、CLIP離脱-0.26）★現行ベスト
-4. **sap_v4.py** - WD14 Tagger攻撃実験（ノイズ問題でアーカイブ）
+| パッケージ | 用途 | 必須 |
+|-----------|------|------|
+| torch | テンソル演算 | ✅ |
+| diffusers | SDXL VAE | ✅ |
+| lpips | 知覚距離計算 | ✅ |
+| kornia | Micro-Warping, JPEG | ✅ |
+| scikit-learn | K-means | ✅ |
 
 ---
 
-## Micro-Warping パラメータ
+## ベンチマーク目安
 
-| パラメータ | 推奨値 | 説明 |
-|------------|--------|------|
-| warp_magnitude | 0.01 | 変形強度（0.01でぼやけなし） |
-| kernel_size | (63, 63) | ぼかしカーネル |
-| sigma | (12.0, 12.0) | ガウシアンσ |
+| 指標 | 目標値 | 説明 |
+|------|--------|------|
+| LPIPS | < 0.05 | 視覚差がほぼ分からない |
+| VAE Cos Sim | < 0.85 | latent空間での乖離 |
+| 処理時間 | < 10秒/枚 | 本番推論 |
 
-**注意**: magnitude 0.015以上だと視覚的にぼやける
+---
+
+## トラブルシューティング
+
+### Micro-Warpingがスキップされる
+
+```
+[MoonKnight] Warning: kornia not found. Micro-warping skipped.
+```
+
+**解決**: `pip install kornia`
+
+### MoP整合性エラー
+
+```
+ValueError: Checkpoint K (4) != KMeans n_clusters (3)
+```
+
+**原因**: 学習済みモデルとK-meansモデルの不整合
+
+**解決**: 同じ学習セッションで生成されたファイルセットを使用
+
+### 502エラー（バックエンド起動失敗）
+
+**確認**: `journalctl --user -u aicheckers-backend -n 50`
+
+**よくある原因**:
+- kornia未インストール
+- モデルファイル欠損
+- GPU OOM
 
 ---
 
 ## 参考論文
 
-### FastProtect (CVPR 2025) ★★★最推奨
-- **論文**: https://arxiv.org/abs/2412.11423
-- **開発**: NAVER WEBTOON AI
-- **状態**: **独自実装完了** (2026-01-04)
-
-#### 使用方法
-
-```bash
-# 学習（Modal上で実行）
-modal run scripts/fastprotect_train.py --train --data-dir /vol/train_images --steps 40000
-
-# 非同期投入（推奨）
-modal run scripts/fastprotect_train.py --submit --data-dir /vol/train_images
-
-# 推論テスト
-modal run scripts/fastprotect_inference.py --test
-
-# 画像保護
-modal run scripts/fastprotect_inference.py --protect --input /vol/input --output /vol/output --use-warping
-```
-
-#### 関連ファイル
-
-| ファイル | 用途 |
-|----------|------|
-| `scripts/fastprotect_train.py` | 摂動学習（40,000ステップ） |
-| `scripts/fastprotect_inference.py` | 画像保護推論 |
-| `lib/vae_hooks.py` | VAE中間層フック |
-| `lib/mpl_loss.py` | Multi-Layer Protection Loss |
-
-#### 学習パラメータ
-
-| パラメータ | 値 | 備考 |
-|------------|-----|------|
-| num_steps | 40,000 | 論文準拠 |
-| batch_size | 16 | A10G向け |
-| lr | 0.0002 | Adam (β=0.5, 0.99) |
-| η (摂動予算) | 8/255 | ~0.031 |
-| λ (中間層重み) | 3.5×10⁻⁵ | 論文準拠 |
-| K (クラスタ数) | 4 | Mixture-of-Perturbations |
-
-#### 技術詳細
-
-- **Multi-Layer Protection Loss**: VAE中間層（down_1〜3, mid_0）でも距離を最大化
-- **Mixture-of-Perturbations**: K=4のクラスタごとに異なる摂動を学習
-- **Adaptive Targeted Protection**: エントロピーベースでターゲット画像を選択
-- **Adaptive Protection Strength**: LPIPS距離に基づき摂動強度を調整
-- **Micro-Warping統合**: 浄化耐性のための幾何学的変形
-
-### PAP (NeurIPS 2024)
-- **論文**: https://arxiv.org/abs/2408.10571
-- **弱点**: JPEG圧縮に弱い
-
-### StyleGuard (NeurIPS 2025)
-- **論文**: https://arxiv.org/abs/2505.18766
-- **注意**: LoRAに対して効果が限定的
+| 論文 | 会議 | 概要 |
+|------|------|------|
+| **FastProtect** | CVPR 2025 | 本実装のベース。学習済み摂動による高速保護 |
+| **CAT** | ICML 2025 | VAE攻撃を破る手法。要監視 |
+| **GAP-Diff** | NDSS 2025 | JPEG耐性向上手法 |
+| **DCT-Shield** | ICCV 2025 | 周波数ドメインでの保護 |
 
 ---
 
-## Modal実験フォルダ
+## 開発履歴
 
-| フォルダ | 内容 |
-|----------|------|
-| train_normal | オリジナル画像 |
-| train_sap_v2 | SAP v2攻撃済み |
-| train_sap_v3 | SAP v3攻撃済み（最新） |
-| train_hf_stealth | エッジ5% + 平坦1%攻撃済み（旧） |
+| 日付 | 内容 |
+|------|------|
+| 2026-01-04 | FastProtect独自実装完了 |
+| 2026-01-08 | Guard UI進捗バーをシミュレーションに変更 |
+| 2026-01-23 | MoonKnight V3: Entropy統一, MoP整合性チェック, パッチLPIPS, Micro-Warping多様化 |
+| 2026-01-23 | FastProtect学習: kornia RandomJPEGによるJPEGシミュレーション強化 |
+| 2026-01-23 | 低周波ガンマゆらぎ追加（denoise耐性向上） |
+| 2026-01-23 | Edge-Aware Warp: Sobel法でエッジ付近のwarp減衰 |
+| 2026-01-23 | Chrominance-Only Warp: LAB色空間でa/bのみ変形（視認性向上） |
+| 2026-01-23 | CoupledTPS: 薄板スプラインによるグローバル変形（実験的、デフォルトOFF） |
 
 ---
 
-## 今後の研究課題
+## 今後の課題
 
-1. **実際のLoRA学習テスト**: SAP v3攻撃画像でLoRA学習→生成品質の検証
-2. **浄化耐性テスト**: LightShed、DiffPure等での浄化後も攻撃が残るか
-3. **JPEG耐性**: SNS投稿時の再圧縮への耐性
-4. **FastProtect統合**: コード公開後に高速化手法を取り込む
+1. **CAT攻撃対策**: VAE-only保護の限界。CLIP/DINO併用検討
+2. **JPEG耐性強化**: GAP-Diff統合
+3. **実LoRA学習テスト**: 保護画像でLoRA学習→生成品質検証
+4. **浄化耐性テスト**: LightShed, DiffPure等への耐性確認

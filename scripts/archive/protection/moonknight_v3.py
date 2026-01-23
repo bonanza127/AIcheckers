@@ -17,7 +17,6 @@ import pickle
 import numpy as np
 import json
 import concurrent.futures
-import hashlib
 
 # ==================== Core Classes ====================
 
@@ -72,31 +71,11 @@ class MoonKnightV3:
         use_adaptive=True,
         use_warping=False,
         warp_magnitude=0.006,
-        use_gamma=True,
-        gamma_strength=0.05,
-        use_edge_aware_warp=True,
-        edge_avoid_strength=0.7,
-        chrominance_only_warp=True,
-        use_coupled_tps=False,
-        tps_steps=2,
-        tps_grid=4,
-        tps_magnitude=0.004,
-        tps_margin=0.08,
     ):
         self.device = device if torch.cuda.is_available() else "cpu"
         self.use_adaptive = use_adaptive
         self.use_warping = use_warping
         self.warp_magnitude = warp_magnitude
-        self.use_gamma = use_gamma
-        self.gamma_strength = gamma_strength
-        self.use_edge_aware_warp = use_edge_aware_warp
-        self.edge_avoid_strength = edge_avoid_strength
-        self.chrominance_only_warp = chrominance_only_warp
-        self.use_coupled_tps = use_coupled_tps
-        self.tps_steps = tps_steps
-        self.tps_grid = tps_grid
-        self.tps_magnitude = tps_magnitude
-        self.tps_margin = tps_margin
         self.model_dir = Path(model_dir)
         
         # Paths
@@ -220,24 +199,8 @@ class MoonKnightV3:
         scaling = base_scale * (1 - M_normalized * sensitivity)
         return torch.clamp(scaling, min_scale, 1.0)
 
-    def _apply_micro_warping(
-        self,
-        image_tensor,
-        magnitude=0.006,
-        seed=None,
-        kernel_size=63,
-        sigma=12.0,
-        anisotropy=(1.0, 1.0),
-        edge_source=None,
-        edge_avoid_strength=0.7,
-        chrominance_only=False,
-    ):
-        """
-        Micro-Warping: 微細な幾何学的変形
-
-        chrominance_only=True: LAB空間のa/bチャンネル（色度）のみに変形を適用。
-        人間の目は輝度(L)に敏感だが色度(a,b)には鈍感なため、視認性への影響を最小化。
-        """
+    def _apply_micro_warping(self, image_tensor, magnitude=0.006, seed=None):
+        """Micro-Warping: 微細な幾何学的変形"""
         try:
             import kornia
         except ImportError:
@@ -249,126 +212,14 @@ class MoonKnightV3:
 
         B, C, H, W = image_tensor.shape
         noise = torch.randn(B, 2, H, W, device=image_tensor.device) * magnitude
-        noise[:, 0] *= anisotropy[0]
-        noise[:, 1] *= anisotropy[1]
 
-        # Edge-aware attenuation (reduce warp near strong edges)
-        if edge_source is not None and edge_avoid_strength > 0:
-            rgb = edge_source
-            Y = 0.299 * rgb[:, 0:1] + 0.587 * rgb[:, 1:2] + 0.114 * rgb[:, 2:3]
-            edge_mag = kornia.filters.sobel(Y)
-            edge_mag = edge_mag / (edge_mag.max() + 1e-8)
-            atten = 1.0 - edge_avoid_strength * edge_mag
-            noise = noise * atten
-
-        if chrominance_only:
-            # 色度チャンネル限定ワープ: 輝度(L)を保持、色度(a,b)のみ変形
-            lab = kornia.color.rgb_to_lab(image_tensor)
-            L_original = lab[:, 0:1].clone()  # 輝度を保存
-
-            # a,bチャンネルにのみelastic transform適用
-            ab = lab[:, 1:3]  # (B, 2, H, W)
-            ab_warped = kornia.geometry.transform.elastic_transform2d(
-                ab,
-                noise,
-                kernel_size=(kernel_size, kernel_size),
-                sigma=(sigma, sigma),
-                align_corners=True,
-            )
-
-            # 元のLとwarpedのa,bを合成
-            lab_warped = torch.cat([L_original, ab_warped], dim=1)
-            warped = kornia.color.lab_to_rgb(lab_warped)
-        else:
-            # 従来のRGB全体ワープ
-            warped = kornia.geometry.transform.elastic_transform2d(
-                image_tensor,
-                noise,
-                kernel_size=(kernel_size, kernel_size),
-                sigma=(sigma, sigma),
-                align_corners=True,
-            )
-
-        return torch.clamp(warped, 0, 1)
-
-    def _apply_gamma_fluctuation(self, image_tensor, lpips_map=None, strength=0.02, seed=None):
-        """低周波ガンマゆらぎ: 輝度チャンネルに微細な明暗変化を追加"""
-        B, C, H, W = image_tensor.shape
-
-        if seed is not None:
-            torch.manual_seed(seed)
-
-        # 低解像度ノイズ生成（16x16）→ アップスケール
-        low_res = 16
-        noise_low = torch.randn(B, 1, low_res, low_res, device=image_tensor.device)
-        gamma_map = F.interpolate(noise_low, size=(H, W), mode='bilinear', align_corners=False)
-        gamma_map = gamma_map * strength  # ±strength の範囲
-
-        # LPIPSマップで強度調整（目立つ部分は弱める）
-        if lpips_map is not None:
-            M_norm = (lpips_map - lpips_map.min()) / (lpips_map.max() - lpips_map.min() + 1e-8)
-            gamma_map = gamma_map * (1 - M_norm * 0.8)  # 目立つ部分は20%まで減衰
-
-        # RGB → Y (輝度) 変換係数
-        # Y = 0.299*R + 0.587*G + 0.114*B
-        rgb = image_tensor
-        Y = 0.299 * rgb[:, 0:1] + 0.587 * rgb[:, 1:2] + 0.114 * rgb[:, 2:3]
-
-        # ガンマ適用: Y' = Y ^ (1 + gamma_map)
-        eps = 1e-6
-        Y_new = torch.clamp(Y, eps, 1.0) ** (1.0 + gamma_map)
-
-        # 輝度比でRGBをスケール
-        scale = Y_new / (Y + eps)
-        rgb_new = rgb * scale
-
-        return torch.clamp(rgb_new, 0, 1)
-
-    def _make_tps_control_points(self, grid_size=4, margin=0.08, device="cpu"):
-        """TPS制御点を正規化座標 [0,1] で作成"""
-        coords = torch.linspace(margin, 1.0 - margin, grid_size, device=device)
-        yy, xx = torch.meshgrid(coords, coords, indexing="ij")
-        points = torch.stack([xx.reshape(-1), yy.reshape(-1)], dim=-1)
-        return points.unsqueeze(0)
-
-    def _apply_coupled_tps(
-        self,
-        image_tensor,
-        steps=2,
-        grid_size=4,
-        magnitude=0.004,
-        margin=0.08,
-        seed=None,
-    ):
-        """Coupled TPS: 少数制御点TPSを複数回カップリング"""
-        try:
-            from kornia.geometry.transform.thin_plate_spline import get_tps_transform, warp_image_tps
-        except ImportError:
-            print("[MoonKnight] Warning: kornia TPS not available. CoupledTPS skipped.")
-            return image_tensor
-
-        if seed is not None:
-            torch.manual_seed(seed)
-
-        warped = image_tensor
-        points_src = self._make_tps_control_points(
-            grid_size=grid_size, margin=margin, device=image_tensor.device
+        warped = kornia.geometry.transform.elastic_transform2d(
+            image_tensor,
+            noise,
+            kernel_size=(63, 63),
+            sigma=(12.0, 12.0),
+            align_corners=True,
         )
-
-        for _ in range(max(1, steps)):
-            offsets = torch.randn_like(points_src) * magnitude
-            points_dst = torch.clamp(points_src + offsets, 0.0, 1.0)
-            # Reverse transform: dst -> src
-            kernel_weights, affine_weights = get_tps_transform(points_dst, points_src)
-            warped = warp_image_tps(
-                warped,
-                points_src,
-                kernel_weights,
-                affine_weights,
-                align_corners=False,
-                padding_mode="reflection",
-            )
-
         return torch.clamp(warped, 0, 1)
 
     def poison(
@@ -380,16 +231,6 @@ class MoonKnightV3:
         progress_callback=None,
         use_warping=None,
         warp_magnitude=None,
-        use_gamma=None,
-        gamma_strength=None,
-        use_edge_aware_warp=None,
-        edge_avoid_strength=None,
-        chrominance_only_warp=None,
-        use_coupled_tps=None,
-        tps_steps=None,
-        tps_grid=None,
-        tps_magnitude=None,
-        tps_margin=None,
     ) -> Image.Image:
         """
         Apply MoonKnight protection to a single image.
@@ -438,7 +279,6 @@ class MoonKnightV3:
             
             # 2. Compute Scaling Map (Adaptive)
             scaling_map_512 = None
-            perceptual_map = None
             if self.use_adaptive and self.lpips_model is not None:
                 report_progress(50) # Adaptive Scaling
                 
@@ -493,69 +333,12 @@ class MoonKnightV3:
             report_progress(90) # Applying
             protected_full = torch.clamp(img_full + final_perturbation.unsqueeze(0), 0, 1)
 
-            # Optional micro-warping (浄化耐性向上)
+            # Optional micro-warping (output robustness)
             apply_warping = self.use_warping if use_warping is None else use_warping
+            magnitude = self.warp_magnitude if warp_magnitude is None else warp_magnitude
             if apply_warping:
-                # 3パターンのwarp設定（画像ごとに1つを決定的に選択）
-                warp_configs = [
-                    {"kernel_size": 31, "sigma": 6.0, "magnitude": 0.004, "anisotropy": (1.0, 0.85)},   # 細かい・弱い
-                    {"kernel_size": 63, "sigma": 12.0, "magnitude": 0.0055, "anisotropy": (0.9, 1.0)},  # 中程度
-                    {"kernel_size": 95, "sigma": 18.0, "magnitude": 0.0065, "anisotropy": (1.0, 0.7)},  # 粗い・強い
-                ]
-                # 画像ハッシュから決定的にconfig選択（再現可能 + 画像ごとに異なる）
-                img_bytes = img_full.detach().cpu().numpy().tobytes()
-                seed = int(hashlib.sha256(img_bytes).hexdigest()[:8], 16)
-                config = warp_configs[seed % len(warp_configs)]
-                # magnitudeを明示指定された場合のみ上書き（configのmagnitudeは維持）
-                if warp_magnitude is not None:
-                    config = {**config, "magnitude": warp_magnitude}
-                apply_edge_aware = self.use_edge_aware_warp if use_edge_aware_warp is None else use_edge_aware_warp
-                edge_strength = self.edge_avoid_strength if edge_avoid_strength is None else edge_avoid_strength
-                chroma_only = self.chrominance_only_warp if chrominance_only_warp is None else chrominance_only_warp
-                protected_full = self._apply_micro_warping(
-                    protected_full,
-                    seed=seed,
-                    edge_source=img_full if apply_edge_aware else None,
-                    edge_avoid_strength=edge_strength if apply_edge_aware else 0.0,
-                    chrominance_only=chroma_only,
-                    **config
-                )
-
-            # CoupledTPS (optional, low-magnitude)
-            apply_tps = self.use_coupled_tps if use_coupled_tps is None else use_coupled_tps
-            if apply_tps:
-                tps_seed = int(hashlib.sha256(img_full.detach().cpu().numpy().tobytes()).hexdigest()[:8], 16) ^ 0xA5A5
-                protected_full = self._apply_coupled_tps(
-                    protected_full,
-                    steps=self.tps_steps if tps_steps is None else tps_steps,
-                    grid_size=self.tps_grid if tps_grid is None else tps_grid,
-                    magnitude=self.tps_magnitude if tps_magnitude is None else tps_magnitude,
-                    margin=self.tps_margin if tps_margin is None else tps_margin,
-                    seed=tps_seed,
-                )
-
-            # 低周波ガンマゆらぎ（denoise耐性向上）
-            apply_gamma = self.use_gamma if use_gamma is None else use_gamma
-            gamma_strength_value = self.gamma_strength if gamma_strength is None else gamma_strength
-            if apply_gamma:
-                # strengthと連動（視認性を壊しにくくする）
-                gamma_strength_value = gamma_strength_value * max(0.5, min(strength / 0.6, 1.5))
-                lpips_map_full = None
-                if self.use_adaptive and perceptual_map is not None:
-                    lpips_map_full = F.interpolate(
-                        perceptual_map,
-                        size=(h_orig, w_orig),
-                        mode="bilinear",
-                        align_corners=False
-                    )
-                gamma_seed = int(hashlib.sha256(img_full.detach().cpu().numpy().tobytes()).hexdigest()[:8], 16)
-                protected_full = self._apply_gamma_fluctuation(
-                    protected_full,
-                    lpips_map=lpips_map_full,
-                    strength=gamma_strength_value,
-                    seed=gamma_seed
-                )
-
+                protected_full = self._apply_micro_warping(protected_full, magnitude=magnitude)
+            
             # Convert back to PIL
             protected_np = protected_full.squeeze(0).cpu().numpy()
             protected_np = (protected_np * 255).astype("uint8").transpose(1, 2, 0)

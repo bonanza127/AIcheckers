@@ -329,6 +329,18 @@ class DifferentiableAugmentation:
     def __init__(self, device: str = "cuda"):
         self.device = device
 
+        # kornia Differentiable JPEG
+        # 実際のDCTベースJPEG圧縮をシミュレート
+        try:
+            from kornia.augmentation import RandomJPEG
+            # quality 60-90 の範囲でランダム（SNS投稿時の典型的な品質）
+            self.jpeg_aug = RandomJPEG(jpeg_quality=(60.0, 90.0), p=1.0).to(device)
+            self.use_kornia_jpeg = True
+        except Exception:
+            print("Warning: kornia RandomJPEG not available, falling back to Gaussian blur approximation")
+            self.jpeg_aug = None
+            self.use_kornia_jpeg = False
+
     def apply(self, x, p: float = 0.5):
         """
         確率pでランダムな拡張を適用
@@ -359,14 +371,19 @@ class DifferentiableAugmentation:
             x = torch.nn.functional.interpolate(x, size=(H, W), mode="bilinear", align_corners=False)
 
         elif aug_type == "jpeg":
-            # JPEG圧縮シミュレーション（微分可能な近似）
-            # 高周波成分を減衰させる
-            quality = random.randint(60, 90)
-            sigma = (100 - quality) / 20.0  # quality 60 → sigma 2.0, quality 90 → sigma 0.5
-            if sigma > 0.1:
-                kernel_size = int(sigma * 4) | 1  # 奇数に
-                kernel_size = max(3, min(kernel_size, 7))
-                x = self._gaussian_blur(x, kernel_size, sigma)
+            # JPEG圧縮シミュレーション（微分可能）
+            if self.use_kornia_jpeg and self.jpeg_aug is not None:
+                # kornia Differentiable JPEG: DCTベースの本物のJPEG圧縮シミュレーション
+                x = self.jpeg_aug(x)
+                x = torch.clamp(x, 0, 1)
+            else:
+                # フォールバック: ガウシアンブラーで高周波減衰を近似
+                quality = random.randint(60, 90)
+                sigma = (100 - quality) / 20.0  # quality 60 → sigma 2.0, quality 90 → sigma 0.5
+                if sigma > 0.1:
+                    kernel_size = int(sigma * 4) | 1  # 奇数に
+                    kernel_size = max(3, min(kernel_size, 7))
+                    x = self._gaussian_blur(x, kernel_size, sigma)
 
         elif aug_type == "crop":
             # 微小クロップ: 端を数ピクセル切る
