@@ -32,7 +32,7 @@ import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
-from PIL import Image
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel
 from transformers import AutoImageProcessor, AutoModel
 
@@ -1732,9 +1732,11 @@ async def guard_image(
     try:
         start_time = time.time()
 
+        iterations, strength = sanitize_guard_params(iterations, strength)
+
         # 画像読み込み（サイズチェック含む）
         contents = await validate_file_size(file)
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        image = load_rgb_image(contents)
         original_image = image.copy()
 
         # ユーザーID取得（Enterprise APIキー or レート制限キー）
@@ -1873,13 +1875,15 @@ async def guard_image_stream(
                 status_code=429,
                 detail=f"上限（{limit}枚）に達しました。1時間ごとに回復します。"
             )
-        # トークン消費
-        increment_rate_limit(key, is_vip, is_admin, limit_type="guard")
 
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid file type")
 
+    iterations, strength = sanitize_guard_params(iterations, strength)
+
     contents = await validate_file_size(file)
+    if not is_enterprise:
+        increment_rate_limit(key, is_vip, is_admin, limit_type="guard")
     filename = file.filename
     user_id = enterprise_info["api_key"] if is_enterprise else key
 
@@ -1898,7 +1902,7 @@ async def guard_image_stream(
             try:
                 start_time = time.time()
 
-                image = Image.open(io.BytesIO(contents)).convert("RGB")
+                image = load_rgb_image(contents)
                 original_image = image.copy()
 
                 # TrustMark透かし埋め込み（alpha=1.15、FastProtect前）
@@ -2038,6 +2042,40 @@ def extract_twitter_image_url(url: str) -> str:
         )
 
     return url
+
+
+def load_rgb_image(contents: bytes) -> Image.Image:
+    try:
+        image = Image.open(io.BytesIO(contents))
+        image = ImageOps.exif_transpose(image)
+        return image.convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
+
+def sanitize_guard_params(iterations: int, strength: float) -> tuple[int, float]:
+    MAX_ITERATIONS = 500  # サーバーリソース保護
+
+    try:
+        iterations_value = int(iterations)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid iterations value")
+
+    if iterations_value < 1 or iterations_value > MAX_ITERATIONS:
+        raise HTTPException(status_code=400, detail=f"Iterations must be between 1 and {MAX_ITERATIONS}")
+
+    try:
+        strength_value = float(strength)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid strength value")
+
+    if not np.isfinite(strength_value):
+        raise HTTPException(status_code=400, detail="Invalid strength value")
+
+    if strength_value < 0.0 or strength_value > 1.0:
+        raise HTTPException(status_code=400, detail="Strength must be between 0.0 and 1.0")
+
+    return iterations_value, strength_value
 
 
 @app.post("/analyze-url")
