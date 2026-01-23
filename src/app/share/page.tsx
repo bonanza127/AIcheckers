@@ -17,14 +17,13 @@ function getVerdictType(verdict: string): "ai" | "high" | "middle" | "low" | "hu
   return "human";
 }
 
-// 短縮コードからverdictに変換
-function expandVerdict(v: string): string {
-  if (v === "ai") return "AI DETECTED";
-  if (v === "ha") return "HIGH ALERT";
-  if (v === "mc") return "MIDDLE CAUTION";
-  if (v === "ls") return "LOW SIMILARITY";
-  if (v === "h") return "HUMAN CONFIRMED";
-  return v;
+// スコアからverdictを計算（本番と同じ閾値）
+function getVerdictFromScore(score: number): string {
+  if (score >= 80) return "AI DETECTED";
+  if (score >= 60) return "HIGH ALERT";
+  if (score >= 40) return "MIDDLE CAUTION";
+  if (score >= 20) return "LOW SIMILARITY";
+  return "HUMAN CONFIRMED";
 }
 
 // 短縮traceコードを展開
@@ -37,9 +36,10 @@ function expandTrace(tr: string): string {
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const params = await searchParams;
-  // 短縮パラメータ優先、なければ通常パラメータ
-  const verdict = params.v ? expandVerdict(params.v) : (params.verdict || "AI DETECTED");
+  // スコアからverdictを計算（本番と同じロジック）
   const score = params.s || params.score || "98";
+  const scoreNum = parseInt(score, 10) || 98;
+  const verdict = getVerdictFromScore(scoreNum);
   const time = params.t || params.time || "0.00";
   const trace = params.tr ? expandTrace(params.tr) : (params.trace || "");
   const verdictType = getVerdictType(verdict);
@@ -90,8 +90,10 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 
 export default async function SharePage({ searchParams }: Props) {
   const params = await searchParams;
-  const verdict = params.v ? expandVerdict(params.v) : (params.verdict || "AI DETECTED");
+  // スコアからverdictを計算（generateMetadataと同じロジック）
   const score = params.s || params.score || "98";
+  const scoreNum = parseInt(score, 10) || 98;
+  const verdict = getVerdictFromScore(scoreNum);
   const verdictType = getVerdictType(verdict);
 
   // カラー定義（5段階対応）

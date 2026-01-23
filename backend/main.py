@@ -1777,7 +1777,8 @@ async def guard_image(
             moonknight_engine = MoonKnightV3(
                 model_dir="/home/techne/aicheckers/models/fastprotect",
                 device=str(device),
-                use_adaptive=True
+                use_adaptive=True,
+                use_warping=True
             )
 
         # 保護実行（PIL -> PIL）
@@ -1933,7 +1934,8 @@ async def guard_image_stream(
                     moonknight_engine = MoonKnightV3(
                         model_dir="/home/techne/aicheckers/models/fastprotect",
                         device=str(device),
-                        use_adaptive=True
+                        use_adaptive=True,
+                        use_warping=True
                     )
 
                 progress_callback(30, 100) # Analyzing & Protecting
