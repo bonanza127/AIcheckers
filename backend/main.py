@@ -2679,9 +2679,10 @@ async def magic_link_login(token: str):
         email = payload.get("email")
         name = payload.get("name", "Developer")
         is_admin = payload.get("is_admin", False)
+        is_vip = payload.get("is_vip", True)  # デフォルトtrue（後方互換）
 
         # マジックリンククリックをログ出力
-        print(f"[MAGIC LINK CLICKED] email={email}, name={name}, is_admin={is_admin}")
+        print(f"[MAGIC LINK CLICKED] email={email}, name={name}, is_admin={is_admin}, is_vip={is_vip}")
 
         # 通常のログイン用JWTを発行（有効期限はマジックリンクの期限を引き継ぐ）
         exp = payload.get("exp")
@@ -2701,7 +2702,8 @@ async def magic_link_login(token: str):
 
         # フロントエンドにリダイレクト（トークンをクエリパラメータで渡す）
         is_admin_str = "true" if is_admin else "false"
-        redirect_url = f"https://aicheckers.net?magic_token={login_token}&name={name}&email={email}&is_vip=true&is_admin={is_admin_str}"
+        is_vip_str = "true" if is_vip else "false"
+        redirect_url = f"https://aicheckers.net?magic_token={login_token}&name={name}&email={email}&is_vip={is_vip_str}&is_admin={is_admin_str}"
         return RedirectResponse(url=redirect_url)
 
     except jwt.ExpiredSignatureError:
