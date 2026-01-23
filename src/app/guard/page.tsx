@@ -358,7 +358,21 @@ export default function Home() {
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
     setCurrentProtectedImage(null);  // Clear previous result for batch processing
-    setGuardProgress({ current: 0, total: 0 });  // Reset progress bar immediately
+    setGuardProgress({ current: 0, total: 100 });  // Reset progress bar immediately
+
+    // プログレスバーを処理と同時に開始（7秒で90%まで進む）
+    const progressDuration = 7000; // 7秒
+    const progressTarget = 90; // 最大90%（完了時に100%にジャンプ）
+    const progressInterval = 50; // 50msごとに更新
+    let progressValue = 0;
+    const progressTimer = setInterval(() => {
+      progressValue += (progressTarget / (progressDuration / progressInterval));
+      if (progressValue >= progressTarget) {
+        progressValue = progressTarget;
+        clearInterval(progressTimer);
+      }
+      setGuardProgress({ current: Math.round(progressValue), total: 100 });
+    }, progressInterval);
 
     // ファイルサイズを取得
     const fileSizeKB = (file.size / 1024).toFixed(1);
@@ -375,9 +389,6 @@ export default function Home() {
     let processingTime: number = 0;
     let ssim: number;
     let rateLimitError = false;
-
-    // 進捗リセット
-    setGuardProgress({ current: 0, total: 0 });
 
     try {
       const apiUrl = getApiUrl();
@@ -491,6 +502,10 @@ export default function Home() {
       }
 
     } catch (error) {
+      // エラー時もプログレスタイマーを停止
+      clearInterval(progressTimer);
+      setGuardProgress({ current: 100, total: 100 });
+
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       if (errorMessage.startsWith("RATE_LIMITED:")) {
@@ -526,26 +541,9 @@ export default function Home() {
     // Remove from queue after complete
     setQueue(prev => prev.filter(item => item.id !== queueItemId));
 
-    // Simulate progress bar over 6-8 seconds (randomized)
-    const minDuration = 6000 + Math.random() * 2000; // 6-8 seconds random
-    const elapsed = Date.now() - fileStartTime;
-    const remainingTime = Math.max(0, minDuration - elapsed);
-
-    if (remainingTime > 0) {
-      // Simulate gradual progress fill
-      const totalSteps = 100;
-      const intervalMs = remainingTime / totalSteps;
-
-      for (let step = 0; step <= totalSteps; step++) {
-        setGuardProgress({ current: step, total: totalSteps });
-        if (step < totalSteps) {
-          await new Promise(resolve => setTimeout(resolve, intervalMs));
-        }
-      }
-    } else {
-      // If already past duration, just set to 100%
-      setGuardProgress({ current: 100, total: 100 });
-    }
+    // プログレスタイマーを停止して100%にジャンプ
+    clearInterval(progressTimer);
+    setGuardProgress({ current: 100, total: 100 });
 
     setPhase("complete");
     // 結果をステートにセット
