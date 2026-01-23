@@ -244,7 +244,7 @@ export default function PatrolPage() {
                                 >
                                     {/* Thumbnail Preview */}
                                     <div className="relative w-24 h-24 rounded-lg overflow-hidden bg-black flex-shrink-0 border border-zinc-800 group-hover:border-zinc-600 transition-colors">
-                                        <img src={alert.thumbnail} loading="lazy" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                                        <img src={alert.thumbnail} loading="lazy" alt="Alert thumbnail" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                                         <span className="absolute bottom-1 right-1 text-[10px] font-mono bg-black/50 backdrop-blur px-1 rounded text-white">{alert.similarity}%</span>
                                     </div>
@@ -325,6 +325,7 @@ export default function PatrolPage() {
                                             <div className="absolute inset-0 flex items-center justify-center p-6">
                                                 <img
                                                     src={selectedAlert.thumbnail}
+                                                    alt="Alert preview"
                                                     className="max-w-full max-h-full object-contain shadow-2xl drop-shadow-[0_0_15px_rgba(0,0,0,0.5)] rounded-sm border border-white/10"
                                                 />
                                             </div>
@@ -333,7 +334,7 @@ export default function PatrolPage() {
                                                     <Activity size={14} className="text-cyan-400" />
                                                     <span className="text-cyan-400 font-mono font-bold text-lg tracking-widest">{selectedAlert.similarity}% MATCH</span>
                                                 </div>
-                                                <a href={selectedAlert.sourceUrl} target="_blank" className="text-xs text-zinc-300 hover:text-white flex items-center gap-1 hover:underline truncate">
+                                                <a href={selectedAlert.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-zinc-300 hover:text-white flex items-center gap-1 hover:underline truncate">
                                                     {selectedAlert.sourceUrl} <ExternalLink size={10} />
                                                 </a>
                                             </div>

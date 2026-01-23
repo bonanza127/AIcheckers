@@ -4,17 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Upload, Play, Trash2, Cpu, Search, History, Plus, Eye, EyeOff } from "lucide-react";
 import VipModal from "@/components/VipModal";
 import HamburgerMenu from "@/components/HamburgerMenu";
-
-// API URL: 本番環境では api.aicheckers.net を使用
-const getApiUrl = () => {
-  if (typeof window !== "undefined") {
-    const hostname = window.location.hostname;
-    if (hostname === "aicheckers.net" || hostname === "www.aicheckers.net" || hostname.endsWith(".vercel.app")) {
-      return "https://api.aicheckers.net";
-    }
-  }
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-};
+import getApiUrl from "@/lib/api";
 
 type AnalysisPhase = "idle" | "scanning" | "complete";
 
@@ -231,11 +221,13 @@ export default function Home() {
   // バックエンドの接続状態を監視
   useEffect(() => {
     const checkBackendHealth = async () => {
+      const apiUrl = getApiUrl();
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 3000);
       try {
-        const apiUrl = getApiUrl();
         const response = await fetch(`${apiUrl}/health`, {
           method: "GET",
-          signal: AbortSignal.timeout(3000)
+          signal: controller.signal
         });
         if (response.ok) {
           const data = await response.json();
@@ -250,6 +242,8 @@ export default function Home() {
         }
       } catch {
         setBackendOnline(false);
+      } finally {
+        window.clearTimeout(timeoutId);
       }
     };
 
@@ -284,7 +278,7 @@ export default function Home() {
   }, []);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "info") => {
-    setLogs(prev => [...prev, { message, type }]);
+    setLogs(prev => [...prev, { message, type }].slice(-500));
   }, []);
 
   useEffect(() => {

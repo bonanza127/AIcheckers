@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, CreditCard, UserPlus, LogIn, ArrowRight, CheckCircle, Loader2 } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api.aicheckers.net";
+import getApiUrl from "@/lib/api";
 
 type AuthUser = {
   name: string;
@@ -84,7 +83,7 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
     }
 
     try {
-      const response = await fetch(`${API_BASE}/auth/register`, {
+      const response = await fetch(`${getApiUrl()}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, name: email.split("@")[0] }),
@@ -111,7 +110,7 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
   const handleOAuthRegister = (provider: string) => {
     // OAuthリダイレクト
     const endpoint = provider === "Google" ? "/auth/google" : "/auth/twitter";
-    window.location.href = `${API_BASE}${endpoint}`;
+    window.location.href = `${getApiUrl()}${endpoint}`;
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -126,7 +125,7 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
     }
 
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
+      const response = await fetch(`${getApiUrl()}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: loginEmail, password: loginPassword }),
@@ -159,7 +158,7 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
   const handleOAuthLogin = (provider: string) => {
     // OAuthリダイレクト（登録と同じエンドポイント）
     const endpoint = provider === "Google" ? "/auth/google" : "/auth/twitter";
-    window.location.href = `${API_BASE}${endpoint}`;
+    window.location.href = `${getApiUrl()}${endpoint}`;
   };
 
   const handlePayment = async (method: "stripe" | "paypal" | "paypay") => {
@@ -182,7 +181,7 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
         return;
       }
 
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+      const response = await fetch(`${getApiUrl()}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
