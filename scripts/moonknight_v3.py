@@ -73,7 +73,7 @@ class MoonKnightV3:
         use_warping=False,
         warp_magnitude=0.006,
         use_gamma=True,
-        gamma_strength=0.05,
+        gamma_strength=0.03,
         use_edge_aware_warp=True,
         edge_avoid_strength=0.7,
         chrominance_only_warp=True,
@@ -97,6 +97,10 @@ class MoonKnightV3:
         self.tps_grid = tps_grid
         self.tps_magnitude = tps_magnitude
         self.tps_margin = tps_margin
+        self.use_chromatic_aberration = True
+        self.chromatic_magnitude = 0.003
+        self.use_hue_rotation = True
+        self.hue_rotation_max_degrees = 2.0
         self.model_dir = Path(model_dir)
         
         # Paths
@@ -324,6 +328,167 @@ class MoonKnightV3:
 
         return torch.clamp(rgb_new, 0, 1)
 
+    def _apply_chromatic_aberration(
+        self,
+        image_tensor,
+        magnitude=0.003,
+        seed=None,
+    ):
+        """
+        Chromatic Aberration: RGBチャンネルを放射状に微小シフト
+
+        レンズの色収差を模倣。中心から離れるほどシフト量が増加。
+        - Rチャンネル: 外側へシフト
+        - Gチャンネル: 固定（基準）
+        - Bチャンネル: 内側へシフト
+
+        幾何学的変形のため、LightShed等の摂動除去手法に耐性あり。
+        """
+        if seed is not None:
+            torch.manual_seed(seed)
+
+        B, C, H, W = image_tensor.shape
+        device = image_tensor.device
+
+        # 正規化座標グリッド [-1, 1]
+        y_coords = torch.linspace(-1, 1, H, device=device)
+        x_coords = torch.linspace(-1, 1, W, device=device)
+        yy, xx = torch.meshgrid(y_coords, x_coords, indexing='ij')
+
+        # 中心からの距離（放射状）
+        r = torch.sqrt(xx**2 + yy**2)
+        r_normalized = r / (r.max() + 1e-8)  # [0, 1]に正規化
+
+        # 放射方向の単位ベクトル
+        r_safe = r + 1e-8
+        dir_x = xx / r_safe
+        dir_y = yy / r_safe
+
+        # ランダム要素: 各画像で微妙に異なる収差パターン
+        r_noise = torch.randn(1, device=device).item() * 0.3 + 1.0  # 0.7-1.3
+        b_noise = torch.randn(1, device=device).item() * 0.3 + 1.0
+
+        # シフト量（距離に比例、magnitudeでスケール）
+        r_shift = magnitude * r_normalized * r_noise  # Rは外側へ
+        b_shift = -magnitude * r_normalized * b_noise  # Bは内側へ
+
+        # サンプリング座標を計算
+        # grid_sample用: [-1, 1]の範囲
+        base_grid = torch.stack([xx, yy], dim=-1).unsqueeze(0).expand(B, -1, -1, -1)
+
+        # Rチャンネル用グリッド（外側へシフト = 元の位置から内側をサンプル）
+        r_offset = torch.stack([dir_x * r_shift, dir_y * r_shift], dim=-1).unsqueeze(0)
+        r_grid = base_grid - r_offset  # 逆方向にサンプル
+
+        # Bチャンネル用グリッド（内側へシフト = 元の位置から外側をサンプル）
+        b_offset = torch.stack([dir_x * b_shift, dir_y * b_shift], dim=-1).unsqueeze(0)
+        b_grid = base_grid - b_offset
+
+        # 各チャンネルをサンプリング
+        r_channel = F.grid_sample(
+            image_tensor[:, 0:1], r_grid,
+            mode='bilinear', padding_mode='border', align_corners=True
+        )
+        g_channel = image_tensor[:, 1:2]  # Gは固定
+        b_channel = F.grid_sample(
+            image_tensor[:, 2:3], b_grid,
+            mode='bilinear', padding_mode='border', align_corners=True
+        )
+
+        result = torch.cat([r_channel, g_channel, b_channel], dim=1)
+        return torch.clamp(result, 0, 1)
+
+    def _apply_hue_micro_rotation(
+        self,
+        image_tensor,
+        max_degrees=3.0,
+        seed=None,
+        low_freq_size=8,
+    ):
+        """
+        Hue Micro-Rotation: 色相を局所的に微小回転
+
+        HSV空間でHue値を微小回転。低周波ノイズマップで
+        滑らかに変化させ、不自然さを回避。
+
+        Args:
+            image_tensor: (B, 3, H, W) RGB画像 [0, 1]
+            max_degrees: 最大回転角度（±degrees）
+            seed: 再現性のためのシード
+            low_freq_size: 低周波ノイズの解像度
+        """
+        if seed is not None:
+            torch.manual_seed(seed)
+
+        B, C, H, W = image_tensor.shape
+        device = image_tensor.device
+
+        # RGB → HSV
+        rgb = image_tensor
+        max_val, _ = rgb.max(dim=1, keepdim=True)
+        min_val, _ = rgb.min(dim=1, keepdim=True)
+        diff = max_val - min_val + 1e-8
+
+        # Value
+        v = max_val
+
+        # Saturation
+        s = diff / (max_val + 1e-8)
+
+        # Hue calculation
+        r, g, b = rgb[:, 0:1], rgb[:, 1:2], rgb[:, 2:3]
+
+        # Determine which channel is max
+        r_is_max = (rgb[:, 0:1] == max_val).float()
+        g_is_max = (rgb[:, 1:2] == max_val).float() * (1 - r_is_max)
+        b_is_max = 1 - r_is_max - g_is_max
+
+        h_r = (g - b) / diff
+        h_g = 2.0 + (b - r) / diff
+        h_b = 4.0 + (r - g) / diff
+
+        h = h_r * r_is_max + h_g * g_is_max + h_b * b_is_max
+        h = (h / 6.0) % 1.0  # Normalize to [0, 1]
+
+        # 低周波ノイズマップ生成（滑らかな局所回転）
+        noise_low = torch.randn(B, 1, low_freq_size, low_freq_size, device=device)
+        rotation_map = F.interpolate(noise_low, size=(H, W), mode='bilinear', align_corners=False)
+        rotation_map = rotation_map * (max_degrees / 360.0)  # degrees → [0,1]範囲の割合
+
+        # Hue回転
+        h_rotated = (h + rotation_map) % 1.0
+
+        # HSV → RGB
+        h6 = h_rotated * 6.0
+        sector = h6.floor()
+        f = h6 - sector
+
+        p = v * (1 - s)
+        q = v * (1 - s * f)
+        t = v * (1 - s * (1 - f))
+
+        sector = sector % 6
+
+        # 各セクターごとのRGB値
+        rgb_out = torch.zeros_like(rgb)
+
+        mask0 = (sector == 0).float()
+        mask1 = (sector == 1).float()
+        mask2 = (sector == 2).float()
+        mask3 = (sector == 3).float()
+        mask4 = (sector == 4).float()
+        mask5 = (sector == 5).float()
+
+        rgb_out[:, 0:1] = v * mask0 + q * mask1 + p * mask2 + p * mask3 + t * mask4 + v * mask5
+        rgb_out[:, 1:2] = t * mask0 + v * mask1 + v * mask2 + q * mask3 + p * mask4 + p * mask5
+        rgb_out[:, 2:3] = p * mask0 + p * mask1 + t * mask2 + v * mask3 + v * mask4 + q * mask5
+
+        # 彩度が低い部分は元の値を維持（グレー領域の保護）
+        gray_mask = (s < 0.05).float()
+        rgb_out = rgb_out * (1 - gray_mask) + rgb * gray_mask
+
+        return torch.clamp(rgb_out, 0, 1)
+
     def _make_tps_control_points(self, grid_size=4, margin=0.08, device="cpu"):
         """TPS制御点を正規化座標 [0,1] で作成"""
         coords = torch.linspace(margin, 1.0 - margin, grid_size, device=device)
@@ -390,6 +555,10 @@ class MoonKnightV3:
         tps_grid=None,
         tps_magnitude=None,
         tps_margin=None,
+        use_chromatic_aberration=None,
+        chromatic_magnitude=None,
+        use_hue_rotation=None,
+        hue_rotation_max_degrees=None,
     ) -> Image.Image:
         """
         Apply MoonKnight protection to a single image.
@@ -554,6 +723,28 @@ class MoonKnightV3:
                     lpips_map=lpips_map_full,
                     strength=gamma_strength_value,
                     seed=gamma_seed
+                )
+
+            # Chromatic Aberration (LightShed耐性・幾何学的変形)
+            apply_chromatic = self.use_chromatic_aberration if use_chromatic_aberration is None else use_chromatic_aberration
+            if apply_chromatic:
+                chroma_mag = self.chromatic_magnitude if chromatic_magnitude is None else chromatic_magnitude
+                chroma_seed = int(hashlib.sha256(img_full.detach().cpu().numpy().tobytes()).hexdigest()[:8], 16) ^ 0xCAFE
+                protected_full = self._apply_chromatic_aberration(
+                    protected_full,
+                    magnitude=chroma_mag,
+                    seed=chroma_seed,
+                )
+
+            # Hue Micro-Rotation (色空間変換・色相の局所回転)
+            apply_hue = self.use_hue_rotation if use_hue_rotation is None else use_hue_rotation
+            if apply_hue:
+                hue_degrees = self.hue_rotation_max_degrees if hue_rotation_max_degrees is None else hue_rotation_max_degrees
+                hue_seed = int(hashlib.sha256(img_full.detach().cpu().numpy().tobytes()).hexdigest()[:8], 16) ^ 0xBEEF
+                protected_full = self._apply_hue_micro_rotation(
+                    protected_full,
+                    max_degrees=hue_degrees,
+                    seed=hue_seed,
                 )
 
             # Convert back to PIL

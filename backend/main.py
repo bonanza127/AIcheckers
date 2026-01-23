@@ -1694,7 +1694,7 @@ async def guard_image(
     request: Request,
     file: UploadFile = File(...),
     iterations: int = Form(default=30),
-    strength: float = Form(default=0.6)
+    strength: float = Form(default=0.5)
 ):
     """
     画像にMoonKnight V3（旧FastProtect）を適用して保護する
@@ -1850,7 +1850,7 @@ async def guard_image_stream(
     request: Request,
     file: UploadFile = File(...),
     iterations: int = Form(default=30),
-    strength: float = Form(default=0.6)
+    strength: float = Form(default=0.5)
 ):
     """
     SSEストリーミング版: リアルタイム進捗付きでMoonKnight保護を実行
