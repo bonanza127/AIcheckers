@@ -447,7 +447,7 @@ export default function Home() {
 
                   // SSE progress update disabled - simulated progress handles UI
                   addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                  addLog("> MoonKnight保護完了", "process");
+                  addLog("> Moonknight保護完了", "process");
                   addLog("> 防壁構築完了 - 画像は保護されました", "result");
                 } else if (data.type === "error") {
                   throw new Error(data.message);
@@ -474,7 +474,7 @@ export default function Home() {
                 ssim = data.ssim;
                 // SSE progress update disabled - simulated progress handles UI
                 addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                addLog("> MoonKnight保護完了", "process");
+                addLog("> Moonknight保護完了", "process");
                 addLog("> 防壁構築完了 - 画像は保護されました", "result");
               } else if (data.type === "error") {
                 throw new Error(data.message);
@@ -642,7 +642,7 @@ export default function Home() {
 
     const text = `【AI学習防止ガード】
 🛡️ PROTECTED
-MoonKnight V3 (旧FastProtect) で画像を保護しました
+Moonknight V1.3.1 で画像を保護しました
 
 #AIイラストガード #aicheckers`;
 
@@ -849,7 +849,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold mb-3 tracking-tight">イラストガードがあなたの作品をAIから守ります</h1>
           <p className="text-muted text-lg">
             人間の目には見えないノイズを混ぜることにより、作風の模倣を防ぐAIポイズニングの最新版。<br />
-            複数の技法をかけ合わせた<span className="text-accent font-bold">MoonKnight V3</span>により、生成AIの学習を顕著に妨害します。
+            複数の技法をかけ合わせた<span className="text-accent font-bold">Moonknight V1.3.1</span>により、生成AIの学習を顕著に妨害します。
           </p>
           <p className="text-xs text-muted mt-2">
             ※ 作品の質を下げないよう、防壁は最小限のノイズで構成されています
@@ -966,7 +966,7 @@ MoonKnight V3 (旧FastProtect) で画像を保護しました
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-col sm:flex-row flex-wrap sm:justify-between items-start sm:items-center mb-4 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">MoonKnight V3</span></span>
+                <span>使用モデル: <span className="text-accent font-bold">Moonknight V1.3.1</span></span>
                 <span>ロジック: DWT + 知覚マスキング</span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>

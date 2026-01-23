@@ -4,7 +4,7 @@ import { Shield } from "lucide-react";
 
 export const metadata: Metadata = {
     title: "免責事項 | AIイラストガード",
-    description: "AIイラストガード（MoonKnight）の利用に関する免責事項です。",
+    description: "AIイラストガード（Moonknight）の利用に関する免責事項です。",
 };
 
 export default function GuardDisclaimer() {
