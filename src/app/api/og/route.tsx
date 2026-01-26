@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
             BATCH STATUS: <span style={{ color: "#E6E9EE", marginLeft: 8, display: "flex" }}>1 / 1</span>
           </span>
           <span style={{ display: "flex" }}>
-            使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 8, display: "flex" }}>Moonlight V1.3.1</span>
+            使用モデル: <span style={{ color: "#A78BFA", fontWeight: 600, marginLeft: 8, display: "flex" }}>Moonlight V1.3.5</span>
           </span>
         </div>
 

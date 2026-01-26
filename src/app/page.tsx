@@ -292,7 +292,7 @@ export default function Home() {
     if (startTime) {
       interval = setInterval(() => {
         setElapsedTime((Date.now() - startTime) / 1000);
-      }, 100);
+      }, 500); // 100ms→500msに変更（再レンダリング軽減）
     }
     return () => clearInterval(interval);
   }, [startTime]);
@@ -427,18 +427,15 @@ export default function Home() {
     }
   }, [urlInput, selectedModel, addLog]);
 
-  const processFile = async (file: File, queueItemId: string, displayIndex: number, total: number) => {
+  const processFile = async (file: File, queueItemId: string, displayIndex: number, total: number, existingPreview?: string) => {
     const fileStartTime = Date.now();
 
     setQueue(prev => prev.map(item =>
       item.id === queueItemId ? { ...item, status: "processing" as const } : item
     ));
 
-    const reader = new FileReader();
-    const imageUrl = await new Promise<string>((resolve) => {
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.readAsDataURL(file);
-    });
+    // キュー追加時に作成済みのプレビューを再利用（FileReaderの二重読み込みを回避）
+    const imageUrl = existingPreview || URL.createObjectURL(file);
 
     // 処理開始時にphaseをscanningに設定（resultは前の結果を維持し、一瞬表示される）
     setPhase("scanning");
@@ -467,7 +464,7 @@ export default function Home() {
     });
 
     // API呼び出しと最低3.5秒の演出時間を並行実行
-    const minScanTime = 3500 + Math.random() * 1500;
+    const minScanTime = 0; // テスト用: 元は 3500 + Math.random() * 1500
     const scanDelayPromise = new Promise(r => setTimeout(r, minScanTime));
 
     // API呼び出し
@@ -661,7 +658,7 @@ export default function Home() {
     let completedCount = 0;
     for (let i = 0; i < files.length; i++) {
       setBatchProgress({ current: i + 1, total: files.length });
-      const result = await processFile(files[i], queueSnapshot[i]?.id || "", i + 1, files.length);
+      const result = await processFile(files[i], queueSnapshot[i]?.id || "", i + 1, files.length, queueSnapshot[i]?.preview);
 
       // レート制限に達したらバッチを中断
       if (result?.rateLimitError) {
@@ -1003,7 +1000,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">Moonlight V1.3.1</span></span>
+                <span>使用モデル: <span className="text-accent font-bold">Moonlight V1.3.5</span></span>
                 <span>ロジック: <span className="text-dim font-bold">カスケード方式</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
