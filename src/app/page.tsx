@@ -293,7 +293,7 @@ export default function Home() {
     if (startTime) {
       interval = setInterval(() => {
         setElapsedTime((Date.now() - startTime) / 1000);
-      }, 500); // 100ms→500msに変更（再レンダリング軽減）
+      }, 100);
     }
     return () => clearInterval(interval);
   }, [startTime]);
