@@ -965,7 +965,7 @@ Moonknight V1.3.5 で画像を保護しました
               <div className="flex flex-col sm:flex-row flex-wrap sm:justify-between items-start sm:items-center mb-4 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
                 <span>使用モデル: <span className="text-accent font-bold">Moonknight V1.3.5</span></span>
-                <span>ロジック: 知覚DWT with TrustMark</span>
+                <span>ロジック: 知覚DWT with 不可視透かし</span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
 
