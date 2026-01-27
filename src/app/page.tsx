@@ -460,8 +460,8 @@ export default function Home() {
       setTimeout(() => addLog(`> ${message}`, type), delay);
     });
 
-    // API呼び出しと最低3.5秒の演出時間を並行実行
-    const minScanTime = 0; // テスト用: 元は 3500 + Math.random() * 1500
+    // API呼び出しと演出時間を並行実行（1.5-2.5秒のランダム）
+    const minScanTime = 1500 + Math.random() * 1000;
     const scanDelayPromise = new Promise(r => setTimeout(r, minScanTime));
 
     // API呼び出し

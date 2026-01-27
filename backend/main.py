@@ -92,6 +92,7 @@ dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
 two_head_model = None
+two_head_model_ensemble = None  # アンサンブル用2つ目のモデル
 two_head_mode = False
 two_head_gpu_v3_idx = None
 two_head_cpu_v2_idx = None
@@ -393,7 +394,8 @@ enterprise_usage: dict = {}  # 起動時にロード
 DINOV3_MODEL_PATH = PROJECT_ROOT / "models" / "dinov3-vitb16"
 DINOV3_CLASSIFIER_PATH = PROJECT_ROOT / "models" / "dinov3_classifier.pt"
 EMBEDDINGS_DIR = PROJECT_ROOT / "embeddings"
-TWO_HEAD_DIR = PROJECT_ROOT / "models" / "two_head_28d_plus_60"
+TWO_HEAD_DIR = PROJECT_ROOT / "models" / "two_head_28d_plus_60"  # Moonlight V1.4 (v5)
+TWO_HEAD_DIR_ENSEMBLE = PROJECT_ROOT / "models" / "two_head_28d_plus_60_nonorm"  # アンサンブル用
 TWO_HEAD_GPU_V3_IDX = [1, 3, 5, 6]  # adj_sim_var, patch_var, norm_var, norm_range
 TWO_HEAD_CPU16_V2_IDX = [0, 1, 2, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15]
 TWO_HEAD_CPU20_V3_IDX = [0, 1, 2, 3, 4, 5, 8, 10, 15, 16, 17]
@@ -518,7 +520,7 @@ async def lifespan(app: FastAPI):
                     print(f"[WARN] cpu_dim mismatch: config={cfg_cpu_dim}, state_dict={sd_cpu_dim} (using state_dict)")
 
                 two_head_model = TwoHeadClassifier29d(gpu_dim=gpu_dim, cpu_dim=cpu_dim).to(device)
-                two_head_model.load_state_dict(state_dict)
+                two_head_model.load_state_dict(state_dict, strict=False)
                 two_head_model.eval()
 
                 two_head_gpu_v3_idx = TWO_HEAD_GPU_V3_IDX
@@ -527,7 +529,23 @@ async def lifespan(app: FastAPI):
                 two_head_use_mid_adj = gpu_dim == 5
                 two_head_mode = True
                 use_patch_stats = True
-                print(f"Two-head model loaded: {TWO_HEAD_DIR} (gpu_dim={gpu_dim}, cpu_dim={cpu_dim}, mid_adj={two_head_use_mid_adj})")
+                # two-headモードではMID_LAYER_INDEXを6に固定（学習時と一致させる）
+                MID_LAYER_INDEX = 6
+                print(f"Two-head model loaded: {TWO_HEAD_DIR} (gpu_dim={gpu_dim}, cpu_dim={cpu_dim}, mid_adj={two_head_use_mid_adj}, mid_layer={MID_LAYER_INDEX})")
+
+                # アンサンブル用2つ目のモデルをロード
+                global two_head_model_ensemble
+                if TWO_HEAD_DIR_ENSEMBLE.exists():
+                    try:
+                        ens_model_path = TWO_HEAD_DIR_ENSEMBLE / "model.pt"
+                        ens_state_dict = torch.load(ens_model_path, map_location=device, weights_only=False)
+                        two_head_model_ensemble = TwoHeadClassifier29d(gpu_dim=gpu_dim, cpu_dim=cpu_dim).to(device)
+                        two_head_model_ensemble.load_state_dict(ens_state_dict, strict=False)
+                        two_head_model_ensemble.eval()
+                        print(f"Ensemble model loaded: {TWO_HEAD_DIR_ENSEMBLE}")
+                    except Exception as e:
+                        print(f"[WARN] Failed to load ensemble model: {e}")
+                        two_head_model_ensemble = None
             except Exception as e:
                 print(f"[WARN] Failed to load two-head model: {e}")
                 two_head_mode = False
@@ -734,11 +752,7 @@ class TwoHeadClassifier29d(nn.Module):
         self.register_buffer("cpu_std", torch.ones(cpu_dim))
 
     def forward(self, cls_feat, gpu_feat, cpu_feat):
-        std_floor = 1e-3
-        cls_norm = (cls_feat - self.cls_mean) / (torch.clamp(self.cls_std, min=std_floor) + 1e-8)
-        gpu_norm = (gpu_feat - self.gpu_mean) / (torch.clamp(self.gpu_std, min=std_floor) + 1e-8)
-        cpu_norm = (cpu_feat - self.cpu_mean) / (torch.clamp(self.cpu_std, min=std_floor) + 1e-8)
-        x = torch.cat([cls_norm, gpu_norm, cpu_norm], dim=-1)
+        x = torch.cat([cls_feat, gpu_feat, cpu_feat], dim=-1)
         x = self.bn_input(x)
         x = F.gelu(self.bn1(self.fc1(x)))
         x = self.dropout1(x)
@@ -1390,6 +1404,11 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             cls_features = hidden_states[:, 0, :]
             logits = two_head_model(cls_features, gpu_features, cpu_tensor)
             ai_prob = torch.sigmoid(logits)[0].item()
+            # アンサンブル: 2つ目のモデルでも推論してmaxを採用
+            if two_head_model_ensemble is not None:
+                logits_ens = two_head_model_ensemble(cls_features, gpu_features, cpu_tensor)
+                ai_prob_ens = torch.sigmoid(logits_ens)[0].item()
+                ai_prob = max(ai_prob, ai_prob_ens)
         else:
             features = normalize_features(features)
             logits = dinov3_classifier(features)
@@ -1431,7 +1450,13 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                         gpu_features_tta = gpu_4d_tta
 
                     logits_tta = two_head_model(features_tta, gpu_features_tta, cpu_tensor_tta)
-                    return torch.sigmoid(logits_tta)[0].item()
+                    ai_prob_tta = torch.sigmoid(logits_tta)[0].item()
+                    # アンサンブル
+                    if two_head_model_ensemble is not None:
+                        logits_ens_tta = two_head_model_ensemble(features_tta, gpu_features_tta, cpu_tensor_tta)
+                        ai_prob_ens_tta = torch.sigmoid(logits_ens_tta)[0].item()
+                        ai_prob_tta = max(ai_prob_tta, ai_prob_ens_tta)
+                    return ai_prob_tta
 
                 # fallback: legacy classifier
                 if use_patch_stats:
@@ -1467,9 +1492,9 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 ai_prob_scaled = infer_ai_prob(image_scaled)
                 tta_probs.append((f"縮小{scale:.2f}", ai_prob_scaled))
 
-            ai_prob = sum(prob for _, prob in tta_probs) / len(tta_probs)
+            ai_prob = max(prob for _, prob in tta_probs)
             tta_log_parts = [f"{label} {prob*100:.1f}%" for label, prob in tta_probs]
-            tta_log = f"TTA検証: {' / '.join(tta_log_parts)} → 統合値 {ai_prob*100:.1f}%"
+            tta_log = f"TTA検証: {' / '.join(tta_log_parts)} → max {ai_prob*100:.1f}%"
 
     # Attention Map生成 + フォレンジック分析
     attention_heatmap = None
