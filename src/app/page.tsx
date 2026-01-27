@@ -18,6 +18,7 @@ type QueueItem = {
   name: string;
   preview: string;
   status: "wait" | "processing" | "ai" | "human" | "unknown";
+  file?: File;  // 順序を保証するためqueueにFileを保持
 };
 
 type DetectionResult = {
@@ -313,7 +314,8 @@ export default function Home() {
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`,
           name: file.name,
           preview: e.target?.result as string,
-          status: "wait"
+          status: "wait",
+          file  // Fileオブジェクトを保持（順序保証用）
         };
         setQueue(prev => [...prev, newItem]);
       };
@@ -321,11 +323,6 @@ export default function Home() {
     });
 
     addLog(`キュー登録: ${validFiles.length}個のアーティファクトが処理キューに追加されました。`, "process");
-
-    (window as unknown as { _pendingFiles: File[] })._pendingFiles = [
-      ...((window as unknown as { _pendingFiles?: File[] })._pendingFiles || []),
-      ...validFiles
-    ];
   }, [queue.length, addLog]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -645,24 +642,26 @@ export default function Home() {
   };
 
   const startBatchScan = async () => {
-    const files = (window as unknown as { _pendingFiles?: File[] })._pendingFiles || [];
-    const queueSnapshot = [...queue]; // Take snapshot of queue IDs
-    if (isScanning || files.length === 0) return;
+    // キュー内のwait状態のアイテムを処理（Fileオブジェクト付き）
+    const waitingItems = queue.filter(item => item.status === "wait" && item.file);
+    if (isScanning || waitingItems.length === 0) return;
 
     setIsScanning(true);
     setStartTime(Date.now());
     setElapsedTime(0);
-    setBatchProgress({ current: 0, total: files.length });
+    setBatchProgress({ current: 0, total: waitingItems.length });
     addLog("--- BATCH SCAN INITIATED (一括解析開始) ---", "heading");
 
     let completedCount = 0;
-    for (let i = 0; i < files.length; i++) {
-      setBatchProgress({ current: i + 1, total: files.length });
-      const result = await processFile(files[i], queueSnapshot[i]?.id || "", i + 1, files.length, queueSnapshot[i]?.preview);
+    for (let i = 0; i < waitingItems.length; i++) {
+      const item = waitingItems[i];
+      setBatchProgress({ current: i + 1, total: waitingItems.length });
+      // queue内のFileとpreviewを使用（順序が保証される）
+      const result = await processFile(item.file!, item.id, i + 1, waitingItems.length, item.preview);
 
       // レート制限に達したらバッチを中断
       if (result?.rateLimitError) {
-        const remaining = files.length - i - 1;
+        const remaining = waitingItems.length - i - 1;
         addLog(`--- BATCH SCAN ABORTED (レート制限により中断) ---`, "error");
         addLog(`STATUS: ${remaining}個のアーティファクトが未処理です。しばらく待ってから再試行してください。`, "error");
         break;
@@ -673,26 +672,9 @@ export default function Home() {
     setIsScanning(false);
     setStartTime(null);
 
-    // 処理したファイル数と現在の_pendingFilesを比較
-    const currentPendingFiles = (window as unknown as { _pendingFiles?: File[] })._pendingFiles || [];
-    const newlyAddedCount = currentPendingFiles.length - files.length;
-
-    if (completedCount === files.length) {
+    if (completedCount === waitingItems.length) {
       addLog("--- BATCH SCAN COMPLETE (一括解析完了) ---", "heading");
-      addLog(`STATUS: 全ての${files.length}個のアーティファクトの処理が完了しました。`, "process");
-
-      if (newlyAddedCount > 0) {
-        // 処理中に追加された画像がある場合、処理済み分のみ削除
-        (window as unknown as { _pendingFiles: File[] })._pendingFiles = currentPendingFiles.slice(files.length);
-        addLog(`INFO: 処理中に${newlyAddedCount}個の新しい画像が追加されました。再度「スキャン開始」を押してください。`, "info");
-      } else {
-        // 全てクリア
-        (window as unknown as { _pendingFiles: File[] })._pendingFiles = [];
-      }
-    } else {
-      // レート制限等で中断された場合、未処理分を保持
-      const processedFiles = completedCount;
-      (window as unknown as { _pendingFiles: File[] })._pendingFiles = currentPendingFiles.slice(processedFiles);
+      addLog(`STATUS: 全ての${waitingItems.length}個のアーティファクトの処理が完了しました。`, "process");
     }
   };
 
@@ -709,18 +691,12 @@ export default function Home() {
     setStartTime(null);
     setSelectedQueueId(null);
     setLogs([{ message: "システム: 処理キューがクリアされました。", type: "system" }]);
-    (window as unknown as { _pendingFiles?: File[] })._pendingFiles = [];
   };
 
   const deleteSelectedItem = () => {
     if (isScanning || !selectedQueueId) return;
 
-    const index = queue.findIndex(item => item.id === selectedQueueId);
-    if (index === -1) return;
-
     setQueue(prev => prev.filter(item => item.id !== selectedQueueId));
-    const pendingFiles = (window as unknown as { _pendingFiles?: File[] })._pendingFiles || [];
-    (window as unknown as { _pendingFiles: File[] })._pendingFiles = pendingFiles.filter((_, i) => i !== index);
     setSelectedQueueId(null);
     addLog(`キューから画像を削除しました。`, "info");
   };
