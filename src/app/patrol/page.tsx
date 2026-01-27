@@ -29,7 +29,14 @@ type Stat = {
     color: string;
 };
 
-// Mock Data Generator (A-Z)
+// SVGプレースホルダー生成（軽量、外部リソース不要）
+const generatePlaceholderSvg = (index: number): string => {
+    const hues = [200, 260, 320, 160, 30, 0];
+    const hue = hues[index % hues.length];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect fill="hsl(${hue},30%,15%)" width="400" height="300"/><text x="200" y="140" text-anchor="middle" fill="hsl(${hue},60%,60%)" font-size="14" font-family="monospace">Detected Image</text><text x="200" y="170" text-anchor="middle" fill="hsl(${hue},40%,40%)" font-size="12" font-family="monospace">#${String(index + 1).padStart(3, '0')}</text></svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+};
+
 // Mock Data Generator
 const generateMockAlerts = (count: number): Alert[] => {
     return Array.from({ length: count }).map((_, index) => {
@@ -48,7 +55,7 @@ const generateMockAlerts = (count: number): Alert[] => {
 
         return {
             id: `alert-${index + 1}`,
-            thumbnail: `/api/placeholder/400/300?text=Scan+Result+${index + 1}`,
+            thumbnail: generatePlaceholderSvg(index),
             sourceUrl: `https://pirate-site-${String.fromCharCode(65 + (index % 5))}.com/gallery/user/${12345 + index}`,
             sourceSite: `Pirate-Site-${String.fromCharCode(65 + (index % 5))}.com`,
             similarity: parseFloat(matchScore),
