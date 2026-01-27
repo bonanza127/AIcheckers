@@ -306,33 +306,26 @@ export default function Home() {
       return;
     }
 
-    // キューと_pendingFilesの順序を同期させるため、順番に処理
-    const processFilesSequentially = async () => {
-      for (const file of validFiles) {
-        const preview = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(file);
-        });
-
+    validFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
         const newItem: QueueItem = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`,
           name: file.name,
-          preview,
+          preview: e.target?.result as string,
           status: "wait"
         };
         setQueue(prev => [...prev, newItem]);
+      };
+      reader.readAsDataURL(file);
+    });
 
-        // _pendingFilesも同時に追加（順序を保証）
-        (window as unknown as { _pendingFiles: File[] })._pendingFiles = [
-          ...((window as unknown as { _pendingFiles?: File[] })._pendingFiles || []),
-          file
-        ];
-      }
-    };
-
-    processFilesSequentially();
     addLog(`キュー登録: ${validFiles.length}個のアーティファクトが処理キューに追加されました。`, "process");
+
+    (window as unknown as { _pendingFiles: File[] })._pendingFiles = [
+      ...((window as unknown as { _pendingFiles?: File[] })._pendingFiles || []),
+      ...validFiles
+    ];
   }, [queue.length, addLog]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
