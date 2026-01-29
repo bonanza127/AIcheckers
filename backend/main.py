@@ -93,7 +93,7 @@ device = None
 dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
-two_head_model = None        # メインモデル（508d CPU: candidate_b_nolbp_seed37）
+two_head_model = None        # メインモデル（567d CPU: candidate_b_with_lbp_seed44）
 two_head_model_sub1 = None   # サブ1（24d CPU: two_head_28d_plus_60）
 two_head_model_sub2 = None   # サブ2（24d CPU: two_head_28d_plus_60_nonorm）
 two_head_mode = False
@@ -140,6 +140,7 @@ TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
 TTA_EXTRA_ENABLED = os.getenv("TTA_EXTRA_ENABLED", "true").lower() == "true"
 TTA_EXTRA_SCALE = float(os.getenv("TTA_EXTRA_SCALE", "0.85"))
 DEBUG_PROBS = os.getenv("DEBUG_PROBS", "false").lower() == "true"
+PERF_LOG = os.getenv("PERF_LOG", "false").lower() == "true"
 
 # Temperature Scaling: ECE最適化済み（2025-01-09検証: T=0.9が最良）
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.9"))
@@ -401,7 +402,7 @@ enterprise_usage: dict = {}  # 起動時にロード
 DINOV3_MODEL_PATH = PROJECT_ROOT / "models" / "dinov3-vitb16"
 DINOV3_CLASSIFIER_PATH = PROJECT_ROOT / "models" / "dinov3_classifier.pt"
 EMBEDDINGS_DIR = PROJECT_ROOT / "embeddings"
-TWO_HEAD_DIR_MAIN = PROJECT_ROOT / "models" / "candidate_b_nolbp_seed37"  # メイン: B(no_lbp) seed37 (cpu_dim=508)
+TWO_HEAD_DIR_MAIN = PROJECT_ROOT / "models" / "candidate_b_with_lbp_seed44"  # メイン: B(with_lbp) seed44 (cpu_dim=567)
 TWO_HEAD_DIR_SUB1 = PROJECT_ROOT / "models" / "two_head_28d_plus_60"  # サブ1 (cpu_dim=24)
 TWO_HEAD_DIR_SUB2 = PROJECT_ROOT / "models" / "two_head_28d_plus_60_nonorm"  # サブ2 (cpu_dim=24)
 TWO_HEAD_GPU_V3_IDX = [1, 3, 5, 6]  # adj_sim_var, patch_var, norm_var, norm_range
@@ -532,9 +533,9 @@ async def lifespan(app: FastAPI):
 
         if TWO_HEAD_DIR_MAIN.exists():
             try:
-                # メインモデル (candidate_b_nolbp_seed37, cpu_dim=508)
+                # メインモデル (candidate_b_with_lbp_seed44, cpu_dim=567)
                 two_head_model, gpu_dim_main, cpu_dim_main = load_two_head_model(
-                    TWO_HEAD_DIR_MAIN, expected_cpu_dim=508
+                    TWO_HEAD_DIR_MAIN, expected_cpu_dim=567
                 )
                 print(f"Main model loaded: {TWO_HEAD_DIR_MAIN.name} (gpu_dim={gpu_dim_main}, cpu_dim={cpu_dim_main})")
 
@@ -783,7 +784,7 @@ def _sanitize_np(arr: np.ndarray, clip: float = 1e4) -> np.ndarray:
     return np.clip(x, -clip, clip).astype(np.float32)
 
 
-def _maybe_log1p_np(arr: np.ndarray, absmax_thresh: float = 200.0) -> np.ndarray:
+def _maybe_log1p_np(arr: np.ndarray, absmax_thresh: float = 200.0, force: bool = False) -> np.ndarray:
     """
     Match train_candidate_b_nolbp.py preprocessing:
     apply signed log1p only when the block has huge scale.
@@ -791,16 +792,18 @@ def _maybe_log1p_np(arr: np.ndarray, absmax_thresh: float = 200.0) -> np.ndarray
     x = np.asarray(arr, dtype=np.float32)
     if x.size == 0:
         return x
+    if force:
+        return (np.sign(x) * np.log1p(np.abs(x))).astype(np.float32)
     absmax = float(np.max(np.abs(x)))
     if absmax <= absmax_thresh:
         return x
     return (np.sign(x) * np.log1p(np.abs(x))).astype(np.float32)
 
 
-def _prep_candidate_block(arr: np.ndarray) -> np.ndarray:
-    """Training-aligned preprocessing for candidate_b_nolbp models."""
+def _prep_candidate_block(arr: np.ndarray, force_log1p: bool = False) -> np.ndarray:
+    """Training-aligned preprocessing for candidate_b models."""
     x = _sanitize_np(arr, clip=1e4)
-    x = _maybe_log1p_np(x, absmax_thresh=200.0)
+    x = _maybe_log1p_np(x, absmax_thresh=200.0, force=bool(force_log1p))
     return x.astype(np.float32)
 
 
@@ -1496,28 +1499,47 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     if not two_head_mode and dinov3_classifier is None:
         raise Exception("DINOv3 classifier not loaded")
 
+    perf_marks = []
+    perf_t0 = time.perf_counter()
+
+    def _mark_perf(label: str, start: float) -> float:
+        perf_marks.append((label, (time.perf_counter() - start) * 1000.0))
+        return time.perf_counter()
+
     # 前処理
+    t = time.perf_counter()
     inputs = dinov3_processor(images=image, return_tensors="pt")
     inputs = {k: v.to(device) for k, v in inputs.items()}
+    t = _mark_perf("preprocess", t)
 
     # 特徴抽出 + Attention Map + 中間層
     with torch.inference_mode():
+        t = time.perf_counter()
         outputs = dinov3_model(**inputs, output_attentions=True, output_hidden_states=True)
+        t = _mark_perf("model_forward", t)
         hidden_states = outputs.last_hidden_state
         features = hidden_states[:, 0, :]  # CLS token (1, 768)
 
+        # Token layout (avoid hard-coding REG count / patch count).
+        num_register_tokens = getattr(dinov3_model.config, "num_register_tokens", 4)
+        patch_start = 1 + int(num_register_tokens)  # CLS + REG*
+        num_patches = hidden_states.shape[1] - patch_start
+        if num_patches <= 0:
+            raise RuntimeError(f"Unexpected token layout: seq={hidden_states.shape[1]} patch_start={patch_start}")
+
         # 最終層のパッチ埋め込み（ヒートマップ可視化用）
-        # DINOv3: [CLS, REG1-4, PATCH1-196] なので 5: がパッチ
-        patch_embeddings_final = hidden_states[:, 5:5+196, :]  # (1, 196, 768)
+        patch_embeddings_final = hidden_states[:, patch_start:patch_start + num_patches, :]  # (1, N, 768)
 
         # 中間層のパッチ埋め込み（統計量v2用）
         mid_hidden = outputs.hidden_states[MID_LAYER_INDEX + 1]  # +1 because index 0 is initial embedding
-        patch_embeddings_mid = mid_hidden[:, 5:5+196, :]  # (1, 196, 768)
+        patch_embeddings_mid = mid_hidden[:, patch_start:patch_start + num_patches, :]  # (1, N, 768)
         mid_cls = mid_hidden[:, 0, :]  # (1, 768)
 
         # パッチ統計量v2（フォレンジック用ヒートマップは常に計算）
+        t = time.perf_counter()
         patch_stats_v2, heatmap_v2 = compute_patch_stats_v2(patch_embeddings_mid, return_heatmap=True)
         patch_scores_np = heatmap_v2.detach().flatten().cpu().numpy()  # 可視化・ログ用
+        t = _mark_perf("patch_stats_v2", t)
 
         # two-head以外: patch_stats_v2を特徴量に結合
         if use_patch_stats and not two_head_mode:
@@ -1548,13 +1570,16 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         probs_breakdown = None
         if two_head_mode:
             # CPU統計量（24d: サブモデル用）
+            t = time.perf_counter()
             cpu_v2_18d, cpu_v3_20d = compute_cpu_stats(image)
             cpu_13d = cpu_v2_18d[two_head_cpu_v2_idx]
             cpu_11d = cpu_v3_20d[two_head_cpu_v3_idx]
             cpu_24d = np.concatenate([cpu_13d, cpu_11d]).astype(np.float32)
             cpu_tensor_24d = torch.tensor(cpu_24d, dtype=torch.float32, device=device).unsqueeze(0)
+            t = _mark_perf("cpu24_stats", t)
 
             # GPU統計量（4d: 全モデル共通）
+            t = time.perf_counter()
             stats_v3 = compute_patch_stats_v3(patch_embeddings_mid, mid_cls)
             gpu_4d = stats_v3[:, two_head_gpu_v3_idx]
             if two_head_use_mid_adj:
@@ -1562,47 +1587,57 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 gpu_features = torch.cat([gpu_4d, mid_adj_var], dim=1)
             else:
                 gpu_features = gpu_4d
+            t = _mark_perf("gpu4_stats", t)
 
             cls_features = hidden_states[:, 0, :]
 
-            # 拡張特徴量の計算（メインモデル用: cpu_dim=508）
-            # CPU拡張特徴量（92d: hog27 + dct65）
+            # 拡張特徴量の計算（メインモデル用: cpu_dim=567）
+            # CPU拡張特徴量（151d: hog27 + dct65 + lbp59）
+            t = time.perf_counter()
             ext_cpu = compute_extended_cpu_features(image)
+            t = _mark_perf("ext_cpu_hog_dct_lbp", t)
             # GPU拡張特徴量（136d + 256d）
+            t = time.perf_counter()
             pstats136, pd256 = compute_extended_gpu_features(
                 outputs.hidden_states,
-                reg_offset=5,  # DINOv3: CLS + 4 registers
-                num_patches=196,
+                reg_offset=patch_start,  # CLS + register tokens
+                num_patches=num_patches,
             )
+            t = _mark_perf("ext_gpu_pstats_pd", t)
 
             # Candidate main model is very sensitive to feature scaling because it uses BatchNorm.
             # Match train_candidate_b_nolbp.py preprocessing block-by-block.
-            cpu_24d_main = _prep_candidate_block(cpu_24d)
+            # NOTE: training-time _maybe_log1p was applied on whole arrays; cpu24 ends up being log1p'd
+            # if any training sample had large values. To match the deployed seed37 weights, force log1p here.
+            cpu_24d_main = _prep_candidate_block(cpu_24d, force_log1p=True)
             pstats136_main = _prep_candidate_block(pstats136)
             hog27_main = _prep_candidate_block(ext_cpu[:27])
-            dct65_main = _prep_candidate_block(ext_cpu[27:])
+            dct65_main = _prep_candidate_block(ext_cpu[27:27 + 65])
+            lbp59_main = _prep_candidate_block(ext_cpu[27 + 65:])
             pd256_main = _prep_candidate_block(pd256)
 
             # GPU4 preprocessing for main model only (sub-models keep legacy raw stats).
             gpu4_main = _prep_candidate_block(gpu_4d.detach().float().cpu().numpy()[0])
             gpu_features_main = torch.tensor(gpu4_main, dtype=torch.float32, device=device).unsqueeze(0)
 
-            # メインモデル用CPU特徴量（508d = 24d + 136d + 27d + 65d + 256d）
-            cpu_508_parts = [
+            # メインモデル用CPU特徴量（567d = 24d + 136d + 27d + 65d + 59d + 256d）
+            cpu_567_parts = [
                 cpu_24d_main,               # 24d
                 pstats136_main,             # 136d (multi_layer_pstats)
                 hog27_main,                 # 27d (hog)
                 dct65_main,                 # 65d (dct)
+                lbp59_main,                 # 59d (lbp)
                 pd256_main,                 # 256d (patch_dist)
             ]
-            cpu_508d = np.concatenate(cpu_508_parts).astype(np.float32)
-            cpu_tensor_508d = torch.tensor(cpu_508d, dtype=torch.float32, device=device).unsqueeze(0)
+            cpu_567d = np.concatenate(cpu_567_parts).astype(np.float32)
+            cpu_tensor_567d = torch.tensor(cpu_567d, dtype=torch.float32, device=device).unsqueeze(0)
 
             # 3モデルアンサンブル推論
             ai_probs = []
 
-            # メインモデル推論 (cpu_dim=508)
-            logits_main = two_head_model(cls_features, gpu_features_main, cpu_tensor_508d)
+            # メインモデル推論 (cpu_dim=567)
+            t = time.perf_counter()
+            logits_main = two_head_model(cls_features, gpu_features_main, cpu_tensor_567d)
             ai_prob_main = torch.sigmoid(logits_main)[0].item()
             ai_probs.append(ai_prob_main)
 
@@ -1617,6 +1652,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 logits_sub2 = two_head_model_sub2(cls_features, gpu_features, cpu_tensor_24d)
                 ai_prob_sub2 = torch.sigmoid(logits_sub2)[0].item()
                 ai_probs.append(ai_prob_sub2)
+            t = _mark_perf("two_head_infer", t)
 
             # max集約
             ai_prob = max(ai_probs)
@@ -1631,6 +1667,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                     "sub1_model": TWO_HEAD_DIR_SUB1.name if TWO_HEAD_DIR_SUB1.exists() else None,
                     "sub2_model": TWO_HEAD_DIR_SUB2.name if TWO_HEAD_DIR_SUB2.exists() else None,
                 }
+                print(f"[DEBUG_PROBS] main={ai_prob_main:.3f}, sub1={ai_prob_sub1:.3f}, sub2={ai_prob_sub2:.3f}, max={ai_prob:.3f}")
         else:
             features = normalize_features(features)
             logits = dinov3_classifier(features)
@@ -1646,6 +1683,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         # TTA: 水平反転＋軽い縮小で追加推論し平均化
         tta_log = None
         if TTA_ENABLED:
+            t = time.perf_counter()
             def infer_ai_prob(image_tta: Image.Image) -> float:
                 """TTA推論: CLSトークンのみTTA画像から抽出し、GPU/CPU統計量は元画像のものを使い回す。
 
@@ -1659,12 +1697,12 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 features_tta = outputs_tta.last_hidden_state[:, 0, :]
 
                 if two_head_mode:
-                    # GPU/CPU統計量は元画像のものを使い回す（cpu_tensor_24d, cpu_tensor_508d, gpu_features）
+                    # GPU/CPU統計量は元画像のものを使い回す（cpu_tensor_24d, cpu_tensor_567d, gpu_features）
                     tta_probs_inner = []
 
-                    # メインモデル推論 (cpu_dim=508)
+                    # メインモデル推論 (cpu_dim=567)
                     # main model expects training-aligned preprocessing (see _prep_candidate_block)
-                    logits_main_tta = two_head_model(features_tta, gpu_features_main, cpu_tensor_508d)
+                    logits_main_tta = two_head_model(features_tta, gpu_features_main, cpu_tensor_567d)
                     tta_probs_inner.append(torch.sigmoid(logits_main_tta)[0].item())
 
                     # サブ1推論 (cpu_dim=24)
@@ -1681,7 +1719,8 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
                 # fallback: legacy classifier（中間層が必要）
                 mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1]
-                patch_embeddings_mid_tta = mid_hidden_tta[:, 5:5+196, :]
+                # Use dynamic token layout (same as main path).
+                patch_embeddings_mid_tta = mid_hidden_tta[:, patch_start:patch_start + num_patches, :]
                 if use_patch_stats:
                     patch_stats_v2_tta = compute_patch_stats_v2(patch_embeddings_mid_tta)
                     if patch_indices is not None and extra_indices is not None and boundary_indices is not None:
@@ -1718,6 +1757,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             ai_prob = max(prob for _, prob in tta_probs)
             tta_log_parts = [f"{label} {prob*100:.1f}%" for label, prob in tta_probs]
             tta_log = f"TTA検証: {' / '.join(tta_log_parts)} → max {ai_prob*100:.1f}%"
+            t = _mark_perf("tta", t)
 
     # Attention Map生成 + フォレンジック分析
     attention_heatmap = None
@@ -1725,6 +1765,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     head_attentions = None
     forensic_logs = []
 
+    t = time.perf_counter()
     if hasattr(outputs, 'attentions') and outputs.attentions is not None:
         try:
             # 最後の層のattentionを取得
@@ -1785,9 +1826,12 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             import traceback
             print(f"Attention map generation failed: {e}")
             traceback.print_exc()
+    t = _mark_perf("attention_map", t)
 
     # フォレンジック分析ログ生成（パッチスコアも渡す）
+    t = time.perf_counter()
     forensic_logs, detected_traces = generate_forensic_analysis(attention_map_raw, features, ai_prob, head_attentions, patch_scores_np)
+    t = _mark_perf("forensic", t)
 
     # TTAログを先頭に追加
     if tta_log:
@@ -1797,6 +1841,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     human_verified = False
     signature_correlation = None
     if SIGNATURE_DETECTION_ENABLED and detect_human_signature:
+        t = time.perf_counter()
         try:
             sig_result = detect_human_signature(image, normalize_resolution=True)
             human_verified = sig_result["detected"]
@@ -1806,6 +1851,12 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 detected_traces.append("human_signature")
         except Exception as e:
             print(f"Signature detection failed: {e}")
+        t = _mark_perf("signature", t)
+
+    if PERF_LOG or DEBUG:
+        total_ms = (time.perf_counter() - perf_t0) * 1000.0
+        parts = " ".join([f"{k}={v:.1f}ms" for k, v in perf_marks])
+        print(f"[PERF] analyze_with_dinov3 total={total_ms:.1f}ms {parts}")
 
     ai_score = ai_prob * 100
     human_score = 100 - ai_score
@@ -1860,6 +1911,7 @@ async def analyze_image(
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image.")
 
     try:
+        req_t0 = time.perf_counter()
         start_time = time.time()
 
         # 画像読み込み（サイズチェック含む）
@@ -1898,10 +1950,14 @@ async def analyze_image(
                 cached_resp["metadata_prompt"] = None
                 cached_resp["metadata_software"] = None
 
-            return JSONResponse(
+            resp = JSONResponse(
                 content=cached_resp,
                 headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
             )
+            if PERF_LOG or DEBUG:
+                total_ms = (time.perf_counter() - req_t0) * 1000.0
+                print(f"[PERF] analyze_image total={total_ms:.1f}ms cache_hit=True")
+            return resp
 
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
@@ -1944,6 +2000,8 @@ async def analyze_image(
             "metadata_prompt": meta.get("prompt"),
             "metadata_software": meta.get("software"),
         }
+        if DEBUG_PROBS and result.get("debug_probs") is not None:
+            response_data["debug_probs"] = result["debug_probs"]
 
         # キャッシュに保存（filenameを除く）
         cache_data = {k: v for k, v in response_data.items() if k != "filename"}
@@ -1966,10 +2024,14 @@ async def analyze_image(
                 file.filename or ""
             ))
 
-        return JSONResponse(
+        resp = JSONResponse(
             content=response_data,
             headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
         )
+        if PERF_LOG or DEBUG:
+            total_ms = (time.perf_counter() - req_t0) * 1000.0
+            print(f"[PERF] analyze_image total={total_ms:.1f}ms cache_hit=False")
+        return resp
 
     except HTTPException:
         raise
@@ -2438,6 +2500,7 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
 
         # キャッシュチェック
         image_hash = get_image_hash(contents)
+        cache_key = f"{MODEL_CACHE_TAG}:{image_hash}"
         if cache_key in result_cache:
             cached = result_cache[cache_key]
             if not is_enterprise:
@@ -2476,6 +2539,8 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
             "forensic_logs": result.get("forensic_logs", []),
             "detected_traces": result.get("detected_traces"),
         }
+        if DEBUG_PROBS and result.get("debug_probs") is not None:
+            response_data["debug_probs"] = result["debug_probs"]
 
         # キャッシュに保存
         cache_data = {k: v for k, v in response_data.items() if k not in ("filename", "source_url")}
@@ -2581,6 +2646,16 @@ async def check_vip(pixiv_id: str):
     if pixiv_id in vip_users:
         return {"is_vip": True, "data": vip_users[pixiv_id]}
     return {"is_vip": False}
+
+
+@app.post("/client-perf")
+async def client_perf(payload: dict):
+    """Client-side perf log sink (best-effort)."""
+    try:
+        print(f"[CLIENT_PERF] {json.dumps(payload, ensure_ascii=False)}")
+    except Exception as e:
+        print(f"[CLIENT_PERF] Failed to log: {e}")
+    return {"ok": True}
 
 
 # ==================== Stripe決済 ====================

@@ -57,26 +57,28 @@ def _load_and_resize(path_or_image):
     else:
         raise ValueError(f"Unsupported input type: {type(path_or_image)}")
 
-    # Resize maintaining aspect ratio
-    w, h = img.size
+    # Match training-time resize_for_cpu(): OpenCV Lanczos4 + padded canvas.
+    # (Training embeddings were extracted via cv2.INTER_LANCZOS4.)
+    img_rgb = np.array(img, dtype=np.uint8)
+    h, w = img_rgb.shape[:2]
     scale = TARGET_SIZE / max(h, w)
     nh = max(1, int(round(h * scale)))
     nw = max(1, int(round(w * scale)))
 
-    if (nw, nh) != img.size:
-        img = img.resize((nw, nh), Image.LANCZOS)
+    if (nw, nh) != (w, h):
+        resized = cv2.resize(img_rgb, (nw, nh), interpolation=cv2.INTER_LANCZOS4)
+    else:
+        resized = img_rgb
 
-    # Create padded canvas
-    canvas = Image.new("RGB", (TARGET_SIZE, TARGET_SIZE), (128, 128, 128))
+    canvas = np.full((TARGET_SIZE, TARGET_SIZE, 3), 128, dtype=np.uint8)
     x0 = (TARGET_SIZE - nw) // 2
     y0 = (TARGET_SIZE - nh) // 2
-    canvas.paste(img, (x0, y0))
+    canvas[y0:y0 + nh, x0:x0 + nw] = resized
 
-    # Create mask for valid pixels
     mask = np.zeros((TARGET_SIZE, TARGET_SIZE), dtype=bool)
     mask[y0:y0 + nh, x0:x0 + nw] = True
 
-    return np.array(canvas), mask
+    return canvas, mask
 
 
 def compute_cpu_stats_from_array(img_rgb, mask=None):

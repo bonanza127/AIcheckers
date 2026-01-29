@@ -6,8 +6,9 @@
 - patch_dist_256 (256d): block 6 のパッチ mean/std から上位256次元選択
 - hog_27 (27d): HOGベース特徴量
 - dct_65 (65d): DCTベース特徴量
+- lbp_59 (59d): LBPヒストグラム (nri_uniform)
 
-合計: 136 + 256 + 27 + 65 = 484d (cpu24は既存なので別途)
+合計: 136 + 256 + 27 + 65 + 59 = 543d (cpu24は既存なので別途)
 """
 import logging
 from pathlib import Path
@@ -20,6 +21,7 @@ from PIL import Image
 
 import scipy.fft as sfft
 from scipy.stats import kurtosis as scipy_kurtosis
+from skimage.feature import local_binary_pattern
 
 from lib.patch_stats import compute_patch_stats_v3
 
@@ -32,6 +34,9 @@ HOG_CELL_SIZE = 8
 NUM_DCT_FREQS = 32
 EXTRACT_BLOCKS = [3, 6, 9, 11]  # multi_layer_pstats用
 MID_BLOCK = 6  # patch_dist用
+LBP_P = 8
+LBP_R = 1
+LBP_UNIFORM_BINS = 59  # method='nri_uniform'
 
 # Top256 indices path
 TOP256_INDICES_PATH = Path("/home/techne/aicheckers/embeddings/patch_dist_top256_indices.npy")
@@ -50,9 +55,8 @@ def get_top256_indices() -> np.ndarray:
 
 
 def _sanitize_array(arr: np.ndarray) -> np.ndarray:
-    """NaN/Infをサニタイズ（clip to +/-1e4, replace NaN with 0）"""
-    arr = np.nan_to_num(arr, nan=0.0, posinf=1e4, neginf=-1e4)
-    arr = np.clip(arr, -1e4, 1e4)
+    """NaN/Infをサニタイズ（replace NaN with 0, keep large values for log1p later）"""
+    arr = np.nan_to_num(arr, nan=0.0, posinf=1e10, neginf=-1e10)
     return arr.astype(np.float32)
 
 
@@ -186,15 +190,27 @@ def compute_dct_features(gray: np.ndarray) -> np.ndarray:
     return np.concatenate([meanabs, kurt, [blocking_score]])
 
 
+def compute_lbp_features(gray: np.ndarray) -> np.ndarray:
+    """
+    LBP特徴量 (59d)
+
+    Local Binary Pattern (P=8, R=1, method='nri_uniform') histogram.
+    """
+    gray_u8 = np.clip(gray, 0, 255).astype(np.uint8)
+    lbp = local_binary_pattern(gray_u8, LBP_P, LBP_R, method="nri_uniform")
+    hist, _ = np.histogram(lbp.ravel(), bins=LBP_UNIFORM_BINS, range=(0, LBP_UNIFORM_BINS), density=True)
+    return hist.astype(np.float32)
+
+
 def compute_extended_cpu_features(image: Image.Image) -> np.ndarray:
     """
-    CPU特徴量を計算（hog_27 + dct_65 = 92d）
+    CPU特徴量を計算（hog_27 + dct_65 + lbp_59 = 151d）
 
     Args:
         image: RGB PIL Image (任意サイズ)
 
     Returns:
-        np.ndarray: shape (92,) float32
+        np.ndarray: shape (151,) float32
     """
     # 224x224グレースケールに変換
     gray = np.array(
@@ -204,8 +220,9 @@ def compute_extended_cpu_features(image: Image.Image) -> np.ndarray:
 
     hog = compute_hog_features(gray)
     dct = compute_dct_features(gray)
+    lbp = compute_lbp_features(gray)
 
-    result = np.concatenate([hog, dct])
+    result = np.concatenate([hog, dct, lbp])
     return _sanitize_array(result)
 
 
@@ -286,7 +303,7 @@ def compute_all_extended_features(
 
     Returns:
         dict: {
-            'cpu_92': (92,) hog_27 + dct_65,
+            'cpu_151': (151,) hog_27 + dct_65 + lbp_59,
             'multi_layer_pstats_136': (136,),
             'patch_dist_256': (256,),
         }
@@ -297,7 +314,7 @@ def compute_all_extended_features(
     )
 
     return {
-        'cpu_92': cpu_features,
+        'cpu_151': cpu_features,
         'multi_layer_pstats_136': multi_pstats,
         'patch_dist_256': patch_dist,
     }
