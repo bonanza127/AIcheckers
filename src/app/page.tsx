@@ -512,6 +512,18 @@ export default function Home() {
         fetchPromise,
         scanDelayPromise
       ]);
+      if (PERF_LOG) {
+        const entries = performance.getEntriesByName(`${apiUrl}/analyze`).filter(e => e.initiatorType === "fetch");
+        const lastEntry = entries[entries.length - 1] as PerformanceResourceTiming | undefined;
+        if (lastEntry) {
+          const ttfb = lastEntry.responseStart - lastEntry.startTime;
+          const download = lastEntry.responseEnd - lastEntry.responseStart;
+          const dns = lastEntry.domainLookupEnd - lastEntry.domainLookupStart;
+          const connect = lastEntry.connectEnd - lastEntry.connectStart;
+          const tls = lastEntry.secureConnectionStart > 0 ? (lastEntry.connectEnd - lastEntry.secureConnectionStart) : 0;
+          addLog(`> [PERF] net ttfb=${ttfb.toFixed(1)}ms download=${download.toFixed(1)}ms dns=${dns.toFixed(1)}ms connect=${connect.toFixed(1)}ms tls=${tls.toFixed(1)}ms`, "detail");
+        }
+      }
       mark("fetch response received");
 
       // レート制限ヘッダーを読み取り
