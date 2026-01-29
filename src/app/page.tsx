@@ -82,6 +82,7 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const PERF_LOG = process.env.NEXT_PUBLIC_PERF_LOG === "true" || process.env.NODE_ENV === "development";
 
   // OAuthコールバック処理 & ログイン状態復元 & VIP決済結果処理
   useEffect(() => {
@@ -426,18 +427,31 @@ export default function Home() {
 
   const processFile = async (file: File, queueItemId: string, displayIndex: number, total: number, existingPreview?: string) => {
     const fileStartTime = Date.now();
+    const perfStart = performance.now();
+    const mark = (label: string) => {
+      console.log(`[PERF] ${label}: ${(performance.now() - perfStart).toFixed(1)}ms`);
+    };
+    let fetchStart = 0;
+    let fetchEnd = 0;
+    let jsonStart = 0;
+    let jsonEnd = 0;
+
+    console.log(`[PERF] processFile START: ${file.name}`);
 
     setQueue(prev => prev.map(item =>
       item.id === queueItemId ? { ...item, status: "processing" as const } : item
     ));
+    mark("queue status updated");
 
     // キュー追加時に作成済みのプレビューを再利用（FileReaderの二重読み込みを回避）
     const imageUrl = existingPreview || URL.createObjectURL(file);
+    mark("imageUrl set");
 
     // 処理開始時にphaseをscanningに設定（resultは前の結果を維持し、一瞬表示される）
     setPhase("scanning");
     setCurrentImage(imageUrl);
     setCurrentFileName(file.name);
+    mark("state updates (phase/currentImage/fileName)");
 
     // ファイルサイズを取得
     const fileSizeKB = (file.size / 1024).toFixed(1);
@@ -484,14 +498,21 @@ export default function Home() {
       if (authUser?.token) {
         headers["Authorization"] = `Bearer ${authUser.token}`;
       }
+      mark("before fetch");
+      fetchStart = performance.now();
+      const fetchPromise = fetch(`${apiUrl}/analyze`, {
+        method: "POST",
+        body: formData,
+        headers,
+      }).then(resp => {
+        fetchEnd = performance.now();
+        return resp;
+      });
       const [response] = await Promise.all([
-        fetch(`${apiUrl}/analyze`, {
-          method: "POST",
-          body: formData,
-          headers,
-        }),
+        fetchPromise,
         scanDelayPromise
       ]);
+      mark("fetch response received");
 
       // レート制限ヘッダーを読み取り
       const remaining = response.headers.get("X-RateLimit-Remaining");
@@ -507,7 +528,10 @@ export default function Home() {
         throw new Error(`API error: ${response.status}`);
       }
 
+      jsonStart = performance.now();
       const data = await response.json();
+      jsonEnd = performance.now();
+      mark("JSON parsed");
 
       aiScore = Math.round(data.ai_score);
       humanScore = Math.round(data.human_score);
@@ -556,6 +580,31 @@ export default function Home() {
 
       addLog("> Attention Map生成完了", "process");
       addLog("> 推論完了", "process");
+      if (PERF_LOG) {
+        const totalMs = performance.now() - perfStart;
+        const fetchMs = fetchEnd > 0 ? (fetchEnd - fetchStart) : 0;
+        const jsonMs = jsonEnd > 0 && jsonStart > 0 ? (jsonEnd - jsonStart) : 0;
+        const delayMs = Math.max(0, totalMs - fetchMs - jsonMs);
+        const perfMsg = `client_total=${totalMs.toFixed(1)}ms fetch=${fetchMs.toFixed(1)}ms json=${jsonMs.toFixed(1)}ms delay=${delayMs.toFixed(1)}ms backend=${(processingTime * 1000).toFixed(1)}ms`;
+        addLog(`> [PERF] ${perfMsg}`, "detail");
+        try {
+          fetch(`${apiUrl}/client-perf`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ts: Date.now(),
+              file: file.name,
+              client_total_ms: totalMs,
+              fetch_ms: fetchMs,
+              json_ms: jsonMs,
+              delay_ms: delayMs,
+              backend_ms: processingTime * 1000,
+            }),
+          });
+        } catch {
+          // best-effort
+        }
+      }
 
     } catch (error) {
       await scanDelayPromise; // エラー時も演出時間を確保
@@ -582,6 +631,32 @@ export default function Home() {
         artifacts = "API接続エラー";
         attentionMap = undefined;
       }
+      if (PERF_LOG) {
+        const totalMs = performance.now() - perfStart;
+        const fetchMs = fetchEnd > 0 ? (fetchEnd - fetchStart) : 0;
+        const jsonMs = jsonEnd > 0 && jsonStart > 0 ? (jsonEnd - jsonStart) : 0;
+        const delayMs = Math.max(0, totalMs - fetchMs - jsonMs);
+        const perfMsg = `client_total=${totalMs.toFixed(1)}ms fetch=${fetchMs.toFixed(1)}ms json=${jsonMs.toFixed(1)}ms delay=${delayMs.toFixed(1)}ms (error)`;
+        addLog(`> [PERF] ${perfMsg}`, "detail");
+        try {
+          const apiUrl = getApiUrl();
+          fetch(`${apiUrl}/client-perf`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ts: Date.now(),
+              file: file.name,
+              client_total_ms: totalMs,
+              fetch_ms: fetchMs,
+              json_ms: jsonMs,
+              delay_ms: delayMs,
+              error: true,
+            }),
+          });
+        } catch {
+          // best-effort
+        }
+      }
     }
 
     // キューのステータス更新（3段階 + レート制限）
@@ -600,6 +675,7 @@ export default function Home() {
               : aiScore >= 20 ? "LOW SIMILARITY"
                 : "HUMAN CONFIRMED";
 
+    mark("before setResult");
     setResult({
       isAI,
       aiScore,
@@ -610,6 +686,7 @@ export default function Home() {
       artifacts,
       attentionMap
     });
+    mark("after setResult");
 
     // Add to history（メモリのみ、元画像保持）
     setHistory(prev => [{
@@ -636,6 +713,8 @@ export default function Home() {
           ? `最終判定: 判定困難 (${aiScore}%)`
           : `最終判定: 人間による創作物 (${aiScore}%)`;
     addLog(logMessage, rateLimitError ? "error" : "result");
+
+    console.log(`[PERF] processFile END: total ${(performance.now() - perfStart).toFixed(1)}ms`);
 
     // レート制限エラーを返す（バッチ中断用）
     return { rateLimitError };
