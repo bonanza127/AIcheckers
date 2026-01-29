@@ -70,7 +70,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
-  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const [backendOnline] = useState<boolean | null>(true); // healthポーリング廃止、常にOnline表示
   const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
   const [urlInput, setUrlInput] = useState("");
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
@@ -82,6 +82,8 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const logQueueRef = useRef<LogEntry[]>([]);
+  const logRafRef = useRef<number | null>(null);
   const PERF_LOG = process.env.NEXT_PUBLIC_PERF_LOG === "true" || process.env.NODE_ENV === "development";
 
   // OAuthコールバック処理 & ログイン状態復元 & VIP決済結果処理
@@ -220,45 +222,7 @@ export default function Home() {
     }
   }, []);
 
-  // バックエンドの接続状態を監視
-  useEffect(() => {
-    const checkBackendHealth = async () => {
-      if (isScanning) return;
-      const apiUrl = getApiUrl();
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 3000);
-      try {
-        const response = await fetch(`${apiUrl}/health`, {
-          method: "GET",
-          signal: controller.signal
-        });
-        if (response.ok) {
-          const data = await response.json();
-          // Moonlight (status: "healthy") がオンラインならOK
-          setBackendOnline(data.status === "healthy" || data.status === "online");
-          // 残りトークン数を取得
-          if (data.rate_limit?.remaining !== undefined) {
-            setRateLimitRemaining(data.rate_limit.remaining);
-          }
-        } else {
-          setBackendOnline(false);
-        }
-      } catch {
-        setBackendOnline(false);
-      } finally {
-        window.clearTimeout(timeoutId);
-      }
-    };
-
-    // 初回チェック（スキャン中は抑制）
-    if (!isScanning) {
-      checkBackendHealth();
-    }
-
-    // 60秒ごとにチェック（スキャン中は抑制）
-    const interval = setInterval(checkBackendHealth, 60000);
-    return () => clearInterval(interval);
-  }, [isScanning]);
+  // healthポーリング廃止 - /analyzeリクエスト失敗時にエラー表示で十分
 
   // リセットまでのカウントダウン
   useEffect(() => {
@@ -283,7 +247,14 @@ export default function Home() {
   }, []);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "info") => {
-    setLogs(prev => [...prev, { message, type }].slice(-500));
+    logQueueRef.current.push({ message, type });
+    if (logRafRef.current !== null) return;
+    logRafRef.current = window.requestAnimationFrame(() => {
+      const queued = logQueueRef.current.splice(0);
+      logRafRef.current = null;
+      if (queued.length === 0) return;
+      setLogs(prev => [...prev, ...queued].slice(-500));
+    });
   }, []);
 
   useEffect(() => {
@@ -549,7 +520,7 @@ export default function Home() {
         }
       }
       if (PERF_LOG) {
-        const entries = performance.getEntriesByName(`${apiUrl}/analyze`).filter(e => e.initiatorType === "fetch");
+        const entries = performance.getEntriesByName(`${apiUrl}/analyze`).filter(e => (e as PerformanceResourceTiming).initiatorType === "fetch");
         const lastEntry = entries[entries.length - 1] as PerformanceResourceTiming | undefined;
         if (lastEntry) {
           const ttfb = lastEntry.responseStart - lastEntry.startTime;
