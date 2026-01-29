@@ -223,6 +223,7 @@ export default function Home() {
   // バックエンドの接続状態を監視
   useEffect(() => {
     const checkBackendHealth = async () => {
+      if (isScanning) return;
       const apiUrl = getApiUrl();
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 3000);
@@ -249,13 +250,15 @@ export default function Home() {
       }
     };
 
-    // 初回チェック
-    checkBackendHealth();
+    // 初回チェック（スキャン中は抑制）
+    if (!isScanning) {
+      checkBackendHealth();
+    }
 
-    // 10秒ごとにチェック
-    const interval = setInterval(checkBackendHealth, 10000);
+    // 60秒ごとにチェック（スキャン中は抑制）
+    const interval = setInterval(checkBackendHealth, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isScanning]);
 
   // リセットまでのカウントダウン
   useEffect(() => {
@@ -288,6 +291,29 @@ export default function Home() {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs]);
+
+  useEffect(() => {
+    if (!PERF_LOG || typeof PerformanceObserver === "undefined") return;
+
+    let observer: PerformanceObserver | null = null;
+    try {
+      observer = new PerformanceObserver((list) => {
+        list.getEntries().forEach((entry) => {
+          const dur = entry.duration || 0;
+          if (dur >= 200) {
+            addLog(`> [PERF] longtask ${dur.toFixed(1)}ms`, "detail");
+          }
+        });
+      });
+      observer.observe({ entryTypes: ["longtask"] });
+    } catch {
+      // best-effort
+    }
+
+    return () => {
+      if (observer) observer.disconnect();
+    };
+  }, [PERF_LOG, addLog]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -474,8 +500,8 @@ export default function Home() {
       setTimeout(() => addLog(`> ${message}`, type), delay);
     });
 
-    // API呼び出しと演出時間を並行実行（1.5-2.5秒のランダム）
-    const minScanTime = 1500 + Math.random() * 1000;
+    // API呼び出しと演出時間を並行実行（0秒: デバッグ用）
+    const minScanTime = 0;
     const scanDelayPromise = new Promise(r => setTimeout(r, minScanTime));
 
     // API呼び出し
@@ -512,6 +538,16 @@ export default function Home() {
         fetchPromise,
         scanDelayPromise
       ]);
+      if (PERF_LOG) {
+        const clen = response.headers.get("content-length");
+        const cenc = response.headers.get("content-encoding");
+        if (clen) {
+          addLog(`> [PERF] response content-length=${clen} bytes`, "detail");
+        }
+        if (cenc) {
+          addLog(`> [PERF] response content-encoding=${cenc}`, "detail");
+        }
+      }
       if (PERF_LOG) {
         const entries = performance.getEntriesByName(`${apiUrl}/analyze`).filter(e => e.initiatorType === "fetch");
         const lastEntry = entries[entries.length - 1] as PerformanceResourceTiming | undefined;
