@@ -13,7 +13,7 @@
 - `npm run start`: run the production build locally.
 - `npm run lint`: run ESLint (Next.js core-web-vitals + TypeScript config).
 - `cd backend && pip install -r requirements.txt`: install backend deps.
-- `cd backend && uvicorn main:app --reload`: run the API server on `http://localhost:8000`.
+- `cd backend && ./run_dev.sh`: run the API server on `http://localhost:8000` (uses `backend/venv`).
 
 ## Coding Style & Naming Conventions
 - TypeScript/TSX uses 2-space indentation and double quotes; follow existing file patterns.

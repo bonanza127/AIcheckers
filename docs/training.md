@@ -1,6 +1,6 @@
 # 学習・データセット
 
-## データセット
+## データセット（2026-01-25 更新）
 
 ### AI画像（学習用）
 | カテゴリ | 枚数 | ソース |
@@ -8,20 +8,26 @@
 | illustrious_ai | 4,824 | AnimeDL-2M |
 | pony_ai | 19,857 | AnimeDL-2M |
 | sdxl10_ai | 8,916 | AnimeDL-2M |
-| sd15_ai | 9,985 | AnimeDL-2M |
+| sd15_ai | 9,984 | AnimeDL-2M |
 | other_ai | 4,555 | AnimeDL-2M |
 | flux1d_ai | 1,843 | AnimeDL-2M |
-| novelai_ai | 1,045 | AIBooru |
+| novelai_ai | 1,282 | AIBooru |
 | pixai_ai | 1,018 | PixAI |
 | novelai_aibooru_ai | 1,283 | AIBooru |
-| novelai_combined_ai | 4,499 | Pixiv+Twitter (dedup済み) |
+| novelai_combined_ai | 21,848 | Pixiv+Twitter (dedup済み) |
 | pixiv_novelai_v2_ai | 8,859 | Pixiv (dedup済み) |
 | twitter_novelai_v2_ai | 12,262 | Twitter (dedup済み) |
+| novelai_artist_tagged_ai | 846 | AIBooru (artist tagged) |
+| niji7_twitter_ai | 1,785 | Twitter (niji7) |
+
+**AI合計: 99,162**
 
 ### Human画像（学習用）
 | カテゴリ | 枚数 | ソース |
 |----------|------|--------|
-| danbooru_real | 49,998 | Danbooru |
+| danbooru_real | 115,664 | Danbooru |
+
+**総画像数: 214,826** / バランス後（学習時）: 198,324
 
 ### テスト用画像フォルダ
 | フォルダ | 用途 |

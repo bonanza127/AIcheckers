@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 """
+⚠️ WARNING: このスクリプトにはバグがあります。使用禁止！
+117行目: hidden_states[MID_LAYER_INDEX] は +1 が必要です。
+正しくは: hidden_states[MID_LAYER_INDEX + 1]
+代わりに extract_mid_cls_and_recompute_v3.py を使用してください。
+
+---
 patch_stats_v3 のみを高速抽出するスクリプト
 既存のfiles.txtを使用し、GPU統計(34d)のみを抽出
 """

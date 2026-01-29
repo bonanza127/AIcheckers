@@ -25,6 +25,12 @@
 python3 .claude/skills/diagnose/scripts/diagnose.py -v    # Embeddingベース
 python3 .claude/skills/diagnose/scripts/diagnose.py -t    # 実画像テスト
 
+# バックエンド起動（開発用）
+./backend/run_dev.sh
+
+# バックエンド起動（デバッグ出力付き）
+./backend/run_dev_debug.sh
+
 # バックエンド再起動
 systemctl --user restart aicheckers-backend
 
@@ -150,6 +156,7 @@ modal run scripts/archive/modal/modal_kohya_lora.py --submit "train_sap_v3_varia
 |----------|------|
 | `patch_stats.py` | GPU パッチ統計量計算（v2, v3） |
 | `cpu_stats.py` | CPU 統計量計算（Two-Head用） |
+| `extended_features.py` | **拡張特徴量計算**（hog27, dct65, pstats136, pd256） |
 | `boundary_stats.py` | 境界統計量 |
 | `extra_stats.py` | 追加統計量 |
 | `trustmark_helper.py` | TrustMark透かし埋め込み・抽出 |
@@ -162,12 +169,62 @@ modal run scripts/archive/modal/modal_kohya_lora.py --submit "train_sap_v3_varia
 ### models/
 | ファイル | 説明 |
 |----------|------|
-| `two_head_28d_plus_60/` | **本番モデル** (796次元: CLS 768d + GPU 4d + CPU 24d) |
+| `candidate_b_nolbp_seed37/` | **本番メインモデル v6** (1280次元: CLS 768d + GPU 4d + CPU 508d) |
+| `two_head_28d_plus_60/` | サブ1モデル v5 (796次元: CLS 768d + GPU 4d + CPU 24d) |
+| `two_head_28d_plus_60_nonorm/` | サブ2モデル（nonorm版） |
 | `dinov3-vitb16/` | DINOv3 ViT-B/16 ベースモデル |
 | `dinov3_classifier_cls_only.pt` | CLS-only分類器 (768次元) - フォールバック用 |
 | `baseline_before_gate/` | ベースライン保存 |
 
-> **Note**: 旧775dモデル（`dinov3_classifier.pt`）は削除済み。Two-Head 796dが本番。
+> **Note**: 2026-01-29より v6（candidate_b_nolbp_seed37）が本番メイン。3モデルアンサンブル。
+
+### アンサンブル推論（2026-01-29〜）
+
+3モデルのアンサンブルでmax集約を採用。
+
+| 項目 | 設定 |
+|------|------|
+| **メインモデル** | `candidate_b_nolbp_seed37` (v6, 508d CPU) |
+| **サブ1モデル** | `two_head_28d_plus_60` (v5, 24d CPU) |
+| **サブ2モデル** | `two_head_28d_plus_60_nonorm` (24d CPU) |
+| 集約方法 | **max**（3モデル出力の最大値） |
+| TTA | 有効（元画像、水平反転、0.85倍縮小） |
+
+**メインモデル v6 特徴量構成 (1280次元):**
+- CLS: 768d
+- GPU: 4d (patch_stats_v3から選択)
+- CPU: 508d
+  - cpu24: 24d（従来特徴量）
+  - multi_layer_pstats_136: 136d（block 3,6,9,11のpatch_stats_v3）
+  - hog_27: 27d（HOG特徴量）
+  - dct_65: 65d（DCT特徴量）
+  - patch_dist_256: 256d（パッチ分布top256）
+
+**推論フロー:**
+1. 元画像 → メイン + サブ1 + サブ2 → max
+2. 反転画像 → メイン + サブ1 + サブ2 → max
+3. 縮小画像 → メイン + サブ1 + サブ2 → max
+4. 最終結果 = max(1, 2, 3)
+
+**処理時間:** 約1.0秒（9回推論 + 拡張特徴量計算、GPU: RTX 3090）
+
+**関連コード:**
+- `backend/main.py`: `two_head_model`, `two_head_model_sub1`, `two_head_model_sub2` 変数
+- `lib/extended_features.py`: 拡張特徴量計算（hog27, dct65, pstats136, pd256）
+- ロード: `lifespan()` 内で3モデルをロード
+- 推論: `analyze_with_dinov3()` 内で3モデル推論＆max集約
+
+**seed37選定理由（Multi-Seed実験 2026-01-29）:**
+
+| Seed | hardneg det@0.5 | hardneg p10 |
+|------|-----------------|-------------|
+| 7 | 89.21% | 0.418 |
+| 17 | 89.02% | 0.397 |
+| 27 | 87.93% | 0.309 |
+| **37** | **91.29%** | **0.695** |
+| 47 | 89.46% | 0.442 |
+
+seed 37が全指標でトップ。
 
 ### embeddings/
 ```
@@ -225,6 +282,20 @@ modal run scripts/archive/modal/modal_kohya_lora.py --submit "train_sap_v3_varia
 - ❌ 中間層に線形分類器を新設（過学習の温床）
 - ❌ 中間層CLSを使う（DINOは中間CLSを最適化していない）
 - ❌ patchごとの「AI確率」を計算（定義不能）
+- ❌ **最終層からGPU統計量を計算する**（必ず中間層layer 6を使用）
+
+```python
+# ❌ 間違い: 最終層を使用
+cls_features = outputs.last_hidden_state[:, 0, :]
+patch_embeddings = outputs.last_hidden_state[:, 5:5+196, :]
+stats = compute_patch_stats_v3(patch_embeddings, cls_features)  # 不正確な結果
+
+# ✓ 正解: 中間層 (layer 6) を使用
+mid_hidden = outputs.hidden_states[MID_LAYER_INDEX + 1]  # MID_LAYER_INDEX = 6
+patch_embeddings_mid = mid_hidden[:, 5:5+196, :]
+mid_cls = mid_hidden[:, 0, :]
+stats = compute_patch_stats_v3(patch_embeddings_mid, mid_cls)  # 正確
+```
 
 ### 実装ファイル
 
@@ -236,9 +307,9 @@ modal run scripts/archive/modal/modal_kohya_lora.py --submit "train_sap_v3_varia
 
 ## 🔢 Two-Head モデル特徴量インデックス（2026-01 更新）
 
-### 現在の本番モデル: `two_head_28d_plus_60`
+### 現在の本番モデル: `two_head_28d_plus_60_nonorm`
 
-**アーキテクチャ**: CLS (768d) + GPU (4d) + CPU (24d) = **796次元**
+**アーキテクチャ**: CLS (768d) + GPU (4d) + CPU (24d) = **796次元** (nonorm版)
 
 ### 特徴量インデックス定義
 
@@ -317,8 +388,34 @@ UNIFIED_TO_20D_IDX = [1, 2, 3, 6, 8, 9, 10, 11, 12, 13, 14, 16, 18, 19, 20, 22, 
 
 | モデル | CLS | GPU | CPU | 合計 | 備考 |
 |--------|-----|-----|-----|------|------|
-| `two_head_28d_plus_60` | 768d | 4d | 24d | **796d** | **本番（推奨）** |
+| `two_head_28d_plus_60` (v5) | 768d | 4d | 24d | **796d** | **本番** (2026-01-26~) |
+| `two_head_28d_plus_60_nonorm` | 768d | 4d | 24d | 796d | 旧本番 (2026-01-25) |
 | `two_head_29d_ep30` | 768d | 5d | 24d | 797d | 29d = 28d + mid_adj_sim_var |
+
+### v5モデルの特徴 (2026-01-26)
+
+- **学習設定**:
+  - ReduceLROnPlateau (factor=0.5, patience=5)
+  - EarlyStopping (patience=15)
+  - weight_decay=1e-5
+  - ベストエポックの重みを保存
+- **学習結果**:
+  - Best PR-AUC: 0.9969 @ ep14
+  - Early stopped @ ep29
+- **検出率**:
+  - hardneg: 82.9%
+  - aibooru_new: 85.2%
+- **BatchNorm依存**: 入力層の`BatchNorm1d`で正規化
+- **出力**: 1クラス出力 + sigmoid
+
+```python
+# v5のforward
+x = torch.cat([cls_feat, gpu_feat, cpu_feat], dim=-1)
+x = self.bn_input(x)  # BatchNormで正規化
+x = F.gelu(self.bn1(self.fc1(x)))
+...
+return self.fc3(x)  # [B, 1] → sigmoid適用
+```
 
 ### 28d vs 29d の違い
 
@@ -331,7 +428,9 @@ mid_adj_var = compute_mid_adj_sim_var(patch_embeddings_mid)
 gpu_5d = torch.cat([gpu_4d, mid_adj_var], dim=1)
 ```
 
-### 正規化パラメータ
+### 正規化パラメータ（旧版・参考）
+
+> **Note**: nonorm版では以下の正規化は行わず、BatchNormに委譲。
 
 ```python
 STD_FLOOR = 1e-3  # 標準偏差の下限（ゼロ除算防止）
@@ -342,8 +441,105 @@ STD_FLOOR = 1e-3  # 標準偏差の下限（ゼロ除算防止）
 
 | ファイル | 役割 |
 |----------|------|
-| `models/two_head_28d_plus_60/model.pt` | 本番モデル |
+| `models/two_head_28d_plus_60/model.pt` | **本番モデル v5** |
+| `models/two_head_28d_plus_60_nonorm/model.pt` | 旧本番モデル（nonorm版） |
 | `scripts/train_28d_plus_60.py` | 学習スクリプト |
 | `lib/cpu_stats.py` | CPU特徴量計算 |
 | `lib/patch_stats.py` | GPU特徴量計算（v3） |
 | `backend/main.py` | 推論（Two-Head対応）|
+
+---
+
+## 📋 Embedding抽出・学習・推論の整合性記録
+
+### 本番モデル: `two_head_28d_plus_60` v5 (2026-01-26)
+
+#### 抽出設定（現行）
+
+| カテゴリ | 抽出スクリプト | MID_LAYER | Augmentation | 備考 |
+|----------|----------------|-----------|--------------|------|
+| `danbooru_real` | `extract_mid_cls_and_recompute_v3.py` | 6 (+1) | なし | 2026-01-11 |
+| `illustrious_ai` | 同上 | 6 (+1) | なし | 2026-01-11 |
+| `novelai_*` | 同上 | 6 (+1) | なし | 2026-01-11 |
+| その他AI | 同上 | 6 (+1) | なし | 2026-01-11 |
+
+> **検証済み (2026-01-25)**: 保存されたembeddingsと推論時の計算結果が一致することを確認。
+
+#### 学習時 vs 推論時の処理
+
+| 項目 | 学習時 | 推論時 | 整合性 |
+|------|--------|--------|--------|
+| MID_LAYER_INDEX | 6 (+1 → Block 6) | 6 (+1 → Block 6) | ✓ 一致 |
+| GPU統計量 | `patch_stats_v3.npy` からロード | `compute_patch_stats_v3()` で計算 | ✓ 同一関数 |
+| CPU統計量 | `cpu_stats_v2.npy` + `cpu_stats_v3_20d.npy` からロード | `compute_cpu_stats()` で計算 | ✓ 同一関数をimport |
+| 正規化 | **なし (BatchNorm依存)** | **なし (BatchNorm依存)** | ✓ 一致 |
+| Flip Augmentation | なし | TTA有効 (水平反転) | ⚠️ 非対称 |
+| Scale Augmentation | なし | TTA有効 (0.85) | ⚠️ 非対称 |
+| Degradation Aug | なし | なし | ✓ 一致 |
+| TTA集約 | N/A | **max** を採用 | - |
+
+#### TTA設定 (推論時)
+
+```python
+TTA_ENABLED = True           # 水平反転
+TTA_EXTRA_ENABLED = True     # 縮小
+TTA_EXTRA_SCALE = 0.85       # 縮小率
+# 集約: max(元画像, 反転, 縮小)
+```
+
+#### TTA効果検証結果 (2026-01-25)
+
+aibooru_hardneg（AI判定困難画像）100枚 + animedl2m（Real）100枚で検証。
+
+| モード | AI検出率 | Real正答率 | 総合精度 |
+|--------|----------|------------|----------|
+| TTA無効 | 58.0% | 100% | 79.0% |
+| flip only | 69.0% | 100% | 84.5% |
+| **flip + scale** | **71.0%** | **100%** | **85.5%** |
+
+**結論**: TTAは精度を約13%向上させる。`max`集約 + flip + scale が最適。
+
+---
+
+### 次回抽出時の推奨設定 (2026-01-25 更新)
+
+`extract_embeddings_v2.py` v2.2 の新デフォルト値で抽出すると、推論時TTAとの整合性が取れる。
+
+```bash
+# 推奨コマンド（デフォルト値で実行）
+python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name
+
+# デフォルト値:
+#   --degradation-prob 1.0  (全画像に劣化適用、内部確率で平均1種類/枚)
+#   --flip-prob 0.5         (50%の画像を水平反転)
+#   --scale-prob 0.5        (50%の画像を0.85倍縮小)
+#   --num-workers 8         (並列ワーカー数)
+
+# augmentationなしで抽出する場合
+python3 scripts/extract_embeddings_v2.py --dir /path/to/images --name category_name --no-aug
+```
+
+#### Augmentation設定詳細
+
+| Augmentation | デフォルト確率 | 説明 |
+|--------------|---------------|------|
+| **Flip** | 50% | 水平反転（推論時TTA整合性） |
+| **Scale** | 50% | 0.85倍縮小（推論時TTA整合性） |
+| **Degradation** | 100% | 下記の劣化を平均1種類/枚適用 |
+
+**劣化Augmentation内訳（合計1.0 = 平均1種類/枚）:**
+
+| 劣化タイプ | 確率 | パラメータ |
+|-----------|------|-----------|
+| JPEG圧縮 | 30% | quality 55-85 |
+| リサイズ劣化 | 20% | scale 0.6-0.9 |
+| ぼかし | 15% | radius 0.5-1.0px |
+| ノイズ | 10% | std 3-12 |
+| 色調変化 | 25% | 彩度/明るさ/コントラスト ±10% |
+
+- 最大2つまで重ねがけ（過剰劣化防止）
+- 0種類の場合は1種類をランダム選択
+
+#### 注意事項
+
+- **archiveのバグ**: `scripts/archive/extraction/extract_patch_stats_v3_only.py` に `+1` 欠落バグあり。使用禁止。
