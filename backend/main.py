@@ -33,6 +33,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL.ExifTags import TAGS as PIL_EXIF_TAGS
 from pydantic import BaseModel
 from transformers import AutoImageProcessor, AutoModel
 
@@ -44,6 +45,7 @@ from lib.patch_stats import compute_patch_stats_inference, compute_patch_stats_v
 from lib.cpu_stats import compute_cpu_stats
 from lib.extra_stats import compute_extra_stats
 from lib.boundary_stats import compute_boundary_stats
+from lib.extended_features import compute_extended_cpu_features, compute_extended_gpu_features, get_top256_indices
 
 # 中間層設定（パッチ統計量v2用）
 MID_LAYER_INDEX = 6  # Block 6からパッチ統計量を抽出（学習時と一致させる）
@@ -91,8 +93,9 @@ device = None
 dinov3_model = None
 dinov3_processor = None
 dinov3_classifier = None
-two_head_model = None
-two_head_model_ensemble = None  # アンサンブル用2つ目のモデル
+two_head_model = None        # メインモデル（508d CPU: candidate_b_nolbp_seed37）
+two_head_model_sub1 = None   # サブ1（24d CPU: two_head_28d_plus_60）
+two_head_model_sub2 = None   # サブ2（24d CPU: two_head_28d_plus_60_nonorm）
 two_head_mode = False
 two_head_gpu_v3_idx = None
 two_head_cpu_v2_idx = None
@@ -110,6 +113,9 @@ boundary_indices = None
 
 # キャッシュ: 画像ハッシュ -> 解析結果（最大10,000件、約1MB）
 result_cache: LRUCache = LRUCache(maxsize=10000)
+# Cache key needs a model/version tag; otherwise swapping models will keep serving stale results
+# for the same image hash.
+MODEL_CACHE_TAG = "unknown"
 
 # レート制限: 日本時間の午前0時にリセット (Midnight JST Reset)
 RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"  # 本番: true（デフォルト）
@@ -133,6 +139,7 @@ ADMIN_EMAILS = {"hokhok7676@gmail.com", "dlsite-trial@aicheckers.net"}
 TTA_ENABLED = os.getenv("TTA_ENABLED", "true").lower() == "true"
 TTA_EXTRA_ENABLED = os.getenv("TTA_EXTRA_ENABLED", "true").lower() == "true"
 TTA_EXTRA_SCALE = float(os.getenv("TTA_EXTRA_SCALE", "0.85"))
+DEBUG_PROBS = os.getenv("DEBUG_PROBS", "false").lower() == "true"
 
 # Temperature Scaling: ECE最適化済み（2025-01-09検証: T=0.9が最良）
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.9"))
@@ -394,8 +401,9 @@ enterprise_usage: dict = {}  # 起動時にロード
 DINOV3_MODEL_PATH = PROJECT_ROOT / "models" / "dinov3-vitb16"
 DINOV3_CLASSIFIER_PATH = PROJECT_ROOT / "models" / "dinov3_classifier.pt"
 EMBEDDINGS_DIR = PROJECT_ROOT / "embeddings"
-TWO_HEAD_DIR = PROJECT_ROOT / "models" / "two_head_28d_plus_60"  # Moonlight V1.4 (v5)
-TWO_HEAD_DIR_ENSEMBLE = PROJECT_ROOT / "models" / "two_head_28d_plus_60_nonorm"  # アンサンブル用
+TWO_HEAD_DIR_MAIN = PROJECT_ROOT / "models" / "candidate_b_nolbp_seed37"  # メイン: B(no_lbp) seed37 (cpu_dim=508)
+TWO_HEAD_DIR_SUB1 = PROJECT_ROOT / "models" / "two_head_28d_plus_60"  # サブ1 (cpu_dim=24)
+TWO_HEAD_DIR_SUB2 = PROJECT_ROOT / "models" / "two_head_28d_plus_60_nonorm"  # サブ2 (cpu_dim=24)
 TWO_HEAD_GPU_V3_IDX = [1, 3, 5, 6]  # adj_sim_var, patch_var, norm_var, norm_range
 TWO_HEAD_CPU16_V2_IDX = [0, 1, 2, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15]
 TWO_HEAD_CPU20_V3_IDX = [0, 1, 2, 3, 4, 5, 8, 10, 15, 16, 17]
@@ -406,6 +414,7 @@ async def lifespan(app: FastAPI):
     """起動時にMoonlight (DINOv3) をロード"""
     global device, dinov3_model, dinov3_processor, dinov3_classifier, use_patch_stats, feature_mean, feature_std, vip_users, users_db
     global enterprise_keys, enterprise_usage, rate_limit_data, rate_limit_guard
+    global MODEL_CACHE_TAG, result_cache
 
     # ユーザーデータをロード
     users_db = load_users()
@@ -481,74 +490,120 @@ async def lifespan(app: FastAPI):
         else:
             print(f"[WARN] Classifier not found at {DINOV3_CLASSIFIER_PATH}")
 
-        # Two-Head (single model) ロード
-        global two_head_model, two_head_mode, two_head_use_mid_adj
+        # Two-Head 3モデルアンサンブルロード
+        global two_head_model, two_head_model_sub1, two_head_model_sub2
+        global two_head_mode, two_head_use_mid_adj
         global two_head_gpu_v3_idx, two_head_cpu_v2_idx, two_head_cpu_v3_idx
 
-        if TWO_HEAD_DIR.exists():
+        def load_two_head_model(model_dir: Path, expected_cpu_dim: int = None):
+            """Two-Headモデルをロードするヘルパー関数"""
+            model_path = model_dir / "model.pt"
+            if not model_path.exists():
+                raise FileNotFoundError(f"model.pt missing in {model_dir}")
+
+            config_path = model_dir / "config.json"
+            cfg_gpu_dim = None
+            cfg_cpu_dim = None
+            if config_path.exists():
+                try:
+                    with open(config_path, "r") as f:
+                        cfg = json.load(f)
+                    cfg_gpu_dim = cfg.get("gpu_dim")
+                    cfg_cpu_dim = cfg.get("cpu_dim")
+                except Exception as e:
+                    print(f"[WARN] Failed to read config.json: {e}")
+
+            state_dict = torch.load(model_path, map_location=device, weights_only=False)
+            sd_gpu_dim = None
+            sd_cpu_dim = None
+            if isinstance(state_dict, dict):
+                if "gpu_mean" in state_dict:
+                    sd_gpu_dim = state_dict["gpu_mean"].shape[0]
+                if "cpu_mean" in state_dict:
+                    sd_cpu_dim = state_dict["cpu_mean"].shape[0]
+
+            gpu_dim = sd_gpu_dim or cfg_gpu_dim or 4
+            cpu_dim = sd_cpu_dim or cfg_cpu_dim or expected_cpu_dim or 24
+
+            model = TwoHeadClassifier29d(gpu_dim=gpu_dim, cpu_dim=cpu_dim).to(device)
+            model.load_state_dict(state_dict, strict=False)
+            model.eval()
+            return model, gpu_dim, cpu_dim
+
+        if TWO_HEAD_DIR_MAIN.exists():
             try:
-                model_path = TWO_HEAD_DIR / "model.pt"
-                if not model_path.exists():
-                    raise FileNotFoundError("two-head model.pt missing")
+                # メインモデル (candidate_b_nolbp_seed37, cpu_dim=508)
+                two_head_model, gpu_dim_main, cpu_dim_main = load_two_head_model(
+                    TWO_HEAD_DIR_MAIN, expected_cpu_dim=508
+                )
+                print(f"Main model loaded: {TWO_HEAD_DIR_MAIN.name} (gpu_dim={gpu_dim_main}, cpu_dim={cpu_dim_main})")
 
-                config_path = TWO_HEAD_DIR / "config.json"
-                cfg_gpu_dim = None
-                cfg_cpu_dim = None
-                if config_path.exists():
+                # サブ1モデル (two_head_28d_plus_60, cpu_dim=24)
+                if TWO_HEAD_DIR_SUB1.exists():
                     try:
-                        with open(config_path, "r") as f:
-                            cfg = json.load(f)
-                        cfg_gpu_dim = cfg.get("gpu_dim")
-                        cfg_cpu_dim = cfg.get("cpu_dim")
+                        two_head_model_sub1, gpu_dim_sub1, cpu_dim_sub1 = load_two_head_model(
+                            TWO_HEAD_DIR_SUB1, expected_cpu_dim=24
+                        )
+                        print(f"Sub1 model loaded: {TWO_HEAD_DIR_SUB1.name} (gpu_dim={gpu_dim_sub1}, cpu_dim={cpu_dim_sub1})")
                     except Exception as e:
-                        print(f"[WARN] Failed to read config.json: {e}")
+                        print(f"[WARN] Failed to load sub1 model: {e}")
+                        two_head_model_sub1 = None
 
-                state_dict = torch.load(model_path, map_location=device, weights_only=False)
-                sd_gpu_dim = None
-                sd_cpu_dim = None
-                if isinstance(state_dict, dict):
-                    if "gpu_mean" in state_dict:
-                        sd_gpu_dim = state_dict["gpu_mean"].shape[0]
-                    if "cpu_mean" in state_dict:
-                        sd_cpu_dim = state_dict["cpu_mean"].shape[0]
-
-                gpu_dim = sd_gpu_dim or cfg_gpu_dim or 4
-                cpu_dim = sd_cpu_dim or cfg_cpu_dim or 24
-                if sd_gpu_dim is not None and cfg_gpu_dim is not None and sd_gpu_dim != cfg_gpu_dim:
-                    print(f"[WARN] gpu_dim mismatch: config={cfg_gpu_dim}, state_dict={sd_gpu_dim} (using state_dict)")
-                if sd_cpu_dim is not None and cfg_cpu_dim is not None and sd_cpu_dim != cfg_cpu_dim:
-                    print(f"[WARN] cpu_dim mismatch: config={cfg_cpu_dim}, state_dict={sd_cpu_dim} (using state_dict)")
-
-                two_head_model = TwoHeadClassifier29d(gpu_dim=gpu_dim, cpu_dim=cpu_dim).to(device)
-                two_head_model.load_state_dict(state_dict, strict=False)
-                two_head_model.eval()
+                # サブ2モデル (two_head_28d_plus_60_nonorm, cpu_dim=24)
+                if TWO_HEAD_DIR_SUB2.exists():
+                    try:
+                        two_head_model_sub2, gpu_dim_sub2, cpu_dim_sub2 = load_two_head_model(
+                            TWO_HEAD_DIR_SUB2, expected_cpu_dim=24
+                        )
+                        print(f"Sub2 model loaded: {TWO_HEAD_DIR_SUB2.name} (gpu_dim={gpu_dim_sub2}, cpu_dim={cpu_dim_sub2})")
+                    except Exception as e:
+                        print(f"[WARN] Failed to load sub2 model: {e}")
+                        two_head_model_sub2 = None
 
                 two_head_gpu_v3_idx = TWO_HEAD_GPU_V3_IDX
                 two_head_cpu_v2_idx = TWO_HEAD_CPU16_V2_IDX
                 two_head_cpu_v3_idx = TWO_HEAD_CPU20_V3_IDX
-                two_head_use_mid_adj = gpu_dim == 5
+                two_head_use_mid_adj = gpu_dim_main == 5
                 two_head_mode = True
                 use_patch_stats = True
                 # two-headモードではMID_LAYER_INDEXを6に固定（学習時と一致させる）
                 MID_LAYER_INDEX = 6
-                print(f"Two-head model loaded: {TWO_HEAD_DIR} (gpu_dim={gpu_dim}, cpu_dim={cpu_dim}, mid_adj={two_head_use_mid_adj}, mid_layer={MID_LAYER_INDEX})")
 
-                # アンサンブル用2つ目のモデルをロード
-                global two_head_model_ensemble
-                if TWO_HEAD_DIR_ENSEMBLE.exists():
-                    try:
-                        ens_model_path = TWO_HEAD_DIR_ENSEMBLE / "model.pt"
-                        ens_state_dict = torch.load(ens_model_path, map_location=device, weights_only=False)
-                        two_head_model_ensemble = TwoHeadClassifier29d(gpu_dim=gpu_dim, cpu_dim=cpu_dim).to(device)
-                        two_head_model_ensemble.load_state_dict(ens_state_dict, strict=False)
-                        two_head_model_ensemble.eval()
-                        print(f"Ensemble model loaded: {TWO_HEAD_DIR_ENSEMBLE}")
-                    except Exception as e:
-                        print(f"[WARN] Failed to load ensemble model: {e}")
-                        two_head_model_ensemble = None
+                # top256インデックスを事前ロード（エラーを早期検出）
+                try:
+                    _ = get_top256_indices()
+                    print("top256 indices loaded for extended features")
+                except FileNotFoundError as e:
+                    print(f"[WARN] top256 indices not found: {e}")
+
+                ensemble_count = 1 + (1 if two_head_model_sub1 else 0) + (1 if two_head_model_sub2 else 0)
+                print(f"Two-head ensemble ready: {ensemble_count} models, mid_layer={MID_LAYER_INDEX}")
             except Exception as e:
                 print(f"[WARN] Failed to load two-head model: {e}")
                 two_head_mode = False
+
+        # Update cache tag (and clear cache) after model load, so UI scans won't show stale results.
+        try:
+            parts = []
+            if TWO_HEAD_DIR_MAIN.exists():
+                p = TWO_HEAD_DIR_MAIN / "model.pt"
+                parts.append(f"main={TWO_HEAD_DIR_MAIN.name}@{p.stat().st_mtime_ns if p.exists() else 'na'}")
+            if TWO_HEAD_DIR_SUB1.exists():
+                p = TWO_HEAD_DIR_SUB1 / "model.pt"
+                parts.append(f"sub1={TWO_HEAD_DIR_SUB1.name}@{p.stat().st_mtime_ns if p.exists() else 'na'}")
+            if TWO_HEAD_DIR_SUB2.exists():
+                p = TWO_HEAD_DIR_SUB2 / "model.pt"
+                parts.append(f"sub2={TWO_HEAD_DIR_SUB2.name}@{p.stat().st_mtime_ns if p.exists() else 'na'}")
+            MODEL_CACHE_TAG = "|".join(parts) if parts else "no-twohead"
+        except Exception as e:
+            print(f"[WARN] Failed to compute MODEL_CACHE_TAG: {e}")
+            MODEL_CACHE_TAG = "unknown"
+
+        try:
+            result_cache.clear()
+            print("Result cache cleared")
+        except Exception as e:
+            print(f"[WARN] Failed to clear result cache: {e}")
 
         print("Moonlight loaded successfully!")
     except Exception as e:
@@ -628,6 +683,81 @@ def get_image_hash(image_bytes: bytes) -> str:
     return hashlib.sha256(image_bytes).hexdigest()
 
 
+def _safe_one_line(s: str, limit: int = 400) -> str:
+    s = " ".join((s or "").split())
+    if len(s) > limit:
+        return s[: limit - 3] + "..."
+    return s
+
+
+def extract_metadata_evidence(image_bytes: bytes) -> dict:
+    """Extract lightweight metadata evidence (EXIF + PNG/WebP text).
+
+    Intended as a forensic hint:
+    - If generator prompt/model metadata exists, surface it.
+    - If absent, treat as neutral (do not use as AI evidence).
+
+    Keep it cheap: parse container fields only, no model calls.
+    """
+    found_fields: list[str] = []
+    prompt_blob: str | None = None
+    software: str | None = None
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+
+        # PNG/WebP may expose textual chunks through `info`.
+        info = getattr(img, "info", {}) or {}
+        for k, v in info.items():
+            lk = str(k).lower()
+            if lk in ("parameters", "prompt", "negative_prompt", "workflow"):
+                found_fields.append(f"png:{k}")
+                if isinstance(v, str) and not prompt_blob:
+                    prompt_blob = v
+
+        # EXIF (mostly JPEG)
+        try:
+            exif = img.getexif()
+        except Exception:
+            exif = None
+        if exif:
+            for tag_id, value in exif.items():
+                tag_name = PIL_EXIF_TAGS.get(tag_id, str(tag_id))
+                lname = str(tag_name).lower()
+                if lname in ("software", "artist", "imagedescription", "usercomment", "xpcomment", "xpkeywords"):
+                    found_fields.append(f"exif:{tag_name}")
+                    if lname == "software" and software is None:
+                        software = str(value)
+                    if lname in ("usercomment", "imagedescription", "xpcomment", "xpkeywords") and not prompt_blob:
+                        prompt_blob = str(value)
+    except Exception:
+        # Best-effort; never fail analysis due to metadata parsing.
+        pass
+
+    # Only surface prompt-ish blobs (avoid dumping random EXIF strings).
+    prompt: str | None = None
+    if prompt_blob:
+        low = prompt_blob.lower()
+        if any(tok in low for tok in ("steps:", "sampler", "negative prompt", "seed:", "cfg", "clip skip", "model")):
+            prompt = _safe_one_line(prompt_blob, limit=500)
+
+    # De-dup fields while preserving order.
+    seen = set()
+    dedup_fields: list[str] = []
+    for f in found_fields:
+        if f in seen:
+            continue
+        seen.add(f)
+        dedup_fields.append(f)
+
+    return {
+        "found": bool(dedup_fields),
+        "fields": dedup_fields,
+        "prompt": prompt,
+        "software": _safe_one_line(software, limit=200) if software else None,
+    }
+
+
 def normalize_features(features: torch.Tensor) -> torch.Tensor:
     """学習時の統計量で特徴量を標準化（存在する場合のみ）+ 追加特徴スケーリング/ゲート"""
     if feature_mean is None or feature_std is None:
@@ -643,6 +773,35 @@ def normalize_features(features: torch.Tensor) -> torch.Tensor:
             # 単純スケーリングを適用
             normalized[..., 768:] *= additional_scale
     return normalized
+
+
+def _sanitize_np(arr: np.ndarray, clip: float = 1e4) -> np.ndarray:
+    """Match training-time safety: replace NaN/Inf and clip extreme values."""
+    x = np.asarray(arr, dtype=np.float32)
+    if not np.isfinite(x).all():
+        x = np.nan_to_num(x, nan=0.0, posinf=clip, neginf=-clip)
+    return np.clip(x, -clip, clip).astype(np.float32)
+
+
+def _maybe_log1p_np(arr: np.ndarray, absmax_thresh: float = 200.0) -> np.ndarray:
+    """
+    Match train_candidate_b_nolbp.py preprocessing:
+    apply signed log1p only when the block has huge scale.
+    """
+    x = np.asarray(arr, dtype=np.float32)
+    if x.size == 0:
+        return x
+    absmax = float(np.max(np.abs(x)))
+    if absmax <= absmax_thresh:
+        return x
+    return (np.sign(x) * np.log1p(np.abs(x))).astype(np.float32)
+
+
+def _prep_candidate_block(arr: np.ndarray) -> np.ndarray:
+    """Training-aligned preprocessing for candidate_b_nolbp models."""
+    x = _sanitize_np(arr, clip=1e4)
+    x = _maybe_log1p_np(x, absmax_thresh=200.0)
+    return x.astype(np.float32)
 
 
 def _letterbox_512(image: Image.Image) -> tuple[np.ndarray, np.ndarray]:
@@ -1386,13 +1545,16 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 features = torch.cat([features, patch_stats_v2], dim=1)  # (1, 775)
 
         # 分類
+        probs_breakdown = None
         if two_head_mode:
+            # CPU統計量（24d: サブモデル用）
             cpu_v2_18d, cpu_v3_20d = compute_cpu_stats(image)
             cpu_13d = cpu_v2_18d[two_head_cpu_v2_idx]
             cpu_11d = cpu_v3_20d[two_head_cpu_v3_idx]
             cpu_24d = np.concatenate([cpu_13d, cpu_11d]).astype(np.float32)
-            cpu_tensor = torch.tensor(cpu_24d, dtype=torch.float32, device=device).unsqueeze(0)
+            cpu_tensor_24d = torch.tensor(cpu_24d, dtype=torch.float32, device=device).unsqueeze(0)
 
+            # GPU統計量（4d: 全モデル共通）
             stats_v3 = compute_patch_stats_v3(patch_embeddings_mid, mid_cls)
             gpu_4d = stats_v3[:, two_head_gpu_v3_idx]
             if two_head_use_mid_adj:
@@ -1402,13 +1564,73 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 gpu_features = gpu_4d
 
             cls_features = hidden_states[:, 0, :]
-            logits = two_head_model(cls_features, gpu_features, cpu_tensor)
-            ai_prob = torch.sigmoid(logits)[0].item()
-            # アンサンブル: 2つ目のモデルでも推論してmaxを採用
-            if two_head_model_ensemble is not None:
-                logits_ens = two_head_model_ensemble(cls_features, gpu_features, cpu_tensor)
-                ai_prob_ens = torch.sigmoid(logits_ens)[0].item()
-                ai_prob = max(ai_prob, ai_prob_ens)
+
+            # 拡張特徴量の計算（メインモデル用: cpu_dim=508）
+            # CPU拡張特徴量（92d: hog27 + dct65）
+            ext_cpu = compute_extended_cpu_features(image)
+            # GPU拡張特徴量（136d + 256d）
+            pstats136, pd256 = compute_extended_gpu_features(
+                outputs.hidden_states,
+                reg_offset=5,  # DINOv3: CLS + 4 registers
+                num_patches=196,
+            )
+
+            # Candidate main model is very sensitive to feature scaling because it uses BatchNorm.
+            # Match train_candidate_b_nolbp.py preprocessing block-by-block.
+            cpu_24d_main = _prep_candidate_block(cpu_24d)
+            pstats136_main = _prep_candidate_block(pstats136)
+            hog27_main = _prep_candidate_block(ext_cpu[:27])
+            dct65_main = _prep_candidate_block(ext_cpu[27:])
+            pd256_main = _prep_candidate_block(pd256)
+
+            # GPU4 preprocessing for main model only (sub-models keep legacy raw stats).
+            gpu4_main = _prep_candidate_block(gpu_4d.detach().float().cpu().numpy()[0])
+            gpu_features_main = torch.tensor(gpu4_main, dtype=torch.float32, device=device).unsqueeze(0)
+
+            # メインモデル用CPU特徴量（508d = 24d + 136d + 27d + 65d + 256d）
+            cpu_508_parts = [
+                cpu_24d_main,               # 24d
+                pstats136_main,             # 136d (multi_layer_pstats)
+                hog27_main,                 # 27d (hog)
+                dct65_main,                 # 65d (dct)
+                pd256_main,                 # 256d (patch_dist)
+            ]
+            cpu_508d = np.concatenate(cpu_508_parts).astype(np.float32)
+            cpu_tensor_508d = torch.tensor(cpu_508d, dtype=torch.float32, device=device).unsqueeze(0)
+
+            # 3モデルアンサンブル推論
+            ai_probs = []
+
+            # メインモデル推論 (cpu_dim=508)
+            logits_main = two_head_model(cls_features, gpu_features_main, cpu_tensor_508d)
+            ai_prob_main = torch.sigmoid(logits_main)[0].item()
+            ai_probs.append(ai_prob_main)
+
+            # サブ1推論 (cpu_dim=24)
+            if two_head_model_sub1 is not None:
+                logits_sub1 = two_head_model_sub1(cls_features, gpu_features, cpu_tensor_24d)
+                ai_prob_sub1 = torch.sigmoid(logits_sub1)[0].item()
+                ai_probs.append(ai_prob_sub1)
+
+            # サブ2推論 (cpu_dim=24)
+            if two_head_model_sub2 is not None:
+                logits_sub2 = two_head_model_sub2(cls_features, gpu_features, cpu_tensor_24d)
+                ai_prob_sub2 = torch.sigmoid(logits_sub2)[0].item()
+                ai_probs.append(ai_prob_sub2)
+
+            # max集約
+            ai_prob = max(ai_probs)
+            if DEBUG_PROBS:
+                probs_breakdown = {
+                    "main": float(ai_prob_main),
+                    "sub1": float(ai_prob_sub1) if two_head_model_sub1 is not None else None,
+                    "sub2": float(ai_prob_sub2) if two_head_model_sub2 is not None else None,
+                    "max": float(ai_prob),
+                    "cache_tag": MODEL_CACHE_TAG,
+                    "main_model": TWO_HEAD_DIR_MAIN.name if TWO_HEAD_DIR_MAIN.exists() else None,
+                    "sub1_model": TWO_HEAD_DIR_SUB1.name if TWO_HEAD_DIR_SUB1.exists() else None,
+                    "sub2_model": TWO_HEAD_DIR_SUB2.name if TWO_HEAD_DIR_SUB2.exists() else None,
+                }
         else:
             features = normalize_features(features)
             logits = dinov3_classifier(features)
@@ -1425,40 +1647,41 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         tta_log = None
         if TTA_ENABLED:
             def infer_ai_prob(image_tta: Image.Image) -> float:
+                """TTA推論: CLSトークンのみTTA画像から抽出し、GPU/CPU統計量は元画像のものを使い回す。
+
+                理由: GPU/CPU統計量はflip/scaleで不安定になりやすく、ノイズ源になる。
+                CLSトークンだけを差し替えることで、安定した統計量ベースの判定にTTA多様性を加える。
+                """
                 inputs_tta = dinov3_processor(images=image_tta, return_tensors="pt")
                 inputs_tta = {k: v.to(device) for k, v in inputs_tta.items()}
-                outputs_tta = dinov3_model(**inputs_tta, output_hidden_states=True)
-                hidden_tta = outputs_tta.last_hidden_state
-                features_tta = hidden_tta[:, 0, :]
-                mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1]
-                patch_embeddings_mid_tta = mid_hidden_tta[:, 5:5+196, :]
-                mid_cls_tta = mid_hidden_tta[:, 0, :]
+                # CLSトークンのみ必要なので、中間層の出力は不要
+                outputs_tta = dinov3_model(**inputs_tta, output_hidden_states=not two_head_mode)
+                features_tta = outputs_tta.last_hidden_state[:, 0, :]
 
                 if two_head_mode:
-                    cpu_v2_tta, cpu_v3_tta = compute_cpu_stats(image_tta)
-                    cpu_13d_tta = cpu_v2_tta[two_head_cpu_v2_idx]
-                    cpu_11d_tta = cpu_v3_tta[two_head_cpu_v3_idx]
-                    cpu_24d_tta = np.concatenate([cpu_13d_tta, cpu_11d_tta]).astype(np.float32)
-                    cpu_tensor_tta = torch.tensor(cpu_24d_tta, dtype=torch.float32, device=device).unsqueeze(0)
+                    # GPU/CPU統計量は元画像のものを使い回す（cpu_tensor_24d, cpu_tensor_508d, gpu_features）
+                    tta_probs_inner = []
 
-                    stats_v3_tta = compute_patch_stats_v3(patch_embeddings_mid_tta, mid_cls_tta)
-                    gpu_4d_tta = stats_v3_tta[:, two_head_gpu_v3_idx]
-                    if two_head_use_mid_adj:
-                        mid_adj_var_tta = compute_mid_adj_sim_var(patch_embeddings_mid_tta)
-                        gpu_features_tta = torch.cat([gpu_4d_tta, mid_adj_var_tta], dim=1)
-                    else:
-                        gpu_features_tta = gpu_4d_tta
+                    # メインモデル推論 (cpu_dim=508)
+                    # main model expects training-aligned preprocessing (see _prep_candidate_block)
+                    logits_main_tta = two_head_model(features_tta, gpu_features_main, cpu_tensor_508d)
+                    tta_probs_inner.append(torch.sigmoid(logits_main_tta)[0].item())
 
-                    logits_tta = two_head_model(features_tta, gpu_features_tta, cpu_tensor_tta)
-                    ai_prob_tta = torch.sigmoid(logits_tta)[0].item()
-                    # アンサンブル
-                    if two_head_model_ensemble is not None:
-                        logits_ens_tta = two_head_model_ensemble(features_tta, gpu_features_tta, cpu_tensor_tta)
-                        ai_prob_ens_tta = torch.sigmoid(logits_ens_tta)[0].item()
-                        ai_prob_tta = max(ai_prob_tta, ai_prob_ens_tta)
-                    return ai_prob_tta
+                    # サブ1推論 (cpu_dim=24)
+                    if two_head_model_sub1 is not None:
+                        logits_sub1_tta = two_head_model_sub1(features_tta, gpu_features, cpu_tensor_24d)
+                        tta_probs_inner.append(torch.sigmoid(logits_sub1_tta)[0].item())
 
-                # fallback: legacy classifier
+                    # サブ2推論 (cpu_dim=24)
+                    if two_head_model_sub2 is not None:
+                        logits_sub2_tta = two_head_model_sub2(features_tta, gpu_features, cpu_tensor_24d)
+                        tta_probs_inner.append(torch.sigmoid(logits_sub2_tta)[0].item())
+
+                    return max(tta_probs_inner)
+
+                # fallback: legacy classifier（中間層が必要）
+                mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1]
+                patch_embeddings_mid_tta = mid_hidden_tta[:, 5:5+196, :]
                 if use_patch_stats:
                     patch_stats_v2_tta = compute_patch_stats_v2(patch_embeddings_mid_tta)
                     if patch_indices is not None and extra_indices is not None and boundary_indices is not None:
@@ -1598,6 +1821,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         "detected_traces": detected_traces,
         "human_verified": human_verified,
         "signature_correlation": round(signature_correlation, 4) if signature_correlation else None,
+        "debug_probs": probs_breakdown,
     }
 
 
@@ -1641,18 +1865,41 @@ async def analyze_image(
         # 画像読み込み（サイズチェック含む）
         contents = await validate_file_size(file)
         image_hash = get_image_hash(contents)
+        cache_key = f"{MODEL_CACHE_TAG}:{image_hash}"
+        cache_key = f"{MODEL_CACHE_TAG}:{image_hash}"
+        meta = extract_metadata_evidence(contents)
 
         # キャッシュチェック
-        if image_hash in result_cache:
-            cached = result_cache[image_hash]
+        if cache_key in result_cache:
+            cached = result_cache[cache_key]
             # キャッシュヒット時もレート制限カウント増加（Enterprise以外）
             if not is_enterprise:
                 increment_rate_limit(key, is_vip, is_admin)
                 _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
             else:
                 remaining_after, limit_after = -1, -1
+            cached_resp = {**cached, "cached": True, "filename": file.filename}
+            # For older cached entries, add metadata evidence (and a visible log entry) on the fly.
+            if meta.get("found"):
+                cached_resp.setdefault("forensic_logs", [])
+                if not any(str(x).startswith("FOUND METADATA:") for x in cached_resp["forensic_logs"]):
+                    cached_resp["forensic_logs"].insert(0, f"FOUND METADATA: {', '.join(meta['fields'][:6])}")
+                    if meta.get("software"):
+                        cached_resp["forensic_logs"].insert(1, f"Metadata software: {meta['software']}")
+                    if meta.get("prompt"):
+                        cached_resp["forensic_logs"].insert(1, f"Metadata prompt: {meta['prompt']}")
+                cached_resp["metadata_found"] = True
+                cached_resp["metadata_fields"] = meta.get("fields", [])
+                cached_resp["metadata_prompt"] = meta.get("prompt")
+                cached_resp["metadata_software"] = meta.get("software")
+            else:
+                cached_resp["metadata_found"] = False
+                cached_resp["metadata_fields"] = []
+                cached_resp["metadata_prompt"] = None
+                cached_resp["metadata_software"] = None
+
             return JSONResponse(
-                content={**cached, "cached": True, "filename": file.filename},
+                content=cached_resp,
                 headers={"X-RateLimit-Limit": str(limit_after), "X-RateLimit-Remaining": str(remaining_after)}
             )
 
@@ -1660,6 +1907,23 @@ async def analyze_image(
 
         # Moonlight (DINOv3) で解析
         result = await analyze_with_dinov3(image)
+
+        # Metadata evidence (best-effort). Strong when present; neutral when absent.
+        if meta.get("found"):
+            result.setdefault("forensic_logs", [])
+            # detected_tracesが文字列の場合はリストに変換
+            if isinstance(result.get("detected_traces"), str):
+                result["detected_traces"] = [result["detected_traces"]] if result["detected_traces"] else []
+            else:
+                result.setdefault("detected_traces", [])
+            result["forensic_logs"].insert(0, f"FOUND METADATA: {', '.join(meta['fields'][:6])}")
+            if meta.get("software"):
+                result["forensic_logs"].insert(1, f"Metadata software: {meta['software']}")
+            if meta.get("prompt"):
+                result["forensic_logs"].insert(1, f"Metadata prompt: {meta['prompt']}")
+                result["detected_traces"].append("metadata_prompt")
+            else:
+                result["detected_traces"].append("metadata")
 
         processing_time = time.time() - start_time
 
@@ -1675,11 +1939,15 @@ async def analyze_image(
             "attention_map": result.get("attention_map"),
             "forensic_logs": result.get("forensic_logs", []),
             "detected_traces": result.get("detected_traces"),
+            "metadata_found": bool(meta.get("found")),
+            "metadata_fields": meta.get("fields", []),
+            "metadata_prompt": meta.get("prompt"),
+            "metadata_software": meta.get("software"),
         }
 
         # キャッシュに保存（filenameを除く）
         cache_data = {k: v for k, v in response_data.items() if k != "filename"}
-        result_cache[image_hash] = cache_data
+        result_cache[cache_key] = cache_data
 
         # レート制限カウント増加（Enterprise以外）
         if not is_enterprise:
@@ -2170,8 +2438,8 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
 
         # キャッシュチェック
         image_hash = get_image_hash(contents)
-        if image_hash in result_cache:
-            cached = result_cache[image_hash]
+        if cache_key in result_cache:
+            cached = result_cache[cache_key]
             if not is_enterprise:
                 increment_rate_limit(key, is_vip, is_admin)
                 _, remaining_after, limit_after = check_rate_limit(key, is_vip, is_admin)
@@ -2211,7 +2479,7 @@ async def analyze_image_from_url(request: Request, body: URLAnalyzeRequest):
 
         # キャッシュに保存
         cache_data = {k: v for k, v in response_data.items() if k not in ("filename", "source_url")}
-        result_cache[image_hash] = cache_data
+        result_cache[cache_key] = cache_data
 
         # レート制限カウント増加（Enterprise以外）
         if not is_enterprise:
