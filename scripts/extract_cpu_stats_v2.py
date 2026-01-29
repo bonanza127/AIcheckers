@@ -39,6 +39,7 @@ CATEGORY_PATHS = {
     "pixai_ai": DATA_ROOT / "pixai",
     "novelai_combined_ai": DATA_ROOT / "novelai_combined",
     "novelai_artist_tagged_ai": DATA_ROOT / "novelai_artist_tagged",
+    "niji7_twitter_ai": DATA_ROOT / "niji7_twitter",
     "danbooru_real": ANIMEDL_ROOT / "real_images/images",
 }
 
@@ -128,6 +129,9 @@ def radial_spectrum_slope(img_gray):
 
 
 def stroke_width_proxy(edges):
+    # Handle edge case: if no edges detected, return 0
+    if np.count_nonzero(edges) == 0:
+        return 0.0
     inv = (edges == 0).astype(np.uint8)
     dist = cv2.distanceTransform(inv, cv2.DIST_L2, 3)
     return float(np.percentile(dist, 90))

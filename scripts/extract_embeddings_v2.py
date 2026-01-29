@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-DINOv3 embedding抽出スクリプト v2.1
+DINOv3 embedding抽出スクリプト v2.4
 CLSトークン（最終層） + パッチ統計量v2（中間層）を保存
 
 出力:
   - {name}.npy: CLSトークン (N, 768) - 最終層から取得
   - {name}_patch_stats.npy: パッチ統計量v2 (N, 7) - 中間層から取得
+    ※ 保存ファイル名は歴史的経緯で_patch_stats_v3.npyだが中身はv2フォーマット（7次元）
     - [0] adj_sim_mean:   隣接パッチ平均コサイン類似度
     - [1] adj_sim_var:    隣接パッチ類似度分散
     - [2] high_sim_ratio: 高類似度率（>0.9）
@@ -28,7 +29,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 from tqdm import tqdm
 from transformers import AutoImageProcessor, AutoModel
 
@@ -42,41 +43,51 @@ EMBEDDINGS_DIR = Path("/home/techne/aicheckers/embeddings")
 MID_LAYER_INDEX = 8  # 中間層のインデックス（0-11、Block 6-8推奨）
 
 
-def apply_degradation(img: Image.Image) -> Image.Image:
+def apply_degradation(img: Image.Image) -> tuple[Image.Image, int]:
     """
     画像に劣化処理を適用（画質バイアスを除去するため）
 
-    適用される劣化の種類（ランダムに1つ選択）:
-    - JPEG圧縮 (quality 30-70)
-    - ガウシアンノイズ
-    - ダウンサンプリング→アップサンプリング (50-80%)
+    v2.3: jpeg + resizeのみ、強制適用廃止
+    - 各劣化を独立確率で選択（合計1.0 = 平均1種類/枚）
+    - 最大2つまで重ねがけ（過剰劣化防止）
+    - 何も選択されなかった場合はクリーン画像を返す
     """
-    degradation_type = random.choice(['jpeg', 'noise', 'downsample'])
+    degradations = []
+    if random.random() < 0.50:
+        degradations.append('jpeg')
+    if random.random() < 0.50:
+        degradations.append('resize')
 
-    if degradation_type == 'jpeg':
-        # JPEG圧縮
-        quality = random.randint(30, 70)
-        buffer = io.BytesIO()
-        img.save(buffer, format='JPEG', quality=quality)
-        buffer.seek(0)
-        img = Image.open(buffer).convert('RGB')
+    if len(degradations) > 2:
+        degradations = random.sample(degradations, 2)
 
-    elif degradation_type == 'noise':
-        # ガウシアンノイズ
-        arr = np.array(img, dtype=np.float32)
-        noise_std = random.uniform(5, 25)
-        noise = np.random.normal(0, noise_std, arr.shape).astype(np.float32)
-        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-        img = Image.fromarray(arr)
+    if not degradations:
+        return img, 0
 
-    elif degradation_type == 'downsample':
-        # ダウンサンプリング→アップサンプリング
-        scale = random.uniform(0.5, 0.8)
-        w, h = img.size
-        small_size = (int(w * scale), int(h * scale))
-        img = img.resize(small_size, Image.BILINEAR)
-        img = img.resize((w, h), Image.BILINEAR)
+    random.shuffle(degradations)
 
+    for deg in degradations:
+        if deg == 'jpeg':
+            quality = random.randint(55, 85)
+            buffer = io.BytesIO()
+            img.save(buffer, format='JPEG', quality=quality)
+            buffer.seek(0)
+            img = Image.open(buffer).convert('RGB')
+        elif deg == 'resize':
+            scale = random.uniform(0.6, 0.9)
+            w, h = img.size
+            img = img.resize((int(w * scale), int(h * scale)), Image.BILINEAR)
+            img = img.resize((w, h), Image.BILINEAR)
+
+    return img, len(degradations)
+
+
+def apply_scale_tta(img: Image.Image, scale: float = 0.85) -> Image.Image:
+    """推論時TTA整合性のためのスケール変換（縮小→元サイズに戻す）"""
+    w, h = img.size
+    new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    img = img.resize((w, h), Image.LANCZOS)
     return img
 
 
@@ -94,83 +105,129 @@ def load_model():
     model.to(device)
     model.eval()
 
+    num_register_tokens = getattr(model.config, "num_register_tokens", 4)
+    patch_start_idx = 1 + num_register_tokens
+    image_size = getattr(model.config, "image_size", 224)
+    patch_size = getattr(model.config, "patch_size", 16)
+    num_patches = (image_size // patch_size) ** 2
+
     print(f"[INFO] Loaded DINOv3 from: {DINOV3_MODEL_PATH}")
     print(f"[INFO] Mid-layer extraction enabled: Block {MID_LAYER_INDEX}")
-    return model, processor, device
+    print(f"[INFO] Token layout: CLS(1) + REG({num_register_tokens}) + PATCH({num_patches}) = {1 + num_register_tokens + num_patches} tokens")
+    return model, processor, device, patch_start_idx, num_patches
 
 
 # NOTE: 分類器ロードは不要になりました（v2は教師なし統計量のため）
 
 
-def extract_embeddings(image_dir: Path, model, processor, device, batch_size=32, degradation_prob=0.0, mid_layer=MID_LAYER_INDEX):
-    """ディレクトリ内の全画像からCLS（最終層）とパッチ統計量v2（中間層）を抽出
+def extract_embeddings(image_dir: Path, model, processor, device, batch_size=32,
+                        degradation_prob=0.3, flip_prob=0.5, scale_prob=0.5,
+                        mid_layer=MID_LAYER_INDEX, num_workers=8, file_list=None,
+                        patch_start_idx=5, num_patches=196):
+    """ディレクトリ内の全画像からCLS（最終層）とパッチ統計量（中間層）を抽出
 
     Args:
-        degradation_prob: 劣化Augmentationを適用する確率 (0.0-1.0)
+        degradation_prob: 劣化Augmentationを適用する確率 (0.0-1.0, default: 0.3)
+                          jpeg + resizeのみ、未選択時はクリーン画像
+        flip_prob: 水平反転Augmentationを適用する確率 (0.0-1.0, default: 0.5)
+        scale_prob: スケールAugmentationを適用する確率 (0.0-1.0, default: 0.5)
         mid_layer: パッチ統計量を抽出する中間層のインデックス (0-11)
+        num_workers: 画像読み込み・Augmentation用の並列ワーカー数
+        file_list: 処理対象のファイルパスリスト
+        patch_start_idx: パッチトークン開始インデックス (CLS + REG)
+        num_patches: パッチトークン数
     """
-    extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-    image_files = [f for f in image_dir.rglob("*")
-                   if f.is_file() and f.suffix.lower() in extensions]
+    if file_list is not None:
+        image_files = []
+        for f in file_list:
+            p = Path(f)
+            if not p.is_absolute():
+                p = image_dir / p
+            if p.exists():
+                image_files.append(p)
+        print(f"Using file list: {len(image_files)} files (from {len(file_list)} entries)")
+    else:
+        extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+        image_files = [f for f in image_dir.rglob("*")
+                       if f.is_file() and f.suffix.lower() in extensions]
 
     print(f"Found {len(image_files)} images in {image_dir}")
     if degradation_prob > 0:
-        print(f"Degradation augmentation enabled: {degradation_prob*100:.0f}% of images")
+        print(f"Degradation augmentation: {degradation_prob*100:.0f}% (avg 1 type/image)")
+    if flip_prob > 0:
+        print(f"Flip augmentation: {flip_prob*100:.0f}%")
+    if scale_prob > 0:
+        print(f"Scale augmentation: {scale_prob*100:.0f}% (scale=0.85, TTA consistency)")
+    print(f"Using {num_workers} workers for parallel image loading")
 
     cls_embeddings = []
     patch_stats_list = []
     filenames = []
     degradation_count = 0
+    flip_count = 0
+    scale_count = 0
 
-    for i in tqdm(range(0, len(image_files), batch_size), desc="Extracting"):
-        batch_files = image_files[i:i+batch_size]
-        batch_images = []
-        batch_names = []
+    def load_and_augment(f):
+        try:
+            img = Image.open(f).convert("RGB")
+            applied_flip = False
+            applied_deg = False
+            applied_scale = False
+            if flip_prob > 0 and random.random() < flip_prob:
+                img = ImageOps.mirror(img)
+                applied_flip = True
+            if scale_prob > 0 and random.random() < scale_prob:
+                img = apply_scale_tta(img, scale=0.85)
+                applied_scale = True
+            if degradation_prob > 0 and random.random() < degradation_prob:
+                img, deg_n = apply_degradation(img)
+                applied_deg = deg_n > 0
+            return (img, f.name, applied_flip, applied_deg, applied_scale)
+        except Exception as e:
+            return (None, f.name, False, False, False)
 
-        for f in batch_files:
-            try:
-                img = Image.open(f).convert("RGB")
-                # 劣化Augmentation（確率的に適用）
-                if degradation_prob > 0 and random.random() < degradation_prob:
-                    img = apply_degradation(img)
-                    degradation_count += 1
-                batch_images.append(img)
-                batch_names.append(f.name)
-            except Exception as e:
-                print(f"Error loading {f}: {e}")
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        for i in tqdm(range(0, len(image_files), batch_size), desc="Extracting"):
+            batch_files = image_files[i:i+batch_size]
+            results = list(executor.map(load_and_augment, batch_files))
+
+            batch_images = []
+            batch_names = []
+            for img, name, did_flip, did_deg, did_scale in results:
+                if img is not None:
+                    batch_images.append(img)
+                    batch_names.append(name)
+                    if did_flip: flip_count += 1
+                    if did_deg: degradation_count += 1
+                    if did_scale: scale_count += 1
+
+            if not batch_images:
                 continue
 
-        if not batch_images:
-            continue
+            inputs = processor(images=batch_images, return_tensors="pt")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
 
-        # 前処理
-        inputs = processor(images=batch_images, return_tensors="pt")
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = model(**inputs, output_hidden_states=True)
+                final_hidden = outputs.last_hidden_state
+                cls_emb = final_hidden[:, 0, :].cpu().numpy()
+                mid_hidden = outputs.hidden_states[mid_layer + 1]
+                mid_patch_emb = mid_hidden[:, patch_start_idx:patch_start_idx+num_patches, :]
+                patch_stats = compute_patch_stats_v2_batch(mid_patch_emb)
 
-        # 特徴抽出（中間層出力を有効化）
-        with torch.no_grad():
-            outputs = model(**inputs, output_hidden_states=True)
-            # DINOv3: [CLS(0), REG1-4(1-4), PATCH1-196(5-200)] = 201 tokens
-            
-            # 最終層からCLSトークン
-            final_hidden = outputs.last_hidden_state  # (batch, 201, 768)
-            cls_emb = final_hidden[:, 0, :].cpu().numpy()  # (batch, 768)
-
-            # 中間層からパッチトークン（v2統計量用）
-            # hidden_states: tuple of (batch, 201, 768) for each layer + initial embedding
-            mid_hidden = outputs.hidden_states[mid_layer + 1]  # +1 because index 0 is initial embedding
-            mid_patch_emb = mid_hidden[:, 5:5+196, :]  # (batch, 196, 768)
-
-            # パッチ統計量v2（教師なし）
-            patch_stats = compute_patch_stats_v2_batch(mid_patch_emb)
-
-        cls_embeddings.append(cls_emb)
-        patch_stats_list.append(patch_stats)
-        filenames.extend(batch_names)
+            cls_embeddings.append(cls_emb)
+            patch_stats_list.append(patch_stats)
+            filenames.extend(batch_names)
 
     cls_embeddings = np.vstack(cls_embeddings)
     patch_stats_all = np.vstack(patch_stats_list)
 
+    if flip_prob > 0:
+        print(f"Applied flip to {flip_count}/{len(filenames)} images ({flip_count/len(filenames)*100:.1f}%)")
+    if scale_prob > 0:
+        print(f"Applied scale to {scale_count}/{len(filenames)} images ({scale_count/len(filenames)*100:.1f}%)")
     if degradation_prob > 0:
         print(f"Applied degradation to {degradation_count}/{len(filenames)} images ({degradation_count/len(filenames)*100:.1f}%)")
 
@@ -178,14 +235,19 @@ def extract_embeddings(image_dir: Path, model, processor, device, batch_size=32,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="DINOv3 embedding extraction v2.1 (mid-layer stats)")
+    parser = argparse.ArgumentParser(description="DINOv3 embedding extraction v2.4 (mid-layer stats)")
     parser.add_argument("--dir", type=str, required=True, help="Image directory")
     parser.add_argument("--name", type=str, required=True, help="Output name (e.g., 'illustrious_ai')")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--mid-layer", type=int, default=MID_LAYER_INDEX,
                         help=f"Mid-layer index for patch stats (0-11, default: {MID_LAYER_INDEX})")
-    parser.add_argument("--degradation-prob", type=float, default=0.0,
-                        help="Probability of applying degradation augmentation (0.0-1.0, default: 0.0)")
+    parser.add_argument("--degradation-prob", type=float, default=0.3,
+                        help="Probability of applying degradation augmentation (0.0-1.0, default: 0.3)")
+    parser.add_argument("--flip-prob", type=float, default=0.5)
+    parser.add_argument("--scale-prob", type=float, default=0.5)
+    parser.add_argument("--num-workers", type=int, default=8)
+    parser.add_argument("--no-aug", action="store_true", help="Disable all augmentations")
+    parser.add_argument("--file-list", type=str, default=None, help="Text file with image paths")
     parser.add_argument("--limit", type=int, default=None,
                         help="Limit number of images to process (for testing)")
     args = parser.parse_args()
@@ -198,11 +260,25 @@ def main():
     EMBEDDINGS_DIR.mkdir(exist_ok=True)
 
     # モデルロード
-    model, processor, device = load_model()
+    model, processor, device, patch_start_idx, num_patches = load_model()
+
+    # Augmentation設定
+    degradation_prob = 0.0 if args.no_aug else args.degradation_prob
+    flip_prob = 0.0 if args.no_aug else args.flip_prob
+    scale_prob = 0.0 if args.no_aug else args.scale_prob
+
+    # file_list処理
+    file_list = None
+    if args.file_list:
+        file_list_path = Path(args.file_list)
+        if file_list_path.exists():
+            file_list = [line.strip() for line in file_list_path.read_text().strip().split('\n') if line.strip()]
 
     # 抽出（v2: 分類器不要）
     cls_embeddings, patch_stats, filenames = extract_embeddings(
-        image_dir, model, processor, device, args.batch_size, args.degradation_prob, args.mid_layer
+        image_dir, model, processor, device, args.batch_size,
+        degradation_prob, flip_prob, scale_prob, args.mid_layer, args.num_workers,
+        file_list=file_list, patch_start_idx=patch_start_idx, num_patches=num_patches
     )
 
     # limitオプション対応
