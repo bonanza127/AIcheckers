@@ -1074,7 +1074,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
               {/* Row 1: Batch Status + Model + Logic + Processing Time */}
               <div className="flex flex-wrap justify-between items-center mb-3 text-sm text-muted gap-2">
                 <span>BATCH STATUS: {batchProgress.current || "-"} / {batchProgress.total || "-"}</span>
-                <span>使用モデル: <span className="text-accent font-bold">Moonlight V1.3.5</span></span>
+                <span>使用モデル: <span className="text-accent font-bold">Moonlight V1.3.6</span></span>
                 <span>ロジック: <span className="text-dim font-bold">CLS with 手作り特徴</span></span>
                 <span>PROCESSING TIME: <span className="font-bold">{elapsedTime.toFixed(2)}s</span></span>
               </div>
