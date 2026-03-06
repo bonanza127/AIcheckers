@@ -31,6 +31,7 @@ import torch.nn.functional as F
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from PIL.ExifTags import TAGS as PIL_EXIF_TAGS
@@ -97,6 +98,13 @@ two_head_model = None        # メインモデル（567d CPU: candidate_b_with_l
 two_head_model_sub1 = None   # サブ1（24d CPU: two_head_28d_plus_60）
 two_head_model_sub2 = None   # サブ2（24d CPU: two_head_28d_plus_60_nonorm）
 two_head_mode = False
+
+# VRAM節約: アイドル時CPUオフロード
+OFFLOAD_IDLE_SECONDS = int(os.getenv("OFFLOAD_IDLE_SECONDS", "60"))  # 0で無効
+_models_on_gpu = False
+_last_inference_time: float = 0.0
+_offload_task: asyncio.Task | None = None
+_gpu_lock = asyncio.Lock()
 two_head_gpu_v3_idx = None
 two_head_cpu_v2_idx = None
 two_head_cpu_v3_idx = None
@@ -606,6 +614,18 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[WARN] Failed to clear result cache: {e}")
 
+        # VRAM節約: アイドル時CPUオフロード（fp16はDINOv3がNaN出すので不可）
+        global _models_on_gpu
+        if device.type == "cuda":
+
+            # 起動直後はGPU上にいる
+            _models_on_gpu = True
+
+            # アイドルオフロードタイマー起動
+            if OFFLOAD_IDLE_SECONDS > 0:
+                _schedule_offload_timer()
+                print(f"[VRAM] Idle offload enabled: {OFFLOAD_IDLE_SECONDS}s timeout")
+
         print("Moonlight loaded successfully!")
     except Exception as e:
         print(f"ERROR: Failed to load Moonlight: {e}")
@@ -616,6 +636,8 @@ async def lifespan(app: FastAPI):
     yield
 
     # クリーンアップ
+    if _offload_task is not None:
+        _offload_task.cancel()
     # Enterprise使用量を保存
     save_enterprise_usage(enterprise_usage)
     # レート制限データを保存
@@ -650,6 +672,9 @@ app.add_middleware(
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"],
     max_age=3600,
 )
+
+# Compress large JSON responses (e.g., attention_map) to reduce transfer time.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # セッションミドルウェア（OAuth用）
 app.add_middleware(SessionMiddleware, secret_key=JWT_SECRET)
@@ -889,6 +914,79 @@ def compute_mid_adj_sim_var(patches: torch.Tensor) -> torch.Tensor:
     ).reshape(bsz, 13, 14)
     all_sim = torch.cat([h_sim.reshape(bsz, -1), v_sim.reshape(bsz, -1)], dim=1)
     return all_sim.var(dim=1, keepdim=True)
+
+
+# ---------------------------------------------------------------------------
+# VRAM節約: GPU ⇔ CPU オフロードヘルパー
+# ---------------------------------------------------------------------------
+
+def _get_all_models() -> list[tuple[str, nn.Module | None]]:
+    """オフロード対象の全モデルを返す"""
+    return [
+        ("dinov3_model", dinov3_model),
+        ("dinov3_classifier", dinov3_classifier),
+        ("two_head_model", two_head_model),
+        ("two_head_model_sub1", two_head_model_sub1),
+        ("two_head_model_sub2", two_head_model_sub2),
+    ]
+
+
+def _move_models(target_device: torch.device) -> None:
+    """全モデルを target_device に移動（同期的に実行）"""
+    for name, model in _get_all_models():
+        if model is not None:
+            model.to(target_device)
+
+
+async def ensure_models_on_gpu() -> None:
+    """推論前に呼ぶ。モデルがCPU上にあればGPUに戻す。"""
+    global _models_on_gpu, _last_inference_time
+    _last_inference_time = time.monotonic()
+    if _models_on_gpu:
+        return
+    async with _gpu_lock:
+        if _models_on_gpu:
+            return
+        t0 = time.perf_counter()
+        _move_models(device)
+        _models_on_gpu = True
+        elapsed = (time.perf_counter() - t0) * 1000
+        print(f"[VRAM] Models moved to GPU in {elapsed:.0f}ms")
+    _schedule_offload_timer()
+
+
+def offload_models_to_cpu() -> None:
+    """モデルをCPUに退避し、VRAM を解放する。"""
+    global _models_on_gpu
+    if not _models_on_gpu:
+        return
+    _move_models(torch.device("cpu"))
+    torch.cuda.empty_cache()
+    _models_on_gpu = False
+    print("[VRAM] Models offloaded to CPU, VRAM freed")
+
+
+async def _offload_timer_loop() -> None:
+    """アイドル検出ループ。最後の推論から OFFLOAD_IDLE_SECONDS 秒後にCPUへ退避。"""
+    while True:
+        await asyncio.sleep(10)  # 10秒ごとにチェック
+        if not _models_on_gpu:
+            continue
+        elapsed = time.monotonic() - _last_inference_time
+        if elapsed >= OFFLOAD_IDLE_SECONDS:
+            async with _gpu_lock:
+                # 再チェック（ロック待ち中に推論が入った場合）
+                if time.monotonic() - _last_inference_time >= OFFLOAD_IDLE_SECONDS:
+                    offload_models_to_cpu()
+
+
+def _schedule_offload_timer() -> None:
+    """オフロードタイマーを起動（まだ起動していなければ）。"""
+    global _offload_task
+    if OFFLOAD_IDLE_SECONDS <= 0:
+        return
+    if _offload_task is None or _offload_task.done():
+        _offload_task = asyncio.create_task(_offload_timer_loop())
 
 
 class TwoHeadClassifier29d(nn.Module):
@@ -1499,6 +1597,9 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     if not two_head_mode and dinov3_classifier is None:
         raise Exception("DINOv3 classifier not loaded")
 
+    # GPUオフロードからの復帰
+    await ensure_models_on_gpu()
+
     perf_marks = []
     perf_t0 = time.perf_counter()
 
@@ -2000,6 +2101,11 @@ async def analyze_image(
             "metadata_prompt": meta.get("prompt"),
             "metadata_software": meta.get("software"),
         }
+        if PERF_LOG or DEBUG:
+            attn_len = len(response_data["attention_map"]) if response_data.get("attention_map") else 0
+            logs_len = sum(len(str(x)) for x in response_data.get("forensic_logs", []))
+            traces_len = len(str(response_data.get("detected_traces", "")))
+            print(f"[PERF] response_sizes attention_map_b64={attn_len} forensic_logs_chars={logs_len} detected_traces_chars={traces_len}")
         if DEBUG_PROBS and result.get("debug_probs") is not None:
             response_data["debug_probs"] = result["debug_probs"]
 

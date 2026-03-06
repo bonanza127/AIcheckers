@@ -177,6 +177,9 @@ def compute_patch_stats_v2(
         5: norm_var       - ノルム分散
         6: norm_range     - ノルムレンジ（max - min）
     """
+    # fp16入力をfp32に変換
+    patch_embeddings = patch_embeddings.float()
+
     # 入力の次元を正規化
     if patch_embeddings.dim() == 2:
         # (196, 768) -> (1, 196, 768)
@@ -184,13 +187,13 @@ def compute_patch_stats_v2(
         squeeze_output = True
     else:
         squeeze_output = False
-    
+
     batch_size = patch_embeddings.shape[0]
     device = patch_embeddings.device
-    
+
     stats_list = []
     heatmap_list = []
-    
+
     for b in range(batch_size):
         patches = patch_embeddings[b]  # (196, 768)
         grid = patches.reshape(GRID_SIZE, GRID_SIZE, -1)  # (14, 14, 768)
@@ -352,6 +355,11 @@ def compute_patch_stats_v3(
     Returns:
         stats: (batch, 34) または (34,) パッチ統計量
     """
+    # fp16入力をfp32に変換（quantile等がfp16非対応のため）
+    patch_embeddings = patch_embeddings.float()
+    if cls_token is not None:
+        cls_token = cls_token.float()
+
     # 入力の次元を正規化
     if patch_embeddings.dim() == 2:
         patch_embeddings = patch_embeddings.unsqueeze(0)
