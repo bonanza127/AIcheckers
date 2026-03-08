@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 
-/* ---------- types ---------- */
+/* ================================================================
+   TYPES
+   ================================================================ */
 type GenerationRecord = {
   generation: number;
   best_fitness: number;
@@ -10,28 +12,42 @@ type GenerationRecord = {
   objectives: Record<string, number>;
   created_at: string;
 };
-
 type Breakthrough = {
   generation: number;
   signals: string[];
   agent_id: string;
   fitness: number;
   created_at: string;
+  run_id: string;
 };
-
 type GpuInfo = { memoryUsed: number; memoryTotal: number; utilization: number };
-
+type RunRecord = {
+  run_id: string;
+  started_at: string;
+  ended_at: string | null;
+  final_generation: number;
+  best_fitness: number;
+  config_name: string;
+  status: string;
+};
 type EvolutionData = {
   status: "ACTIVE" | "OFFLINE" | "STALE";
   history: GenerationRecord[];
   breakthroughs: Breakthrough[];
+  runs: RunRecord[];
   latestGenLine: string;
   recentLog: string[];
   gpu: GpuInfo;
+  currentRunId: string;
+  runStartedAt: string | null;
+  maxGenerations: number;
+  totalRuns: number;
   updatedAt: number;
 };
 
-/* ---------- NERV color tokens ---------- */
+/* ================================================================
+   NERV DESIGN TOKENS
+   ================================================================ */
 const C = {
   void: "#000000",
   voidWarm: "#0A0A08",
@@ -52,29 +68,30 @@ const C = {
   steelDim: "#9A9A90",
   steelFaint: "rgba(224,224,216,0.08)",
 };
-
 const F = {
-  sys: "'IBM Plex Mono', 'Courier New', monospace",
-  label: "'Bebas Neue', 'Arial Narrow', sans-serif",
-  kanji: "'Noto Sans JP', sans-serif",
+  sys: "'IBM Plex Mono','Courier New',monospace",
+  label: "'Bebas Neue','Arial Narrow',sans-serif",
+  kanji: "'Noto Sans JP',sans-serif",
 };
 
-/* ---------- derived stats ---------- */
+/* ================================================================
+   DERIVED STATISTICS
+   ================================================================ */
 function computeStats(data: EvolutionData | null) {
-  if (!data || data.history.length === 0)
-    return {
-      totalGens: 0, bestEver: 0, avgLatest: 0, improvement: 0,
-      improvementPct: 0, genPerHour: 0, uptimeStr: "---",
-      improvementStreak: 0, bestGeneration: 0,
-      objectiveMaxes: {} as Record<string, { max: number; gen: number }>,
-      objectiveTrends: {} as Record<string, number[]>,
-      fitnessGain: 0,
-    };
+  const empty = {
+    totalGens: 0, bestEver: 0, avgLatest: 0, improvement: 0,
+    improvementPct: 0, genPerHour: 0, uptimeStr: "---",
+    improvementStreak: 0, bestGeneration: 0, fitnessGain: 0,
+    objectiveMaxes: {} as Record<string, { max: number; gen: number }>,
+    objectiveTrends: {} as Record<string, number[]>,
+    progressPct: 0, eta: "---",
+  };
+  if (!data || data.history.length === 0) return empty;
 
   const h = data.history;
   const totalGens = h.length;
   const bestEver = Math.max(...h.map((r) => r.best_fitness));
-  const bestGeneration = h.reduce((best, r) => (r.best_fitness > best.best_fitness ? r : best), h[0]).generation;
+  const bestGeneration = h.reduce((b, r) => (r.best_fitness > b.best_fitness ? r : b), h[0]).generation;
   const avgLatest = h[h.length - 1].avg_fitness;
   const prev = h.length >= 2 ? h[h.length - 2].best_fitness : h[0].best_fitness;
   const curr = h[h.length - 1].best_fitness;
@@ -82,9 +99,9 @@ function computeStats(data: EvolutionData | null) {
   const improvementPct = prev > 0 ? (improvement / prev) * 100 : 0;
   const fitnessGain = curr - h[0].best_fitness;
 
-  // Gen/hour from timestamps
   let genPerHour = 0;
   let uptimeStr = "---";
+  let eta = "---";
   if (h.length >= 2 && h[0].created_at && h[h.length - 1].created_at) {
     const t0 = new Date(h[0].created_at).getTime();
     const tN = new Date(h[h.length - 1].created_at).getTime();
@@ -94,17 +111,20 @@ function computeStats(data: EvolutionData | null) {
       const mins = Math.floor(elapsedMs / 60000);
       const hrs = Math.floor(mins / 60);
       uptimeStr = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m`;
+      const remaining = data.maxGenerations - (latest(h)?.generation ?? 0);
+      if (genPerHour > 0) {
+        const etaHrs = remaining / genPerHour;
+        eta = etaHrs > 1 ? `${etaHrs.toFixed(1)}h` : `${Math.round(etaHrs * 60)}m`;
+      }
     }
   }
 
-  // Improvement streak
   let improvementStreak = 0;
   for (let i = h.length - 1; i > 0; i--) {
     if (h[i].best_fitness > h[i - 1].best_fitness + 1e-9) improvementStreak++;
     else break;
   }
 
-  // Objective maxes and trends
   const objectiveMaxes: Record<string, { max: number; gen: number }> = {};
   const objectiveTrends: Record<string, number[]> = {};
   for (const rec of h) {
@@ -117,243 +137,212 @@ function computeStats(data: EvolutionData | null) {
     }
   }
 
+  const progressPct = data.maxGenerations > 0
+    ? ((latest(h)?.generation ?? 0) / data.maxGenerations) * 100 : 0;
+
   return {
     totalGens, bestEver, avgLatest, improvement, improvementPct,
     genPerHour, uptimeStr, improvementStreak, bestGeneration,
-    objectiveMaxes, objectiveTrends, fitnessGain,
+    objectiveMaxes, objectiveTrends, fitnessGain, progressPct, eta,
   };
 }
 
-/* ---------- Section Header ---------- */
-function SectionHeader({ jp, en }: { jp: string; en: string }) {
+function latest(h: GenerationRecord[]) { return h[h.length - 1]; }
+
+/* ================================================================
+   COMPONENTS
+   ================================================================ */
+
+/* --- Section Header (bilingual) --- */
+function SH({ jp, en }: { jp: string; en: string }) {
   return (
     <div style={{
-      fontSize: "0.875rem", fontWeight: 700, letterSpacing: "0.12em",
-      textTransform: "uppercase" as const, color: C.orange, marginBottom: 8,
-      borderBottom: `1px solid ${C.orangeDim}`, paddingBottom: 4,
+      fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.12em",
+      textTransform: "uppercase" as const, color: C.orange,
+      borderBottom: `1px solid ${C.orangeDim}`, paddingBottom: 3, marginBottom: 6,
       display: "flex", justifyContent: "space-between", alignItems: "baseline",
     }}>
-      <span>{jp}</span>
-      <span style={{ fontSize: "0.625rem", color: C.orangeDim, letterSpacing: "0.08em" }}>{en}</span>
+      <span style={{ fontFamily: F.kanji }}>{jp}</span>
+      <span style={{ fontSize: "0.5625rem", color: C.orangeDim, fontFamily: F.sys }}>{en}</span>
     </div>
   );
 }
 
-/* ---------- StatBlock (compact) ---------- */
-function StatBlock({
-  label, value, unit, color, sub,
-}: {
+/* --- Stat Cell --- */
+function Stat({ label, value, unit, color, sub }: {
   label: string; value: string; unit?: string; color?: string; sub?: string;
 }) {
   return (
-    <div style={{ padding: "6px 8px", borderRight: `1px solid ${C.steelFaint}` }}>
+    <div style={{ padding: "4px 6px", borderRight: `1px solid ${C.steelFaint}`, minWidth: 0 }}>
       <div style={{
-        fontFamily: F.sys, fontSize: "0.5625rem", fontWeight: 400,
-        letterSpacing: "0.08em", textTransform: "uppercase" as const, color: C.orangeDim,
-      }}>
-        {label}
-      </div>
+        fontFamily: F.sys, fontSize: "0.5rem", fontWeight: 400,
+        letterSpacing: "0.1em", textTransform: "uppercase" as const, color: C.orangeDim,
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      }}>{label}</div>
       <div style={{
-        fontFamily: F.sys, fontSize: "1.25rem", fontWeight: 700,
-        color: color || C.green, lineHeight: 1.2, fontVariantNumeric: "tabular-nums",
+        fontFamily: F.sys, fontSize: "1.1rem", fontWeight: 700,
+        color: color || C.green, lineHeight: 1.1, fontVariantNumeric: "tabular-nums",
       }}>
         {value}
-        {unit && <span style={{ fontSize: "0.625rem", color: C.steelDim, marginLeft: 3 }}>{unit}</span>}
+        {unit && <span style={{ fontSize: "0.5rem", color: C.steelDim, marginLeft: 2 }}>{unit}</span>}
       </div>
-      {sub && (
-        <div style={{ fontFamily: F.sys, fontSize: "0.5625rem", color: C.steelDim, marginTop: 1 }}>
-          {sub}
-        </div>
-      )}
+      {sub && <div style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.steelDim }}>{sub}</div>}
     </div>
   );
 }
 
-/* ---------- GPU Meter ---------- */
-function GpuMeter({ gpu }: { gpu: GpuInfo }) {
+/* --- Progress Bar (mission progress to max_generations) --- */
+function ProgressBar({ pct, label }: { pct: number; label: string }) {
+  return (
+    <div style={{ padding: "4px 6px" }}>
+      <div style={{
+        fontFamily: F.sys, fontSize: "0.5rem", letterSpacing: "0.1em",
+        textTransform: "uppercase" as const, color: C.orangeDim, marginBottom: 2,
+      }}>{label}</div>
+      <div style={{ height: 6, background: C.steelFaint, position: "relative" }}>
+        <div style={{
+          height: "100%", width: `${Math.min(pct, 100)}%`,
+          background: pct > 90 ? C.orangeHot : C.cyan,
+          boxShadow: `0 0 4px ${pct > 90 ? C.orangeHot : C.cyan}`,
+          transition: "width 0.5s",
+        }} />
+      </div>
+      <div style={{
+        fontFamily: F.sys, fontSize: "0.5625rem", color: C.steel, marginTop: 1, textAlign: "right",
+      }}>{pct.toFixed(1)}%</div>
+    </div>
+  );
+}
+
+/* --- GPU Panel --- */
+function GpuPanel({ gpu }: { gpu: GpuInfo }) {
   const pct = gpu.memoryTotal > 0 ? (gpu.memoryUsed / gpu.memoryTotal) * 100 : 0;
   const barColor = pct > 80 ? C.red : pct > 60 ? C.orangeHot : C.cyan;
   return (
-    <div style={{ border: `1px solid ${C.cyanDim}`, padding: "8px 10px", background: C.voidWarm }}>
+    <div style={{ border: `1px solid ${C.cyanDim}`, padding: "6px 8px", background: C.voidWarm }}>
       <div style={{
-        fontFamily: F.sys, fontSize: "0.5625rem", color: C.orangeDim,
-        letterSpacing: "0.08em", textTransform: "uppercase" as const, marginBottom: 6,
-        display: "flex", justifyContent: "space-between",
+        fontFamily: F.sys, fontSize: "0.5rem", color: C.orangeDim,
+        letterSpacing: "0.1em", textTransform: "uppercase" as const,
+        display: "flex", justifyContent: "space-between", marginBottom: 4,
       }}>
-        <span>GPU VRAM</span>
-        <span style={{ color: C.cyan }}>GTX 1660 SUPER</span>
+        <span>GPU VRAM / メモリ</span>
+        <span style={{ color: C.cyan }}>GTX 1660S</span>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <div style={{ flex: 1, height: 8, background: "rgba(32,240,255,0.08)" }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div style={{ flex: 1, height: 8, background: "rgba(32,240,255,0.06)" }}>
           <div style={{
             height: "100%", width: `${pct}%`, background: barColor,
-            boxShadow: `0 0 6px ${barColor}`, transition: "width 0.5s",
+            boxShadow: `0 0 4px ${barColor}`, transition: "width 0.5s",
           }} />
         </div>
-        <span style={{ fontFamily: F.sys, fontSize: "0.75rem", color: barColor, fontWeight: 700, width: 42, textAlign: "right" }}>
-          {pct.toFixed(0)}%
-        </span>
+        <span style={{
+          fontFamily: F.sys, fontSize: "0.6875rem", color: barColor, fontWeight: 700, width: 36, textAlign: "right",
+        }}>{pct.toFixed(0)}%</span>
       </div>
       <div style={{
-        fontFamily: F.sys, fontSize: "0.625rem", color: C.steel,
-        display: "flex", justifyContent: "space-between", marginTop: 4,
+        fontFamily: F.sys, fontSize: "0.5625rem", color: C.steel,
+        display: "flex", justifyContent: "space-between", marginTop: 2,
       }}>
-        <span>{gpu.memoryUsed} / {gpu.memoryTotal} MiB</span>
+        <span>{gpu.memoryUsed}/{gpu.memoryTotal} MiB</span>
         <span style={{ color: C.cyan }}>UTIL {gpu.utilization}%</span>
       </div>
     </div>
   );
 }
 
-/* ---------- Fitness Chart ---------- */
+/* --- Fitness Chart (SVG) --- */
 function FitnessChart({ history }: { history: GenerationRecord[] }) {
-  if (history.length === 0) return null;
+  if (history.length < 2) return <div style={{ color: C.steelDim, fontSize: "0.625rem", padding: 12, textAlign: "center" }}>AWAITING MULTI-GEN DATA...</div>;
   const maxFit = Math.max(...history.map((h) => h.best_fitness), 0.01);
   const minFit = Math.min(...history.map((h) => h.avg_fitness));
-  const width = 600;
-  const height = 180;
-  const pad = { top: 10, right: 10, bottom: 24, left: 44 };
-  const innerW = width - pad.left - pad.right;
-  const innerH = height - pad.top - pad.bottom;
+  const W = 600, H = 160;
+  const pad = { top: 8, right: 8, bottom: 20, left: 40 };
+  const iW = W - pad.left - pad.right, iH = H - pad.top - pad.bottom;
   const range = maxFit - minFit || 0.01;
+  const toY = (v: number) => pad.top + iH - ((v - minFit) / range) * iH;
 
-  const toY = (v: number) => pad.top + innerH - ((v - minFit) / range) * innerH;
-
-  const points = history.map((h, i) => ({
-    x: pad.left + (i / Math.max(history.length - 1, 1)) * innerW,
-    yBest: toY(h.best_fitness),
-    yAvg: toY(h.avg_fitness),
+  const pts = history.map((h, i) => ({
+    x: pad.left + (i / Math.max(history.length - 1, 1)) * iW,
+    yB: toY(h.best_fitness), yA: toY(h.avg_fitness),
   }));
-
-  const bestPath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.yBest}`).join(" ");
-  const avgPath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.yAvg}`).join(" ");
-
-  // Fill area between best and avg
-  const fillPath = bestPath + " " +
-    [...points].reverse().map((p, i) => `${i === 0 ? "L" : "L"}${p.x},${p.yAvg}`).join(" ") + " Z";
+  const bestP = pts.map((p, i) => `${i ? "L" : "M"}${p.x},${p.yB}`).join(" ");
+  const avgP = pts.map((p, i) => `${i ? "L" : "M"}${p.x},${p.yA}`).join(" ");
+  const fillP = bestP + " " + [...pts].reverse().map((p, i) => `${i ? "L" : "L"}${p.x},${p.yA}`).join(" ") + " Z";
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto" }}>
-      {/* Grid */}
-      {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-        const val = minFit + range * frac;
-        const y = toY(val);
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
+      {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+        const val = minFit + range * f, y = toY(val);
         return (
-          <g key={frac}>
-            <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke={C.steelFaint} />
-            <text x={pad.left - 4} y={y + 3} textAnchor="end" fill={C.steelDim}
-              fontSize="8" fontFamily={F.sys}>{val.toFixed(3)}</text>
+          <g key={f}>
+            <line x1={pad.left} y1={y} x2={W - pad.right} y2={y} stroke={C.steelFaint} />
+            <text x={pad.left - 3} y={y + 3} textAnchor="end" fill={C.steelDim} fontSize="7" fontFamily={F.sys}>{val.toFixed(3)}</text>
           </g>
         );
       })}
-      {/* X-axis labels */}
-      {history.length > 1 && [0, 0.5, 1].map((frac) => {
-        const idx = Math.round(frac * (history.length - 1));
-        const x = pad.left + (idx / Math.max(history.length - 1, 1)) * innerW;
-        return (
-          <text key={frac} x={x} y={height - 4} textAnchor="middle" fill={C.steelDim}
-            fontSize="8" fontFamily={F.sys}>GEN {history[idx].generation}</text>
-        );
+      {history.length > 2 && [0, 0.5, 1].map((f) => {
+        const idx = Math.round(f * (history.length - 1));
+        const x = pad.left + (idx / Math.max(history.length - 1, 1)) * iW;
+        return <text key={f} x={x} y={H - 4} textAnchor="middle" fill={C.steelDim} fontSize="7" fontFamily={F.sys}>{history[idx].generation}</text>;
       })}
-      {/* Fill */}
-      <path d={fillPath} fill={C.green} opacity={0.04} />
-      {/* Avg line */}
-      <path d={avgPath} fill="none" stroke={C.cyanDim} strokeWidth={1} opacity={0.5} />
-      {/* Best line */}
-      <path d={bestPath} fill="none" stroke={C.green} strokeWidth={1.5} />
-      <path d={bestPath} fill="none" stroke={C.green} strokeWidth={5} opacity={0.12} />
-      {/* Latest point glow */}
-      {points.length > 0 && (
-        <circle cx={points[points.length - 1].x} cy={points[points.length - 1].yBest}
-          r={3} fill={C.green} opacity={0.9}>
-          <animate attributeName="r" values="3;5;3" dur="2s" repeatCount="indefinite" />
-        </circle>
-      )}
+      <path d={fillP} fill={C.green} opacity={0.03} />
+      <path d={avgP} fill="none" stroke={C.cyanDim} strokeWidth={1} opacity={0.4} />
+      <path d={bestP} fill="none" stroke={C.green} strokeWidth={1.5} />
+      <path d={bestP} fill="none" stroke={C.green} strokeWidth={4} opacity={0.1} />
+      <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].yB} r={2.5} fill={C.green}>
+        <animate attributeName="r" values="2.5;4;2.5" dur="2s" repeatCount="indefinite" />
+      </circle>
     </svg>
   );
 }
 
-/* ---------- Sparkline (mini chart for objectives) ---------- */
-function Sparkline({ data, color, width = 60, height = 16 }: {
-  data: number[]; color: string; width?: number; height?: number;
-}) {
+/* --- Sparkline --- */
+function Spark({ data, color, w = 50, h = 12 }: { data: number[]; color: string; w?: number; h?: number }) {
   if (data.length < 2) return null;
-  const max = Math.max(...data, 0.001);
-  const min = Math.min(...data);
-  const range = max - min || 0.001;
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = height - ((v - min) / range) * height;
-    return `${x},${y}`;
-  });
-  return (
-    <svg width={width} height={height} style={{ verticalAlign: "middle" }}>
-      <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth={1} opacity={0.7} />
-    </svg>
-  );
+  const max = Math.max(...data, 1e-4), min = Math.min(...data), r = max - min || 1e-4;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / r) * h}`).join(" ");
+  return <svg width={w} height={h} style={{ verticalAlign: "middle" }}><polyline points={pts} fill="none" stroke={color} strokeWidth={1} opacity={0.7} /></svg>;
 }
 
-/* ---------- Objective Table ---------- */
-function ObjectiveTable({
-  current, maxes, trends,
-}: {
+/* --- Objective Table --- */
+function ObjTable({ current, maxes, trends }: {
   current: Record<string, number>;
   maxes: Record<string, { max: number; gen: number }>;
   trends: Record<string, number[]>;
 }) {
-  const entries = Object.entries(current).sort(([, a], [, b]) => b - a);
-  if (entries.length === 0) return null;
-
+  const rows = Object.entries(current).sort(([, a], [, b]) => b - a);
+  if (!rows.length) return null;
+  const th = { fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" as const, padding: "2px 4px", color: C.orange, borderBottom: `1px solid ${C.orangeDim}`, fontWeight: 400 as const };
   return (
-    <table style={{
-      width: "100%", borderCollapse: "collapse", fontFamily: F.sys, fontSize: "0.75rem",
-    }}>
-      <thead>
-        <tr>
-          {["OBJECTIVE", "CURRENT", "BEST", "GEN", "TREND"].map((h) => (
-            <th key={h} style={{
-              fontSize: "0.5625rem", letterSpacing: "0.1em", textTransform: "uppercase" as const,
-              textAlign: h === "OBJECTIVE" ? "left" : "right", padding: "4px 6px",
-              color: C.orange, borderBottom: `1px solid ${C.orangeDim}`, fontWeight: 400,
-            }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
+    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: F.sys, fontSize: "0.6875rem" }}>
+      <thead><tr>
+        <th style={{ ...th, textAlign: "left" }}>OBJ</th>
+        <th style={{ ...th, textAlign: "right" }}>NOW</th>
+        <th style={{ ...th, textAlign: "right" }}>MAX</th>
+        <th style={{ ...th, textAlign: "right" }}>@GEN</th>
+        <th style={{ ...th, textAlign: "right" }}>TREND</th>
+      </tr></thead>
       <tbody>
-        {entries.map(([name, score]) => {
-          const m = maxes[name];
-          const t = trends[name] || [];
-          const isAtMax = m && Math.abs(score - m.max) < 1e-6;
-          const isTF = name === "transformer_failure";
+        {rows.map(([name, score]) => {
+          const m = maxes[name], t = trends[name] || [];
+          const atMax = m && Math.abs(score - m.max) < 1e-6;
+          const tf = name === "transformer_failure";
           return (
             <tr key={name} style={{ borderBottom: `1px solid ${C.greenFaint}` }}>
-              <td style={{
-                padding: "3px 6px", color: C.orangeDim, textTransform: "uppercase" as const,
-                letterSpacing: "0.04em", fontSize: "0.625rem",
-              }}>
-                {isTF ? "★ " : ""}{name}
+              <td style={{ padding: "2px 4px", color: C.orangeDim, fontSize: "0.5625rem", textTransform: "uppercase" as const, letterSpacing: "0.04em" }}>
+                {tf && <span style={{ color: C.orangeHot }}>★ </span>}{name.replace(/_/g, " ")}
               </td>
-              <td style={{
-                padding: "3px 6px", textAlign: "right",
-                color: isTF && score >= 0.7 ? C.orangeHot : C.green, fontWeight: 500,
-                fontVariantNumeric: "tabular-nums",
-              }}>
+              <td style={{ padding: "2px 4px", textAlign: "right", color: tf && score >= 0.7 ? C.orangeHot : C.green, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
                 {score.toFixed(4)}
               </td>
-              <td style={{
-                padding: "3px 6px", textAlign: "right",
-                color: isAtMax ? C.orangeHot : C.steelDim, fontVariantNumeric: "tabular-nums",
-              }}>
+              <td style={{ padding: "2px 4px", textAlign: "right", color: atMax ? C.orangeHot : C.steelDim, fontVariantNumeric: "tabular-nums" }}>
                 {m ? m.max.toFixed(4) : "---"}
               </td>
-              <td style={{
-                padding: "3px 6px", textAlign: "right", color: C.steelDim,
-                fontVariantNumeric: "tabular-nums",
-              }}>
-                {m ? m.gen : "---"}
+              <td style={{ padding: "2px 4px", textAlign: "right", color: C.steelDim, fontVariantNumeric: "tabular-nums" }}>
+                {m ? m.gen : "-"}
               </td>
-              <td style={{ padding: "3px 6px", textAlign: "right" }}>
-                <Sparkline data={t} color={isTF ? C.orangeHot : C.greenDim} />
+              <td style={{ padding: "2px 4px", textAlign: "right" }}>
+                <Spark data={t} color={tf ? C.orangeHot : C.greenDim} />
               </td>
             </tr>
           );
@@ -363,157 +352,150 @@ function ObjectiveTable({
   );
 }
 
-/* ---------- Breakthrough Panel ---------- */
-function BreakthroughPanel({ breakthroughs }: { breakthroughs: Breakthrough[] }) {
-  if (breakthroughs.length === 0) {
-    return (
-      <div style={{
-        border: `1px solid ${C.cyanDim}`, padding: 12, background: C.voidWarm, textAlign: "center",
-      }}>
-        <div style={{ fontFamily: F.sys, fontSize: "0.6875rem", color: C.steelDim }}>
-          パラダイムシフト未検出
-        </div>
-        <div style={{ fontFamily: F.sys, fontSize: "0.5625rem", color: C.steelDim, marginTop: 2 }}>
-          MONITORING FOR TRANSFORMER-EXCEEDING SIGNALS...
-        </div>
-      </div>
-    );
-  }
+/* --- History Table --- */
+function HistTable({ history }: { history: GenerationRecord[] }) {
+  const recent = history.slice(-8).reverse();
+  if (!recent.length) return null;
+  const th = { fontSize: "0.5rem", letterSpacing: "0.1em", textTransform: "uppercase" as const, padding: "2px 4px", color: C.orange, borderBottom: `1px solid ${C.orangeDim}`, fontWeight: 400 as const };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {breakthroughs.map((bt, i) => (
-        <div key={i} style={{
-          border: `2px solid ${C.red}`, padding: 10,
-          background: C.redFill, animation: "alertPulse 3s infinite",
-        }}>
-          <div style={{
-            fontFamily: F.label, fontSize: "1rem", color: C.red, letterSpacing: "0.1em",
+    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: F.sys, fontSize: "0.625rem" }}>
+      <thead><tr>
+        <th style={{ ...th, textAlign: "right" }}>GEN</th>
+        <th style={{ ...th, textAlign: "right" }}>BEST</th>
+        <th style={{ ...th, textAlign: "right" }}>AVG</th>
+        <th style={{ ...th, textAlign: "right" }}>Δ</th>
+        <th style={{ ...th, textAlign: "left" }}>TOP OBJ</th>
+      </tr></thead>
+      <tbody>
+        {recent.map((r, i) => {
+          const prev = i < recent.length - 1 ? recent[i + 1] : null;
+          const d = prev ? r.best_fitness - prev.best_fitness : 0;
+          const top = Object.entries(r.objectives).sort(([, a], [, b]) => b - a)[0];
+          return (
+            <tr key={r.generation} style={{ borderBottom: `1px solid ${C.greenFaint}` }}>
+              <td style={{ padding: "1px 4px", textAlign: "right", color: C.steelDim, fontVariantNumeric: "tabular-nums" }}>{String(r.generation).padStart(4, "0")}</td>
+              <td style={{ padding: "1px 4px", textAlign: "right", color: C.green, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{r.best_fitness.toFixed(4)}</td>
+              <td style={{ padding: "1px 4px", textAlign: "right", color: C.cyanDim, fontVariantNumeric: "tabular-nums" }}>{r.avg_fitness.toFixed(4)}</td>
+              <td style={{ padding: "1px 4px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: d > 1e-9 ? C.green : d < -1e-9 ? C.red : C.steelDim }}>{d > 0 ? "+" : ""}{d.toFixed(4)}</td>
+              <td style={{ padding: "1px 4px", color: C.orangeDim, fontSize: "0.5rem", textTransform: "uppercase" as const }}>{top ? `${top[0].slice(0, 14)} ${top[1].toFixed(2)}` : ""}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/* --- Run History (past runs) --- */
+function RunHistory({ runs }: { runs: RunRecord[]; }) {
+  if (!runs.length) return <div style={{ color: C.steelDim, fontSize: "0.5625rem" }}>NO RUNS RECORDED</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {runs.map((r) => {
+        const isActive = r.status === "ACTIVE";
+        return (
+          <div key={r.run_id} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "2px 4px", fontSize: "0.5625rem", fontFamily: F.sys,
+            borderLeft: `2px solid ${isActive ? C.green : C.steelDim}`,
+            background: isActive ? C.greenFaint : "transparent",
           }}>
-            ★ BREAKTHROUGH — GEN {bt.generation}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ color: isActive ? C.green : C.steelDim, width: 6, height: 6, borderRadius: "50%", background: isActive ? C.green : C.steelDim, display: "inline-block", boxShadow: isActive ? `0 0 4px ${C.green}` : "none" }} />
+              <span style={{ color: C.steelDim, fontVariantNumeric: "tabular-nums" }}>
+                {new Date(r.started_at).toLocaleDateString("ja-JP")} {new Date(r.started_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span style={{ color: C.orangeDim }}>{r.config_name || "---"}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ color: C.green, fontVariantNumeric: "tabular-nums" }}>G{r.final_generation}</span>
+              <span style={{ color: C.cyan, fontVariantNumeric: "tabular-nums" }}>{r.best_fitness.toFixed(4)}</span>
+              <span style={{ color: isActive ? C.green : C.steelDim, fontSize: "0.5rem", letterSpacing: "0.06em" }}>
+                {r.status}
+              </span>
+            </div>
           </div>
-          <div style={{ fontFamily: F.sys, fontSize: "0.6875rem", color: C.steel, marginTop: 2 }}>
-            FITNESS: {bt.fitness.toFixed(4)} | AGENT: {bt.agent_id}
-          </div>
-          <div style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.orangeHot, marginTop: 2 }}>
-            {bt.signals.join(" | ")}
-          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* --- Breakthrough Panel --- */
+function Breakthroughs({ items }: { items: Breakthrough[] }) {
+  if (!items.length) return (
+    <div style={{ border: `1px solid ${C.cyanDim}`, padding: 10, background: C.voidWarm, textAlign: "center" }}>
+      <div style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.steelDim }}>パラダイムシフト未検出</div>
+      <div style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.steelDim, marginTop: 2 }}>MONITORING FOR TRANSFORMER-EXCEEDING SIGNALS...</div>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {items.map((bt, i) => (
+        <div key={i} style={{ border: `2px solid ${C.red}`, padding: 8, background: C.redFill, animation: "alertPulse 3s infinite" }}>
+          <div style={{ fontFamily: F.label, fontSize: "0.875rem", color: C.red, letterSpacing: "0.1em" }}>★ BREAKTHROUGH — GEN {bt.generation}</div>
+          <div style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.steel, marginTop: 2 }}>FITNESS: {bt.fitness.toFixed(4)} | AGENT: {bt.agent_id}</div>
+          <div style={{ fontFamily: F.sys, fontSize: "0.5625rem", color: C.orangeHot, marginTop: 1 }}>{bt.signals.join(" | ")}</div>
         </div>
       ))}
     </div>
   );
 }
 
-/* ---------- Log Console ---------- */
+/* --- Log Console --- */
 function LogConsole({ lines }: { lines: string[] }) {
   return (
     <div style={{
       background: C.void, border: `1px solid ${C.cyanDim}`,
-      padding: 6, maxHeight: 220, overflowY: "auto",
-      fontFamily: F.sys, fontSize: "0.625rem", lineHeight: 1.5,
+      padding: 4, maxHeight: 180, overflowY: "auto",
+      fontFamily: F.sys, fontSize: "0.5625rem", lineHeight: 1.4,
     }}>
-      {lines.length === 0 && (
-        <div style={{ color: C.steelDim, padding: 8, textAlign: "center" }}>
-          ログはローカルプッシュ後に表示されます
-        </div>
-      )}
+      {!lines.length && <div style={{ color: C.steelDim, padding: 6, textAlign: "center", fontSize: "0.5rem" }}>ログ待機中...</div>}
       {lines.map((line, i) => {
-        let color = C.steelDim;
-        if (line.includes("ERROR")) color = C.red;
-        else if (line.includes("WARNING") || line.includes("BREAKTHROUGH")) color = C.orangeHot;
-        else if (line.includes("GEN ")) color = C.green;
-        else if (line.includes("INFO")) color = C.greenDim;
-        return (
-          <div key={i} style={{ color, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{line}</div>
-        );
+        let c = C.steelDim;
+        if (line.includes("ERROR")) c = C.red;
+        else if (line.includes("WARNING") || line.includes("BREAKTHROUGH")) c = C.orangeHot;
+        else if (line.includes("GEN ")) c = C.green;
+        else if (line.includes("INFO")) c = C.greenDim;
+        return <div key={i} style={{ color: c, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{line}</div>;
       })}
     </div>
   );
 }
 
-/* ---------- History Table ---------- */
-function HistoryTable({ history }: { history: GenerationRecord[] }) {
-  const recent = history.slice(-10).reverse();
-  if (recent.length === 0) return null;
-  return (
-    <table style={{
-      width: "100%", borderCollapse: "collapse", fontFamily: F.sys, fontSize: "0.6875rem",
-    }}>
-      <thead>
-        <tr>
-          {["GEN", "BEST", "AVG", "Δ BEST", "TOP OBJ"].map((h) => (
-            <th key={h} style={{
-              fontSize: "0.5625rem", letterSpacing: "0.1em", textTransform: "uppercase" as const,
-              textAlign: h === "TOP OBJ" ? "left" : "right", padding: "3px 5px",
-              color: C.orange, borderBottom: `1px solid ${C.orangeDim}`, fontWeight: 400,
-            }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {recent.map((r, i) => {
-          const prev = i < recent.length - 1 ? recent[i + 1] : null;
-          const delta = prev ? r.best_fitness - prev.best_fitness : 0;
-          const topObj = Object.entries(r.objectives).sort(([, a], [, b]) => b - a)[0];
-          return (
-            <tr key={r.generation} style={{ borderBottom: `1px solid ${C.greenFaint}` }}>
-              <td style={{ padding: "2px 5px", textAlign: "right", color: C.steelDim, fontVariantNumeric: "tabular-nums" }}>
-                {String(r.generation).padStart(4, "0")}
-              </td>
-              <td style={{ padding: "2px 5px", textAlign: "right", color: C.green, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
-                {r.best_fitness.toFixed(4)}
-              </td>
-              <td style={{ padding: "2px 5px", textAlign: "right", color: C.cyanDim, fontVariantNumeric: "tabular-nums" }}>
-                {r.avg_fitness.toFixed(4)}
-              </td>
-              <td style={{
-                padding: "2px 5px", textAlign: "right", fontVariantNumeric: "tabular-nums",
-                color: delta > 0 ? C.green : delta < -1e-9 ? C.red : C.steelDim,
-              }}>
-                {delta > 0 ? "+" : ""}{delta.toFixed(4)}
-              </td>
-              <td style={{ padding: "2px 5px", color: C.orangeDim, fontSize: "0.5625rem", textTransform: "uppercase" as const }}>
-                {topObj ? `${topObj[0].slice(0, 12)} ${topObj[1].toFixed(2)}` : "---"}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
-/* ---------- Ticker ---------- */
+/* --- Ticker Tape --- */
 function Ticker({ data, stats }: { data: EvolutionData; stats: ReturnType<typeof computeStats> }) {
-  const text = [
-    `GEN ${stats.totalGens}`,
+  const segs = [
+    `GEN ${data.history[data.history.length - 1]?.generation ?? "?"}/${data.maxGenerations}`,
     `BEST ${stats.bestEver.toFixed(4)}`,
     `${stats.genPerHour.toFixed(1)} GEN/HR`,
     `UPTIME ${stats.uptimeStr}`,
+    `ETA ${stats.eta}`,
     `GPU ${data.gpu.utilization}%`,
-    `VRAM ${data.gpu.memoryUsed}/${data.gpu.memoryTotal} MiB`,
+    `VRAM ${data.gpu.memoryUsed}/${data.gpu.memoryTotal}`,
     `STREAK +${stats.improvementStreak}`,
     `GAIN ${stats.fitnessGain >= 0 ? "+" : ""}${stats.fitnessGain.toFixed(4)}`,
-    `BREAKTHROUGHS ${data.breakthroughs.length}`,
-  ].join("  ///  ");
+    `RUNS ${data.totalRuns}`,
+    `BT ${data.breakthroughs.length}`,
+  ];
+  const text = segs.join("  ///  ");
   return (
     <div style={{
       overflow: "hidden", whiteSpace: "nowrap", background: C.void,
       borderTop: `1px solid ${C.orangeDim}`, borderBottom: `1px solid ${C.orangeDim}`,
-      padding: "3px 0", fontFamily: F.sys, fontSize: "0.5625rem",
+      padding: "2px 0", fontFamily: F.sys, fontSize: "0.5rem",
       letterSpacing: "0.06em", textTransform: "uppercase" as const, color: C.orange,
     }}>
-      <div style={{
-        display: "inline-block",
-        animation: "ticker-scroll 40s linear infinite",
-        paddingLeft: "100%",
-      }}>
+      <div style={{ display: "inline-block", animation: "ticker-scroll 45s linear infinite", paddingLeft: "100%" }}>
         {text}  ///  {text}
       </div>
     </div>
   );
 }
 
-/* ========== MAIN PAGE ========== */
+/* ================================================================
+   MAIN PAGE
+   ================================================================ */
 export default function TesterPage() {
   const [data, setData] = useState<EvolutionData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -524,264 +506,180 @@ export default function TesterPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
       setError(null);
-    } catch (err) {
-      setError(String(err));
-    }
+    } catch (err) { setError(String(err)); }
   }, []);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+    const iv = setInterval(fetchData, 10000);
+    return () => clearInterval(iv);
   }, [fetchData]);
 
   const stats = useMemo(() => computeStats(data), [data]);
-  const latest = data?.history?.[data.history.length - 1];
-  const statusColor = data?.status === "ACTIVE" ? C.green : data?.status === "STALE" ? C.orangeHot : C.red;
+  const lat = data?.history?.[data.history.length - 1];
+  const sc = data?.status === "ACTIVE" ? C.green : data?.status === "STALE" ? C.orangeHot : C.red;
 
   return (
     <>
-      <link
-        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Bebas+Neue&family=Noto+Sans+JP:wght@400;700&display=swap"
-        rel="stylesheet"
-      />
+      <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Bebas+Neue&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet" />
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        @keyframes alertPulse { 0%,100%{border-color:${C.red}} 50%{border-color:${C.redHot}} }
-        @keyframes ticker-scroll { from{transform:translateX(0)} to{transform:translateX(-50%)} }
-        body { margin:0; padding:0; }
-        @media (prefers-reduced-motion:reduce) {
-          .crt-flicker,.alert-pulse { animation:none!important; }
-        }
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+        @keyframes alertPulse{0%,100%{border-color:${C.red}}50%{border-color:${C.redHot}}}
+        @keyframes ticker-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+        @keyframes phosphor{0%,100%{opacity:1}50%{opacity:0.97}}
+        body{margin:0;padding:0}
+        @media(prefers-reduced-motion:reduce){*{animation:none!important}}
       `}</style>
 
-      {/* CRT scanline overlay */}
-      <div style={{
-        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999,
-        background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.05) 2px, rgba(0,0,0,0.05) 4px)",
-      }} />
-
+      {/* CRT scanlines */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999, background: "repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.05) 2px,rgba(0,0,0,0.05) 4px)" }} />
       {/* CRT vignette */}
-      <div style={{
-        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9998,
-        background: "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.3) 100%)",
-      }} />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9998, background: "radial-gradient(ellipse at center,transparent 65%,rgba(0,0,0,0.25) 100%)" }} />
 
-      <div style={{
-        minHeight: "100vh", background: C.void, color: C.steel, fontFamily: F.sys,
-      }}>
-        {/* HEADER */}
+      <div style={{ minHeight: "100vh", background: C.void, color: C.steel, fontFamily: F.sys, animation: "phosphor 0.08s infinite" }}>
+
+        {/* === HEADER === */}
         <div style={{
-          borderBottom: `1px solid ${C.orangeDim}`, padding: "12px 20px",
+          borderBottom: `2px solid ${C.orange}`, padding: "10px 16px",
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
           <div>
-            <div style={{
-              fontFamily: F.label, fontSize: "clamp(1.2rem, 3vw, 1.8rem)",
-              letterSpacing: "0.15em", color: C.orange, textTransform: "uppercase" as const,
-            }}>
+            <div style={{ fontFamily: F.label, fontSize: "clamp(1rem, 2.5vw, 1.6rem)", letterSpacing: "0.15em", color: C.orange, textTransform: "uppercase" as const }}>
               進化監視システム / EVOLUTION MONITOR
             </div>
-            <div style={{
-              fontFamily: F.sys, fontSize: "0.5625rem", color: C.steelDim,
-              letterSpacing: "0.08em", textTransform: "uppercase" as const, marginTop: 2,
-            }}>
-              NERV PARADIGM SEARCH DIVISION — REAL-TIME TELEMETRY — {new Date().toISOString().slice(0, 10)}
+            <div style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.steelDim, letterSpacing: "0.08em", textTransform: "uppercase" as const, marginTop: 1 }}>
+              NERV PARADIGM SEARCH DIVISION — REAL-TIME TELEMETRY
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{
-              width: 8, height: 8, borderRadius: "50%",
-              backgroundColor: statusColor,
-              boxShadow: `0 0 8px ${statusColor}`,
-              animation: data?.status === "ACTIVE" ? "pulse 2s infinite" : "none",
-            }} />
-            <span style={{
-              fontFamily: F.sys, fontSize: "0.75rem", fontWeight: 500,
-              color: statusColor, letterSpacing: "0.08em",
-            }}>
-              {data?.status || "OFFLINE"}
-            </span>
-            <span style={{
-              fontFamily: F.sys, fontSize: "0.5625rem", color: C.steelDim, marginLeft: 8,
-            }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: sc, boxShadow: `0 0 6px ${sc}`, animation: data?.status === "ACTIVE" ? "pulse 2s infinite" : "none" }} />
+            <span style={{ fontFamily: F.sys, fontSize: "0.6875rem", fontWeight: 700, color: sc, letterSpacing: "0.08em" }}>{data?.status || "OFFLINE"}</span>
+            <span style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.steelDim, marginLeft: 6 }}>
               {data?.updatedAt ? new Date(data.updatedAt).toLocaleTimeString("ja-JP") : "---"}
             </span>
           </div>
         </div>
 
-        {/* TICKER */}
+        {/* === TICKER === */}
         {data && stats.totalGens > 0 && <Ticker data={data} stats={stats} />}
 
-        {/* ERROR */}
-        {error && (
-          <div style={{
-            margin: "8px 20px", padding: 8, border: `1px solid ${C.red}`,
-            color: C.red, fontSize: "0.6875rem",
-          }}>
-            CONNECTION ERROR: {error}
-          </div>
-        )}
+        {/* === ERROR === */}
+        {error && <div style={{ margin: "6px 16px", padding: 6, border: `1px solid ${C.red}`, color: C.red, fontSize: "0.625rem" }}>CONNECTION ERROR: {error}</div>}
 
-        {/* STAT STRIP */}
+        {/* === STAT STRIP === */}
         <div style={{
-          display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 0,
-          padding: "8px 20px", borderBottom: `1px solid ${C.steelFaint}`,
+          display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 0,
+          padding: "4px 16px", borderBottom: `1px solid ${C.steelFaint}`,
         }}>
-          <StatBlock label="世代 / GEN" value={stats.totalGens > 0 ? String(latest?.generation ?? 0) : "---"} />
-          <StatBlock label="最高適応度 / BEST" value={stats.bestEver > 0 ? stats.bestEver.toFixed(4) : "---"} />
-          <StatBlock label="平均 / AVG" value={stats.avgLatest > 0 ? stats.avgLatest.toFixed(4) : "---"} color={C.cyan} />
-          <StatBlock
-            label="前世代比 / Δ"
-            value={stats.totalGens > 1 ? `${stats.improvement >= 0 ? "+" : ""}${stats.improvement.toFixed(4)}` : "---"}
-            color={stats.improvement > 0 ? C.green : stats.improvement < 0 ? C.red : C.steelDim}
-          />
-          <StatBlock
-            label="速度 / RATE"
-            value={stats.genPerHour > 0 ? stats.genPerHour.toFixed(1) : "---"}
-            unit="gen/h"
-            color={C.cyan}
-          />
-          <StatBlock label="稼働時間 / UPTIME" value={stats.uptimeStr} color={C.steel} />
-          <StatBlock
-            label="連続改善 / STREAK"
-            value={stats.improvementStreak > 0 ? `+${stats.improvementStreak}` : "0"}
-            color={stats.improvementStreak >= 3 ? C.orangeHot : C.steelDim}
-          />
-          <StatBlock
-            label="総ゲイン / GAIN"
-            value={stats.totalGens > 0 ? `${stats.fitnessGain >= 0 ? "+" : ""}${stats.fitnessGain.toFixed(4)}` : "---"}
-            color={stats.fitnessGain > 0 ? C.green : C.steelDim}
-            sub={stats.improvementPct !== 0 ? `${stats.improvementPct >= 0 ? "+" : ""}${stats.improvementPct.toFixed(1)}% vs prev` : undefined}
-          />
+          <Stat label="世代 / GEN" value={lat ? `${lat.generation}` : "---"} sub={`/ ${data?.maxGenerations ?? 300}`} />
+          <Stat label="最高 / BEST" value={stats.bestEver > 0 ? stats.bestEver.toFixed(4) : "---"} sub={`@gen ${stats.bestGeneration}`} />
+          <Stat label="平均 / AVG" value={stats.avgLatest > 0 ? stats.avgLatest.toFixed(4) : "---"} color={C.cyan} />
+          <Stat label="前世代比 / Δ" value={stats.totalGens > 1 ? `${stats.improvement >= 0 ? "+" : ""}${stats.improvement.toFixed(4)}` : "---"} color={stats.improvement > 0 ? C.green : stats.improvement < -1e-9 ? C.red : C.steelDim} />
+          <Stat label="速度 / RATE" value={stats.genPerHour > 0 ? stats.genPerHour.toFixed(1) : "---"} unit="g/h" color={C.cyan} />
+          <Stat label="稼働 / UP" value={stats.uptimeStr} color={C.steel} />
+          <Stat label="ETA" value={stats.eta} color={C.steelDim} />
+          <Stat label="連続↑ / STREAK" value={`+${stats.improvementStreak}`} color={stats.improvementStreak >= 3 ? C.orangeHot : C.steelDim} />
+          <Stat label="総ゲイン / GAIN" value={stats.fitnessGain !== 0 ? `${stats.fitnessGain >= 0 ? "+" : ""}${stats.fitnessGain.toFixed(4)}` : "---"} color={stats.fitnessGain > 0 ? C.green : C.steelDim} />
+          <ProgressBar pct={stats.progressPct} label="進捗 / PROGRESS" />
         </div>
 
-        {/* MAIN GRID */}
-        <div style={{
-          display: "grid", gridTemplateColumns: "5fr 3fr", gap: 12, padding: "12px 20px",
-        }}>
-          {/* LEFT COLUMN */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Fitness chart */}
-            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 10, background: C.voidWarm }}>
-              <SectionHeader jp="適応度推移" en="FITNESS TRAJECTORY" />
-              {data?.history && data.history.length > 0 ? (
-                <FitnessChart history={data.history} />
-              ) : (
-                <div style={{ color: C.steelDim, fontSize: "0.6875rem", padding: 16, textAlign: "center" }}>
-                  AWAITING DATA...
-                </div>
-              )}
-              {data?.history && data.history.length > 0 && (
-                <div style={{
-                  display: "flex", justifyContent: "space-between", marginTop: 4,
-                  fontSize: "0.5625rem", color: C.steelDim,
-                }}>
-                  <span>BEST: {C.green} / AVG: {C.cyanDim}</span>
-                  <span>BEST GEN: {stats.bestGeneration}</span>
+        {/* === MAIN 3-COLUMN GRID === */}
+        <div style={{ display: "grid", gridTemplateColumns: "5fr 3fr 2fr", gap: 10, padding: "10px 16px" }}>
+
+          {/* --- COL 1: Charts & Tables --- */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 8, background: C.voidWarm }}>
+              <SH jp="適応度推移" en="FITNESS TRAJECTORY" />
+              <FitnessChart history={data?.history || []} />
+              {data?.history && data.history.length > 1 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.5rem", color: C.steelDim, marginTop: 2 }}>
+                  <span><span style={{ color: C.green }}>━</span> BEST &nbsp; <span style={{ color: C.cyanDim }}>━</span> AVG</span>
+                  <span>BEST @ GEN {stats.bestGeneration}</span>
                 </div>
               )}
             </div>
 
-            {/* Objective table */}
-            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 10, background: C.voidWarm }}>
-              <SectionHeader jp="目標別スコア" en="OBJECTIVE BREAKDOWN" />
-              {latest?.objectives ? (
-                <ObjectiveTable
-                  current={latest.objectives}
-                  maxes={stats.objectiveMaxes}
-                  trends={stats.objectiveTrends}
-                />
-              ) : (
-                <div style={{ color: C.steelDim, fontSize: "0.6875rem" }}>NO DATA</div>
-              )}
+            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 8, background: C.voidWarm }}>
+              <SH jp="目標別スコア" en="OBJECTIVE BREAKDOWN" />
+              {lat?.objectives ? <ObjTable current={lat.objectives} maxes={stats.objectiveMaxes} trends={stats.objectiveTrends} /> : <div style={{ color: C.steelDim, fontSize: "0.625rem" }}>NO DATA</div>}
             </div>
 
-            {/* Generation history table */}
-            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 10, background: C.voidWarm }}>
-              <SectionHeader jp="世代履歴" en="GENERATION HISTORY (RECENT 10)" />
-              {data?.history ? (
-                <HistoryTable history={data.history} />
-              ) : (
-                <div style={{ color: C.steelDim, fontSize: "0.6875rem" }}>NO DATA</div>
-              )}
+            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 8, background: C.voidWarm }}>
+              <SH jp="世代履歴" en="GENERATION HISTORY" />
+              <HistTable history={data?.history || []} />
             </div>
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* GPU */}
-            {data?.gpu && <GpuMeter gpu={data.gpu} />}
+          {/* --- COL 2: GPU, Breakthroughs, Log --- */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {data?.gpu && <GpuPanel gpu={data.gpu} />}
 
-            {/* Run Config ID block */}
-            <div style={{
-              border: `1px solid ${C.orangeDim}`, padding: "8px 10px", background: C.void,
-            }}>
-              <div style={{
-                fontFamily: F.label, fontSize: "1rem", letterSpacing: "0.12em",
-                color: C.orange, textTransform: "uppercase" as const, marginBottom: 4,
-              }}>
+            <div>
+              <SH jp="パラダイムシフト" en="BREAKTHROUGHS" />
+              <Breakthroughs items={data?.breakthroughs || []} />
+            </div>
+
+            <div>
+              <SH jp="実行ログ" en="CONSOLE" />
+              <LogConsole lines={data?.recentLog || []} />
+            </div>
+
+            {data?.latestGenLine && (
+              <div style={{ border: `1px solid ${C.cyanDim}`, padding: 6, background: C.voidWarm }}>
+                <div style={{ fontSize: "0.5rem", color: C.orangeDim, letterSpacing: "0.08em", textTransform: "uppercase" as const, marginBottom: 1 }}>LATEST READOUT</div>
+                <div style={{ fontSize: "0.625rem", color: C.green, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{data.latestGenLine}</div>
+              </div>
+            )}
+          </div>
+
+          {/* --- COL 3: Run Info --- */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Run Config */}
+            <div style={{ border: `1px solid ${C.orangeDim}`, padding: "6px 8px", background: C.void }}>
+              <div style={{ fontFamily: F.label, fontSize: "0.875rem", letterSpacing: "0.12em", color: C.orange, textTransform: "uppercase" as const, marginBottom: 3 }}>
                 実行構成 / RUN CONFIG
               </div>
               {[
-                ["CONFIG", "pilot_paradigm_search_v1"],
-                ["BASE MODEL", "arc_v1_public/step_518071"],
-                ["POPULATION", "8"],
+                ["RUN ID", data?.currentRunId?.split("_").slice(-1)[0] || "---"],
+                ["CONFIG", "paradigm_v1"],
+                ["MODEL", "arc_v1/518071"],
+                ["POP", "8"],
                 ["WORKERS", "8"],
-                ["MAX GENS", "300"],
-                ["SELECTION", "cma_map_elites"],
-                ["MUTATION", "gaussian"],
-                ["CROSSOVER", "linear"],
+                ["MAX GEN", String(data?.maxGenerations ?? 300)],
+                ["SELECT", "cma_map_elites"],
+                ["MUTATE", "gaussian"],
+                ["CROSS", "linear+ties+dare"],
               ].map(([k, v]) => (
-                <div key={k} style={{
-                  display: "flex", justifyContent: "space-between", padding: "1px 0",
-                  fontSize: "0.5625rem", letterSpacing: "0.06em", textTransform: "uppercase" as const,
-                }}>
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "0.5px 0", fontSize: "0.5rem", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>
                   <span style={{ color: C.steelDim }}>{k}</span>
-                  <span style={{ color: C.green }}>{v}</span>
+                  <span style={{ color: C.green, fontVariantNumeric: "tabular-nums" }}>{v}</span>
                 </div>
               ))}
             </div>
 
-            {/* Breakthrough panel */}
-            <div>
-              <SectionHeader jp="パラダイムシフト" en="BREAKTHROUGHS" />
-              <BreakthroughPanel breakthroughs={data?.breakthroughs || []} />
+            {/* Run History */}
+            <div style={{ border: `1px solid ${C.cyanDim}`, padding: "6px 8px", background: C.voidWarm }}>
+              <SH jp="実行履歴" en="RUN HISTORY" />
+              <RunHistory runs={data?.runs || []} />
             </div>
 
-            {/* Log console */}
-            <div>
-              <SectionHeader jp="実行ログ" en="CONSOLE OUTPUT" />
-              <LogConsole lines={data?.recentLog || []} />
-            </div>
-
-            {/* Latest gen line */}
-            {data?.latestGenLine && (
-              <div style={{
-                border: `1px solid ${C.cyanDim}`, padding: 8, background: C.voidWarm,
-              }}>
-                <div style={{
-                  fontSize: "0.5625rem", color: C.orangeDim, letterSpacing: "0.08em",
-                  textTransform: "uppercase" as const, marginBottom: 2,
-                }}>
-                  LATEST READOUT
-                </div>
-                <div style={{
-                  fontSize: "0.6875rem", color: C.green, whiteSpace: "pre-wrap", wordBreak: "break-all",
-                }}>
-                  {data.latestGenLine}
-                </div>
+            {/* System Info */}
+            <div style={{ border: `1px solid ${C.steelFaint}`, padding: "6px 8px", background: C.void }}>
+              <div style={{ fontSize: "0.5rem", color: C.orangeDim, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 3 }}>
+                SYSTEM / システム情報
               </div>
-            )}
-
-            {/* Footer info */}
-            <div style={{
-              fontSize: "0.5rem", color: C.steelDim, textAlign: "right",
-              letterSpacing: "0.05em", textTransform: "uppercase" as const,
-            }}>
-              AUTO-REFRESH: 10s | SOURCE: SUPABASE REALTIME
-              <br />
-              LAST SYNC: {data?.updatedAt ? new Date(data.updatedAt).toLocaleTimeString("ja-JP") : "---"}
+              {[
+                ["REFRESH", "10s AUTO"],
+                ["SOURCE", "SUPABASE"],
+                ["GPU", "GTX 1660 SUPER 6GB"],
+                ["RUNS", String(data?.totalRuns ?? 0)],
+                ["LAST SYNC", data?.updatedAt ? new Date(data.updatedAt).toLocaleTimeString("ja-JP") : "---"],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "0.5px 0", fontSize: "0.5rem", textTransform: "uppercase" as const }}>
+                  <span style={{ color: C.steelDim }}>{k}</span>
+                  <span style={{ color: C.steel }}>{v}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
