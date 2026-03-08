@@ -6,20 +6,15 @@ type GenerationRecord = {
   generation: number;
   best_fitness: number;
   avg_fitness: number;
-  population_size: number;
-  best_agent_id: string;
-  fitness_breakdown: Record<string, number>;
-  annotations: Record<string, unknown>;
+  objectives: Record<string, number>;
 };
 
 type Breakthrough = {
-  event: string;
   generation: number;
-  timestamp: number;
   signals: string[];
   agent_id: string;
-  fitness_total: number;
-  fitness_breakdown: Record<string, number>;
+  fitness: number;
+  created_at: string;
 };
 
 type GpuInfo = {
@@ -29,7 +24,7 @@ type GpuInfo = {
 };
 
 type EvolutionData = {
-  status: "ACTIVE" | "OFFLINE";
+  status: "ACTIVE" | "OFFLINE" | "STALE";
   history: GenerationRecord[];
   breakthroughs: Breakthrough[];
   latestGenLine: string;
@@ -380,7 +375,7 @@ function BreakthroughPanel({ breakthroughs }: { breakthroughs: Breakthrough[] })
               marginTop: 4,
             }}
           >
-            FITNESS: {bt.fitness_total.toFixed(4)} | AGENT: {bt.agent_id}
+            FITNESS: {bt.fitness.toFixed(4)} | AGENT: {bt.agent_id}
           </div>
           <div
             style={{
@@ -532,8 +527,8 @@ export default function TesterPage() {
             color={C.cyan}
           />
           <StatBlock
-            label="個体数 / POPULATION"
-            value={latest ? String(latest.population_size) : "---"}
+            label="目標数 / OBJECTIVES"
+            value={latest ? String(Object.keys(latest.objectives).length) : "---"}
             color={C.steel}
           />
         </div>
@@ -597,8 +592,8 @@ export default function TesterPage() {
               >
                 目標別スコア / OBJECTIVE BREAKDOWN
               </div>
-              {latest?.fitness_breakdown ? (
-                <ObjectiveBreakdown breakdown={latest.fitness_breakdown} />
+              {latest?.objectives ? (
+                <ObjectiveBreakdown breakdown={latest.objectives} />
               ) : (
                 <div style={{ color: C.steelDim, fontSize: "0.75rem" }}>NO DATA</div>
               )}
