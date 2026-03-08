@@ -139,13 +139,13 @@ function deriveStats(data: EvolutionData | null) {
 function SH({ jp, en }: { jp: string; en: string }) {
   return (
     <div style={{
-      fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.12em",
+      fontSize: "0.8125rem", fontWeight: 700, letterSpacing: "0.12em",
       textTransform: "uppercase" as const, color: C.orange,
-      borderBottom: `1px solid ${C.orangeDim}`, paddingBottom: 2, marginBottom: 6,
+      borderBottom: `1px solid ${C.orangeDim}`, paddingBottom: 3, marginBottom: 8,
       display: "flex", justifyContent: "space-between", alignItems: "baseline",
     }}>
       <span style={{ fontFamily: F.kanji }}>{jp}</span>
-      <span style={{ fontSize: "0.5rem", color: C.orangeDim, fontFamily: F.sys }}>{en}</span>
+      <span style={{ fontSize: "0.625rem", color: C.orangeDim, fontFamily: F.sys }}>{en}</span>
     </div>
   );
 }
@@ -158,30 +158,30 @@ function TFGauge({ score, threshold }: { score: number; threshold: number }) {
   return (
     <div style={{
       border: `2px solid ${isBreakthrough ? C.orangeHot : C.cyanDim}`,
-      padding: "10px 12px", background: isBreakthrough ? "rgba(255,204,80,0.06)" : C.voidWarm,
+      padding: "14px 16px", background: isBreakthrough ? "rgba(255,204,80,0.06)" : C.voidWarm,
       animation: isBreakthrough ? "alertPulse 2s infinite" : "none",
     }}>
       <div style={{
-        fontFamily: F.sys, fontSize: "0.5rem", letterSpacing: "0.1em",
-        textTransform: "uppercase" as const, color: C.orangeDim, marginBottom: 4,
+        fontFamily: F.sys, fontSize: "0.6875rem", letterSpacing: "0.1em",
+        textTransform: "uppercase" as const, color: C.orangeDim, marginBottom: 6,
       }}>
         ★ TRANSFORMER FAILURE SCORE / 変革指標
       </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span style={{
-          fontFamily: F.sys, fontSize: "2.2rem", fontWeight: 700,
+          fontFamily: F.sys, fontSize: "2.5rem", fontWeight: 700,
           color, lineHeight: 1, fontVariantNumeric: "tabular-nums",
         }}>
           {score.toFixed(4)}
         </span>
-        <span style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.steelDim }}>
+        <span style={{ fontFamily: F.sys, fontSize: "0.75rem", color: C.steelDim }}>
           / {threshold.toFixed(1)} THRESHOLD
         </span>
       </div>
-      <div style={{ height: 6, background: C.steelFaint, marginTop: 6 }}>
+      <div style={{ height: 8, background: C.steelFaint, marginTop: 8 }}>
         <div style={{
           height: "100%", width: `${pct}%`,
-          background: color, boxShadow: `0 0 4px ${color}`, transition: "width 0.5s",
+          background: color, boxShadow: `0 0 6px ${color}`, transition: "width 0.5s",
         }} />
       </div>
       {isBreakthrough && (
@@ -201,26 +201,26 @@ function MissionStatus({ gen, max, pct, eta, uptime, totalUptime, totalRuns }: {
   gen: number; max: number; pct: number; eta: string; uptime: string; totalUptime: string; totalRuns: number;
 }) {
   return (
-    <div style={{ border: `1px solid ${C.cyanDim}`, padding: "8px 10px", background: C.voidWarm }}>
+    <div style={{ border: `1px solid ${C.cyanDim}`, padding: "12px 14px", background: C.voidWarm }}>
       <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6,
+        display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8,
       }}>
-        <span style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.orangeDim, letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
+        <span style={{ fontFamily: F.sys, fontSize: "0.6875rem", color: C.orangeDim, letterSpacing: "0.1em", textTransform: "uppercase" as const }}>
           探索進捗 / SEARCH PROGRESS
         </span>
-        <span style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.steelDim }}>
+        <span style={{ fontFamily: F.sys, fontSize: "0.6875rem", color: C.steelDim }}>
           RUN {totalRuns}
         </span>
       </div>
       {/* Big gen counter */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 4 }}>
-        <span style={{ fontFamily: F.sys, fontSize: "1.8rem", fontWeight: 700, color: C.green, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+        <span style={{ fontFamily: F.sys, fontSize: "2rem", fontWeight: 700, color: C.green, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
           {gen}
         </span>
-        <span style={{ fontFamily: F.sys, fontSize: "0.75rem", color: C.steelDim }}>/ {max}</span>
+        <span style={{ fontFamily: F.sys, fontSize: "0.875rem", color: C.steelDim }}>/ {max}</span>
       </div>
       {/* Progress bar */}
-      <div style={{ height: 8, background: C.steelFaint, marginBottom: 6 }}>
+      <div style={{ height: 8, background: C.steelFaint, marginBottom: 8 }}>
         <div style={{
           height: "100%", width: `${Math.min(pct, 100)}%`,
           background: pct > 90 ? C.orangeHot : C.cyan,
@@ -229,14 +229,14 @@ function MissionStatus({ gen, max, pct, eta, uptime, totalUptime, totalRuns }: {
         }} />
       </div>
       {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, fontFamily: F.sys, fontSize: "0.5625rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, fontFamily: F.sys, fontSize: "0.75rem" }}>
         {[
           ["稼働時間", uptime, C.steel],
           ["総稼働", totalUptime, C.steelDim],
           ["残り", eta, C.cyan],
         ].map(([label, val, c]) => (
-          <div key={label as string} style={{ borderRight: `1px solid ${C.steelFaint}`, padding: "2px 4px" }}>
-            <div style={{ fontSize: "0.4375rem", color: C.orangeDim, letterSpacing: "0.08em", textTransform: "uppercase" as const }}>{label}</div>
+          <div key={label as string} style={{ borderRight: `1px solid ${C.steelFaint}`, padding: "3px 6px" }}>
+            <div style={{ fontSize: "0.5625rem", color: C.orangeDim, letterSpacing: "0.08em", textTransform: "uppercase" as const }}>{label}</div>
             <div style={{ color: c as string, fontWeight: 500 }}>{val}</div>
           </div>
         ))}
@@ -250,16 +250,16 @@ function GpuMini({ gpu }: { gpu: GpuInfo }) {
   const pct = gpu.memoryTotal > 0 ? (gpu.memoryUsed / gpu.memoryTotal) * 100 : 0;
   const c = pct > 80 ? C.red : pct > 60 ? C.orangeHot : C.cyan;
   return (
-    <div style={{ border: `1px solid ${C.cyanDim}`, padding: "6px 8px", background: C.voidWarm }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: F.sys, fontSize: "0.4375rem", color: C.orangeDim, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 3 }}>
+    <div style={{ border: `1px solid ${C.cyanDim}`, padding: "8px 12px", background: C.voidWarm }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: F.sys, fontSize: "0.625rem", color: C.orangeDim, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 4 }}>
         <span>GPU / GTX 1660S</span>
         <span style={{ color: C.cyan }}>UTIL {gpu.utilization}%</span>
       </div>
-      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-        <div style={{ flex: 1, height: 5, background: C.steelFaint }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div style={{ flex: 1, height: 6, background: C.steelFaint }}>
           <div style={{ height: "100%", width: `${pct}%`, background: c, transition: "width 0.5s" }} />
         </div>
-        <span style={{ fontFamily: F.sys, fontSize: "0.5625rem", color: c, fontWeight: 700 }}>{gpu.memoryUsed}/{gpu.memoryTotal}</span>
+        <span style={{ fontFamily: F.sys, fontSize: "0.6875rem", color: c, fontWeight: 700 }}>{gpu.memoryUsed}/{gpu.memoryTotal} MB</span>
       </div>
     </div>
   );
@@ -267,7 +267,7 @@ function GpuMini({ gpu }: { gpu: GpuInfo }) {
 
 /* --- Fitness Chart --- */
 function FitnessChart({ history }: { history: GenRecord[] }) {
-  if (history.length < 2) return <div style={{ color: C.steelDim, fontSize: "0.5625rem", padding: 10, textAlign: "center" }}>COLLECTING DATA...</div>;
+  if (history.length < 2) return <div style={{ color: C.steelDim, fontSize: "0.6875rem", padding: 16, textAlign: "center" }}>COLLECTING DATA...</div>;
   const vals = history.map((h) => h.best_fitness);
   const mx = Math.max(...vals, 0.01), mn = Math.min(...vals);
   const W = 580, H = 140, p = { t: 6, r: 6, b: 18, l: 38 };
@@ -310,9 +310,9 @@ function ObjTable({ current, maxes, trends }: {
 }) {
   const rows = Object.entries(current).sort(([, a], [, b]) => b - a);
   if (!rows.length) return null;
-  const thS: React.CSSProperties = { fontSize: "0.4375rem", letterSpacing: "0.1em", textTransform: "uppercase", padding: "2px 3px", color: C.orange, borderBottom: `1px solid ${C.orangeDim}`, fontWeight: 400 };
+  const thS: React.CSSProperties = { fontSize: "0.5625rem", letterSpacing: "0.1em", textTransform: "uppercase", padding: "4px 6px", color: C.orange, borderBottom: `1px solid ${C.orangeDim}`, fontWeight: 400 };
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: F.sys, fontSize: "0.625rem" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: F.sys, fontSize: "0.75rem" }}>
       <thead><tr>
         <th style={{ ...thS, textAlign: "left" }}>OBJECTIVE</th>
         <th style={{ ...thS, textAlign: "right" }}>NOW</th>
@@ -326,17 +326,17 @@ function ObjTable({ current, maxes, trends }: {
           const tf = name === "transformer_failure";
           return (
             <tr key={name} style={{ borderBottom: `1px solid ${C.greenFaint}` }}>
-              <td style={{ padding: "2px 3px", color: tf ? C.orangeHot : C.orangeDim, fontSize: "0.5rem", textTransform: "uppercase" as const }}>
+              <td style={{ padding: "4px 6px", color: tf ? C.orangeHot : C.orangeDim, fontSize: "0.625rem", textTransform: "uppercase" as const }}>
                 {tf && "★ "}{name.replace(/_/g, " ")}
               </td>
-              <td style={{ padding: "2px 3px", textAlign: "right", color: tf && score >= 0.7 ? C.orangeHot : C.green, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+              <td style={{ padding: "4px 6px", textAlign: "right", color: tf && score >= 0.7 ? C.orangeHot : C.green, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
                 {score.toFixed(4)}
               </td>
-              <td style={{ padding: "2px 3px", textAlign: "right", color: atMax ? C.orangeHot : C.steelDim, fontVariantNumeric: "tabular-nums" }}>
+              <td style={{ padding: "4px 6px", textAlign: "right", color: atMax ? C.orangeHot : C.steelDim, fontVariantNumeric: "tabular-nums" }}>
                 {m ? m.max.toFixed(4) : "---"}
               </td>
-              <td style={{ padding: "2px 3px", textAlign: "right" }}>
-                <Spark data={t} color={tf ? C.orangeHot : C.greenDim} />
+              <td style={{ padding: "4px 6px", textAlign: "right" }}>
+                <Spark data={t} color={tf ? C.orangeHot : C.greenDim} w={56} h={14} />
               </td>
             </tr>
           );
@@ -350,30 +350,30 @@ function ObjTable({ current, maxes, trends }: {
 function BreakthroughPanel({ items }: { items: Breakthrough[] }) {
   if (!items.length) return (
     <div style={{
-      border: `1px dashed ${C.cyanDim}`, padding: "14px 12px", background: C.voidWarm, textAlign: "center",
+      border: `1px dashed ${C.cyanDim}`, padding: "16px 14px", background: C.voidWarm, textAlign: "center",
     }}>
-      <div style={{ fontFamily: F.kanji, fontSize: "0.75rem", color: C.steelDim }}>パラダイムシフト未検出</div>
-      <div style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.steelDim, marginTop: 3, letterSpacing: "0.06em" }}>
+      <div style={{ fontFamily: F.kanji, fontSize: "0.875rem", color: C.steelDim }}>パラダイムシフト未検出</div>
+      <div style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.steelDim, marginTop: 4, letterSpacing: "0.06em" }}>
         SCANNING FOR SIGNALS EXCEEDING TRANSFORMER BASELINE...
       </div>
     </div>
   );
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {items.map((bt, i) => (
         <div key={i} style={{
-          border: `2px solid ${C.red}`, padding: 10, background: C.redFill,
+          border: `2px solid ${C.red}`, padding: 12, background: C.redFill,
           animation: "alertPulse 2s infinite",
         }}>
           <div style={{
-            fontFamily: F.label, fontSize: "1.1rem", color: C.red, letterSpacing: "0.15em",
+            fontFamily: F.label, fontSize: "1.2rem", color: C.red, letterSpacing: "0.15em",
           }}>
             ◀ ◀ BREAKTHROUGH — GEN {bt.generation} ▶ ▶
           </div>
-          <div style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.steel, marginTop: 3 }}>
+          <div style={{ fontFamily: F.sys, fontSize: "0.75rem", color: C.steel, marginTop: 4 }}>
             FITNESS: {bt.fitness.toFixed(4)} | AGENT: {bt.agent_id}
           </div>
-          <div style={{ fontFamily: F.sys, fontSize: "0.5625rem", color: C.orangeHot, marginTop: 2 }}>
+          <div style={{ fontFamily: F.sys, fontSize: "0.6875rem", color: C.orangeHot, marginTop: 3 }}>
             {bt.signals.join(" | ")}
           </div>
         </div>
@@ -398,7 +398,7 @@ function RunHistory({ runs }: { runs: RunRecord[] }) {
         return (
           <div key={r.run_id} style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "2px 3px", fontSize: "0.5rem", fontFamily: F.sys,
+            padding: "4px 6px", fontSize: "0.6875rem", fontFamily: F.sys,
             borderLeft: `2px solid ${active ? C.green : C.steelDim}`,
             background: active ? C.greenFaint : "transparent",
           }}>
@@ -410,7 +410,7 @@ function RunHistory({ runs }: { runs: RunRecord[] }) {
             <span style={{ color: C.steelDim }}>{dur}</span>
             <span style={{ color: C.green, fontVariantNumeric: "tabular-nums" }}>G{r.final_generation}</span>
             <span style={{ color: C.cyan, fontVariantNumeric: "tabular-nums" }}>{r.best_fitness.toFixed(4)}</span>
-            <span style={{ color: active ? C.green : C.steelDim, fontSize: "0.4375rem" }}>{active ? "●" : "○"}</span>
+            <span style={{ color: active ? C.green : C.steelDim, fontSize: "0.5625rem" }}>{active ? "●" : "○"}</span>
           </div>
         );
       })}
@@ -423,10 +423,10 @@ function LogConsole({ lines }: { lines: string[] }) {
   return (
     <div style={{
       background: C.void, border: `1px solid ${C.cyanDim}`,
-      padding: 4, maxHeight: 160, overflowY: "auto",
-      fontFamily: F.sys, fontSize: "0.5rem", lineHeight: 1.4,
+      padding: 6, maxHeight: 180, overflowY: "auto",
+      fontFamily: F.sys, fontSize: "0.625rem", lineHeight: 1.5,
     }}>
-      {!lines.length && <div style={{ color: C.steelDim, padding: 6, textAlign: "center" }}>ログ待機中...</div>}
+      {!lines.length && <div style={{ color: C.steelDim, padding: 8, textAlign: "center" }}>ログ待機中...</div>}
       {lines.map((l, i) => {
         let c = C.steelDim;
         if (l.includes("ERROR")) c = C.red;
@@ -470,7 +470,10 @@ export default function TesterPage() {
       <style>{`
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
         @keyframes alertPulse{0%,100%{border-color:${C.red}}50%{border-color:${C.redHot}}}
-        body{margin:0;padding:0}
+        /* Override globals.css for NERV console */
+        html,body{margin:0;padding:0;background:${C.void}!important;font-family:${F.sys}!important;color:${C.steel}!important}
+        *{border-radius:0!important;box-sizing:border-box}
+        @media(max-width:768px){.nerv-grid{grid-template-columns:1fr!important}}
         @media(prefers-reduced-motion:reduce){*{animation:none!important}}
       `}</style>
 
@@ -479,32 +482,32 @@ export default function TesterPage() {
       {/* Vignette */}
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9998, background: "radial-gradient(ellipse at center,transparent 65%,rgba(0,0,0,0.2) 100%)" }} />
 
-      <div style={{ minHeight: "100vh", background: C.void, color: C.steel, fontFamily: F.sys }}>
+      <div style={{ minHeight: "100vh", background: C.void, color: C.steel, fontFamily: F.sys, maxWidth: 1200, margin: "0 auto" }}>
 
         {/* === HEADER === */}
         <div style={{
-          borderBottom: `2px solid ${C.orange}`, padding: "10px 16px",
+          borderBottom: `2px solid ${C.orange}`, padding: "12px 20px",
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
           <div>
-            <div style={{ fontFamily: F.label, fontSize: "clamp(1rem, 2.5vw, 1.5rem)", letterSpacing: "0.15em", color: C.orange, textTransform: "uppercase" as const }}>
+            <div style={{ fontFamily: F.label, fontSize: "clamp(1.1rem, 2.5vw, 1.6rem)", letterSpacing: "0.15em", color: C.orange, textTransform: "uppercase" as const }}>
               パラダイム探索監視 / PARADIGM SEARCH MONITOR
             </div>
-            <div style={{ fontFamily: F.sys, fontSize: "0.4375rem", color: C.steelDim, letterSpacing: "0.08em", textTransform: "uppercase" as const, marginTop: 1 }}>
+            <div style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.steelDim, letterSpacing: "0.08em", textTransform: "uppercase" as const, marginTop: 2 }}>
               NERV MAGI DIVISION — SEARCHING FOR TRANSFORMER-EXCEEDING ARCHITECTURES
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: sc, boxShadow: `0 0 6px ${sc}`, animation: data?.status === "ACTIVE" ? "pulse 2s infinite" : "none" }} />
-            <span style={{ fontFamily: F.sys, fontSize: "0.625rem", fontWeight: 700, color: sc }}>{data?.status || "OFFLINE"}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: sc, boxShadow: `0 0 8px ${sc}`, animation: data?.status === "ACTIVE" ? "pulse 2s infinite" : "none" }} />
+            <span style={{ fontFamily: F.sys, fontSize: "0.75rem", fontWeight: 700, color: sc }}>{data?.status || "OFFLINE"}</span>
           </div>
         </div>
 
         {/* === ERROR === */}
-        {error && <div style={{ margin: "6px 16px", padding: 6, border: `1px solid ${C.red}`, color: C.red, fontSize: "0.5625rem" }}>LINK ERROR: {error}</div>}
+        {error && <div style={{ margin: "8px 20px", padding: 8, border: `1px solid ${C.red}`, color: C.red, fontSize: "0.6875rem" }}>LINK ERROR: {error}</div>}
 
         {/* === MAIN 2-COLUMN === */}
-        <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 10, padding: "10px 16px" }}>
+        <div className="nerv-grid" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 14, padding: "14px 20px" }}>
 
           {/* --- LEFT: Core Monitoring --- */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -513,28 +516,28 @@ export default function TesterPage() {
             <TFGauge score={stats?.tfScore ?? 0} threshold={0.7} />
 
             {/* Best fitness */}
-            <div style={{ border: `1px solid ${C.cyanDim}`, padding: "8px 10px", background: C.voidWarm }}>
-              <div style={{ fontFamily: F.sys, fontSize: "0.4375rem", color: C.orangeDim, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 2 }}>
+            <div style={{ border: `1px solid ${C.cyanDim}`, padding: "10px 14px", background: C.voidWarm }}>
+              <div style={{ fontFamily: F.sys, fontSize: "0.625rem", color: C.orangeDim, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 4 }}>
                 最高適応度 / BEST FITNESS
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontFamily: F.sys, fontSize: "1.5rem", fontWeight: 700, color: C.green, fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontFamily: F.sys, fontSize: "1.75rem", fontWeight: 700, color: C.green, fontVariantNumeric: "tabular-nums" }}>
                   {stats?.bestEver?.toFixed(4) ?? "---"}
                 </span>
-                <span style={{ fontFamily: F.sys, fontSize: "0.5rem", color: C.steelDim }}>
+                <span style={{ fontFamily: F.sys, fontSize: "0.6875rem", color: C.steelDim }}>
                   @ GEN {stats?.bestGen ?? "---"}
                 </span>
               </div>
             </div>
 
             {/* Fitness chart */}
-            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 8, background: C.voidWarm }}>
+            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 12, background: C.voidWarm }}>
               <SH jp="適応度推移" en="FITNESS TRAJECTORY" />
               <FitnessChart history={data?.history || []} />
             </div>
 
             {/* Objective table */}
-            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 8, background: C.voidWarm }}>
+            <div style={{ border: `1px solid ${C.cyanDim}`, padding: 12, background: C.voidWarm }}>
               <SH jp="目標別スコア" en="OBJECTIVES" />
               {stats?.cur?.objectives
                 ? <ObjTable current={stats.cur.objectives} maxes={stats.objMaxes} trends={stats.objTrends} />
@@ -568,7 +571,7 @@ export default function TesterPage() {
 
             {/* Run History */}
             {(data?.runs?.length ?? 0) > 0 && (
-              <div style={{ border: `1px solid ${C.cyanDim}`, padding: "6px 8px", background: C.voidWarm }}>
+              <div style={{ border: `1px solid ${C.cyanDim}`, padding: "10px 12px", background: C.voidWarm }}>
                 <SH jp="実行履歴" en="RUN HISTORY" />
                 <RunHistory runs={data?.runs || []} />
               </div>
@@ -582,7 +585,7 @@ export default function TesterPage() {
 
             {/* Footer */}
             <div style={{
-              fontSize: "0.4375rem", color: C.steelDim, textAlign: "right",
+              fontSize: "0.5625rem", color: C.steelDim, textAlign: "right",
               letterSpacing: "0.05em", textTransform: "uppercase" as const,
             }}>
               AUTO-REFRESH 10s | SUPABASE REALTIME | {data?.updatedAt ? new Date(data.updatedAt).toLocaleTimeString("ja-JP") : "---"}
