@@ -614,7 +614,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[WARN] Failed to clear result cache: {e}")
 
-        # VRAM節約: アイドル時CPUオフロード（fp16はDINOv3がNaN出すので不可）
+        # VRAM節約: アイドル時CPUオフロード + 推論時AMP (autocast FP16)
         global _models_on_gpu
         if device.type == "cuda":
 
@@ -1228,21 +1228,53 @@ async def robots_txt():
 @app.get("/health")
 def health_check(request: Request):
     """ヘルスチェック + レート制限状態取得"""
+    # GPU可用性チェック
+    gpu_available = False
+    gpu_info = {}
+    try:
+        if torch.cuda.is_available():
+            # 実際にGPUにアクセスできるか確認
+            torch.cuda.mem_get_info(0)
+            gpu_available = True
+            mem_free, mem_total = torch.cuda.mem_get_info(0)
+            mem_used = mem_total - mem_free
+            gpu_info = {
+                "name": torch.cuda.get_device_name(0),
+                "vram_total_mb": round(mem_total / 1024 / 1024),
+                "vram_used_mb": round(mem_used / 1024 / 1024),
+                "vram_free_mb": round(mem_free / 1024 / 1024),
+                "models_on_gpu": _models_on_gpu,
+            }
+    except Exception:
+        gpu_available = False
+
+    # モデルロード状態チェック
+    models_loaded = dinov3_model is not None and dinov3_classifier is not None
+
+    # ステータス判定
+    if gpu_available and models_loaded:
+        status = "online"
+    elif models_loaded and not gpu_available:
+        status = "degraded"  # モデルはあるがGPUなし（CPU推論は遅い）
+    else:
+        status = "offline"
+
     # アクティブなモデルを返す
     model_name = "Moonlight (DINOv3)"
     if MOONKNIGHT_ENABLED:
         model_name += " & MoonKnight V3"
-    
+
     # レート制限情報 (Checker)
     key, is_vip, is_admin = get_rate_limit_key(request)
     _, remaining, limit = check_rate_limit(key, is_vip, is_admin, limit_type="checker")
-    
+
     # レート制限情報 (Guard)
     _, guard_remaining, guard_limit = check_rate_limit(key, is_vip, is_admin, limit_type="guard")
 
     return {
-        "status": "online",
+        "status": status,
         "model": model_name,
+        "gpu": gpu_info,
         "rate_limit": {
             "limit": limit,
             "remaining": remaining,
@@ -1616,9 +1648,12 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
     # 特徴抽出 + Attention Map + 中間層
     with torch.inference_mode():
         t = time.perf_counter()
-        outputs = dinov3_model(**inputs, output_attentions=True, output_hidden_states=True)
+        # AMP (autocast) でDINOv3フォワードパスをFP16化（VRAM ~40%削減）
+        # LayerNorm等は自動的にFP32に保たれるためNaNリスクなし
+        with torch.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+            outputs = dinov3_model(**inputs, output_attentions=True, output_hidden_states=True)
         t = _mark_perf("model_forward", t)
-        hidden_states = outputs.last_hidden_state
+        hidden_states = outputs.last_hidden_state.float()  # FP32に戻す（後続処理の安全性）
         features = hidden_states[:, 0, :]  # CLS token (1, 768)
 
         # Token layout (avoid hard-coding REG count / patch count).
@@ -1632,7 +1667,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         patch_embeddings_final = hidden_states[:, patch_start:patch_start + num_patches, :]  # (1, N, 768)
 
         # 中間層のパッチ埋め込み（統計量v2用）
-        mid_hidden = outputs.hidden_states[MID_LAYER_INDEX + 1]  # +1 because index 0 is initial embedding
+        mid_hidden = outputs.hidden_states[MID_LAYER_INDEX + 1].float()  # +1 because index 0 is initial embedding
         patch_embeddings_mid = mid_hidden[:, patch_start:patch_start + num_patches, :]  # (1, N, 768)
         mid_cls = mid_hidden[:, 0, :]  # (1, 768)
 
@@ -1794,8 +1829,9 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 inputs_tta = dinov3_processor(images=image_tta, return_tensors="pt")
                 inputs_tta = {k: v.to(device) for k, v in inputs_tta.items()}
                 # CLSトークンのみ必要なので、中間層の出力は不要
-                outputs_tta = dinov3_model(**inputs_tta, output_hidden_states=not two_head_mode)
-                features_tta = outputs_tta.last_hidden_state[:, 0, :]
+                with torch.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+                    outputs_tta = dinov3_model(**inputs_tta, output_hidden_states=not two_head_mode)
+                features_tta = outputs_tta.last_hidden_state[:, 0, :].float()
 
                 if two_head_mode:
                     # GPU/CPU統計量は元画像のものを使い回す（cpu_tensor_24d, cpu_tensor_567d, gpu_features）
@@ -1819,7 +1855,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                     return max(tta_probs_inner)
 
                 # fallback: legacy classifier（中間層が必要）
-                mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1]
+                mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1].float()
                 # Use dynamic token layout (same as main path).
                 patch_embeddings_mid_tta = mid_hidden_tta[:, patch_start:patch_start + num_patches, :]
                 if use_patch_stats:

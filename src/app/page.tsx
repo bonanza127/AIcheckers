@@ -70,7 +70,7 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
-  const [backendOnline] = useState<boolean | null>(true); // healthポーリング廃止、常にOnline表示
+  const [backendStatus, setBackendStatus] = useState<"online" | "degraded" | "offline" | null>(null);
   const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
   const [urlInput, setUrlInput] = useState("");
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
@@ -222,7 +222,24 @@ export default function Home() {
     }
   }, []);
 
-  // healthポーリング廃止 - /analyzeリクエスト失敗時にエラー表示で十分
+  // ヘルスチェックポーリング（30秒ごと）
+  useEffect(() => {
+    const apiUrl = getApiUrl();
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/health`, { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) { setBackendStatus("offline"); return; }
+        const data = await res.json();
+        const s = data.status;
+        setBackendStatus(s === "online" ? "online" : s === "degraded" ? "degraded" : "offline");
+      } catch {
+        setBackendStatus("offline");
+      }
+    };
+    checkHealth();
+    const id = setInterval(checkHealth, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // リセットまでのカウントダウン
   useEffect(() => {
@@ -952,10 +969,20 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
           <div className="flex items-center gap-4 text-xs">
             {/* Server Status */}
             <div className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${backendOnline === null ? "bg-gray-500 animate-pulse" : backendOnline ? "bg-success" : "bg-danger"}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                backendStatus === null ? "bg-gray-500 animate-pulse"
+                : backendStatus === "online" ? "bg-success"
+                : backendStatus === "degraded" ? "bg-yellow-500"
+                : "bg-danger"
+              }`} />
               <span className="hidden md:inline text-muted">Server Status:</span>
-              <span className={backendOnline ? "text-success" : backendOnline === false ? "text-danger" : "text-gray-500"}>
-                {backendOnline === null ? "..." : backendOnline ? "Online" : "Offline"}
+              <span className={
+                backendStatus === "online" ? "text-success"
+                : backendStatus === "degraded" ? "text-yellow-500"
+                : backendStatus === "offline" ? "text-danger"
+                : "text-gray-500"
+              }>
+                {backendStatus === null ? "..." : backendStatus === "online" ? "Online" : backendStatus === "degraded" ? "No GPU" : "Offline"}
               </span>
             </div>
 
@@ -1266,7 +1293,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 />
                 <button
                   onClick={handleUrlSubmit}
-                  disabled={!urlInput.trim() || isLoadingUrl || !backendOnline}
+                  disabled={!urlInput.trim() || isLoadingUrl || backendStatus === "offline"}
                   className="px-4 py-2 rounded-lg bg-accent/20 border border-accent text-accent font-medium text-sm hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoadingUrl ? "読込中..." : "URL解析"}
