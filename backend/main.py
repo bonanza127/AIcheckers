@@ -102,6 +102,17 @@ two_head_mode = False
 # VRAM節約: アイドル時CPUオフロード
 OFFLOAD_IDLE_SECONDS = int(os.getenv("OFFLOAD_IDLE_SECONDS", "60"))  # 0で無効
 _models_on_gpu = False
+
+# AMP autocast: Ampere以上(compute capability >= 8.0)でのみ有効
+# GTX 1660等のTuring世代はFP16精度が不安定でNaNを出す
+_amp_enabled = False
+if torch.cuda.is_available():
+    cap = torch.cuda.get_device_capability(0)
+    _amp_enabled = cap[0] >= 8
+    if _amp_enabled:
+        print(f"[AMP] Enabled: compute capability {cap[0]}.{cap[1]}")
+    else:
+        print(f"[AMP] Disabled: compute capability {cap[0]}.{cap[1]} (requires >= 8.0)")
 _last_inference_time: float = 0.0
 _offload_task: asyncio.Task | None = None
 _gpu_lock = asyncio.Lock()
@@ -1650,7 +1661,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
         t = time.perf_counter()
         # AMP (autocast) でDINOv3フォワードパスをFP16化（VRAM ~40%削減）
         # LayerNorm等は自動的にFP32に保たれるためNaNリスクなし
-        with torch.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+        with torch.autocast("cuda", dtype=torch.float16, enabled=_amp_enabled):
             outputs = dinov3_model(**inputs, output_attentions=True, output_hidden_states=True)
         t = _mark_perf("model_forward", t)
         hidden_states = outputs.last_hidden_state.float()  # FP32に戻す（後続処理の安全性）
@@ -1829,7 +1840,7 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
                 inputs_tta = dinov3_processor(images=image_tta, return_tensors="pt")
                 inputs_tta = {k: v.to(device) for k, v in inputs_tta.items()}
                 # CLSトークンのみ必要なので、中間層の出力は不要
-                with torch.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+                with torch.autocast("cuda", dtype=torch.float16, enabled=_amp_enabled):
                     outputs_tta = dinov3_model(**inputs_tta, output_hidden_states=not two_head_mode)
                 features_tta = outputs_tta.last_hidden_state[:, 0, :].float()
 
@@ -2272,7 +2283,7 @@ async def guard_image(
         # MoonKnightエンジンの遅延初期化
         if moonknight_engine is None:
             moonknight_engine = MoonKnightV3(
-                model_dir="/home/techne/aicheckers/models/fastprotect",
+                model_dir=str(PROJECT_ROOT / "models" / "fastprotect"),
                 device=str(device),
                 use_adaptive=True,
                 use_warping=True
@@ -2429,7 +2440,7 @@ async def guard_image_stream(
                 if moonknight_engine is None:
                     progress_callback(10, 100) # Loading
                     moonknight_engine = MoonKnightV3(
-                        model_dir="/home/techne/aicheckers/models/fastprotect",
+                        model_dir=str(PROJECT_ROOT / "models" / "fastprotect"),
                         device=str(device),
                         use_adaptive=True,
                         use_warping=True

@@ -39,7 +39,7 @@ LBP_R = 1
 LBP_UNIFORM_BINS = 59  # method='nri_uniform'
 
 # Top256 indices path
-TOP256_INDICES_PATH = Path("/home/techne/aicheckers/embeddings/patch_dist_top256_indices.npy")
+TOP256_INDICES_PATH = Path(__file__).parent.parent / "embeddings" / "patch_dist_top256_indices.npy"
 _top256_indices: Optional[np.ndarray] = None
 
 
