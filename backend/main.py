@@ -1260,7 +1260,7 @@ def health_check(request: Request):
         gpu_available = False
 
     # モデルロード状態チェック
-    models_loaded = dinov3_model is not None and dinov3_classifier is not None
+    models_loaded = dinov3_model is not None and (dinov3_classifier is not None or two_head_mode)
 
     # ステータス判定
     if gpu_available and models_loaded:
