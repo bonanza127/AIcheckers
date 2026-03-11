@@ -54,3 +54,13 @@ __pycache__/
 
 # Temporary/cache files
 tag_translation_cache.json
+
+# Analysis/experiment artifacts
+misclassified_analysis/
+lora_results/
+experiments/
+temp_protected_output/
+temp_trustmark_fastprotect_test/
+target_images/
+logs/
+pap/
