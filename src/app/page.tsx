@@ -243,6 +243,7 @@ export default function Home() {
   }, []);
 
   // ハートビート（30秒ごと）+ 同時アクセス数取得
+  const paddingRef = useRef<number>(Math.floor(Math.random() * 10) + 3); // 初期値3〜12
   useEffect(() => {
     const apiUrl = getApiUrl();
     const beat = async () => {
@@ -250,9 +251,10 @@ export default function Home() {
         const res = await fetch(`${apiUrl}/heartbeat`, { method: "POST", signal: AbortSignal.timeout(5000) });
         if (res.ok) {
           const data = await res.json();
-          const base = data.active;
-          const padding = Math.floor(Math.random() * 10) + 3; // 3〜12のランダム加算
-          setActiveUsers(base + padding);
+          // 前回値から±1〜2でじわじわ変化、3〜12の範囲にクランプ
+          const delta = Math.floor(Math.random() * 3) - 1; // -1, 0, +1
+          paddingRef.current = Math.min(12, Math.max(3, paddingRef.current + delta));
+          setActiveUsers(data.active + paddingRef.current);
         }
       } catch {}
     };
