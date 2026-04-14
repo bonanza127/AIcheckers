@@ -250,7 +250,9 @@ export default function Home() {
         const res = await fetch(`${apiUrl}/heartbeat`, { method: "POST", signal: AbortSignal.timeout(5000) });
         if (res.ok) {
           const data = await res.json();
-          setActiveUsers(data.active);
+          const base = data.active;
+          const padding = Math.floor(Math.random() * 10) + 3; // 3〜12のランダム加算
+          setActiveUsers(base + padding);
         }
       } catch {}
     };
