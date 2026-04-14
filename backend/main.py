@@ -178,6 +178,10 @@ RATE_LIMIT_DATA_PATH = PROJECT_ROOT / "data" / "rate_limits.json"
 rate_limit_data: dict[str, dict] = defaultdict(lambda: {"tokens": MAX_TOKENS, "last_recovery": datetime.now()})
 rate_limit_guard: dict[str, dict] = defaultdict(lambda: {"tokens": GUARD_MAX_TOKENS, "last_recovery": datetime.now()})
 
+# 同時アクセス数トラッキング: IP -> 最終ハートビート時刻
+HEARTBEAT_TTL = 60  # 60秒以内にpingがあれば「同時アクセス中」とみなす
+active_heartbeats: dict[str, datetime] = {}
+
 # CORSなどで使用するデバッグフラグ（ローカル開発用にデフォルトtrue）
 DEBUG = os.getenv("DEBUG", "true").lower() == "true"
 
@@ -1234,6 +1238,29 @@ async def root():
 async def robots_txt():
     """検索エンジンのクロールを拒否"""
     return PlainTextResponse("User-agent: *\nDisallow: /")
+
+
+@app.post("/heartbeat")
+async def heartbeat(request: Request):
+    """同時アクセス数トラッキング用ハートビート"""
+    ip = request.headers.get("CF-Connecting-IP") or request.client.host
+    now = datetime.now()
+    active_heartbeats[ip] = now
+    # 古いエントリを掃除
+    cutoff = now - timedelta(seconds=HEARTBEAT_TTL)
+    expired = [k for k, v in active_heartbeats.items() if v < cutoff]
+    for k in expired:
+        del active_heartbeats[k]
+    return {"active": len(active_heartbeats)}
+
+
+@app.get("/active-users")
+async def active_users():
+    """現在の同時アクセス数を返す"""
+    now = datetime.now()
+    cutoff = now - timedelta(seconds=HEARTBEAT_TTL)
+    count = sum(1 for v in active_heartbeats.values() if v >= cutoff)
+    return {"active": count}
 
 
 @app.get("/health")

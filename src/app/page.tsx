@@ -71,6 +71,7 @@ export default function Home() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true); // デフォルトでヒートマップ表示
   const [backendStatus, setBackendStatus] = useState<"online" | "degraded" | "offline" | null>(null);
+  const [activeUsers, setActiveUsers] = useState<number | null>(null);
   const [selectedModel, setSelectedModel] = useState<"anixplore" | "legekka" | "dinov3">("dinov3");
   const [urlInput, setUrlInput] = useState("");
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
@@ -238,6 +239,23 @@ export default function Home() {
     };
     checkHealth();
     const id = setInterval(checkHealth, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ハートビート（30秒ごと）+ 同時アクセス数取得
+  useEffect(() => {
+    const apiUrl = getApiUrl();
+    const beat = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/heartbeat`, { method: "POST", signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const data = await res.json();
+          setActiveUsers(data.active);
+        }
+      } catch {}
+    };
+    beat();
+    const id = setInterval(beat, 30_000);
     return () => clearInterval(id);
   }, []);
 
@@ -950,7 +968,7 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="site-header sticky top-0 z-40 p-4">
+      <header className="site-header sticky top-0 z-40 p-4 relative">
         <div className="container mx-auto flex justify-between items-center">
           {/* 左: メニュー + ロゴ */}
           <div className="flex items-center gap-0">
@@ -963,6 +981,15 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
                 How it works?
               </a>
             </h2>
+          </div>
+
+          {/* 中央: 同時アクセス数 */}
+          <div className="absolute left-1/2 -translate-x-1/2 text-xs text-muted hidden md:block">
+            {activeUsers !== null && activeUsers > 0 && (
+              <span>
+                今 <span className="text-foreground font-medium">{activeUsers}</span> 人が利用中
+              </span>
+            )}
           </div>
 
           {/* 右: ステータス + VIP */}
