@@ -984,10 +984,12 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
           </div>
 
           {/* 中央: 同時アクセス数 */}
-          <div className="absolute left-1/2 -translate-x-1/2 text-xs text-muted hidden md:block">
+          <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2">
             {activeUsers !== null && activeUsers > 0 && (
-              <span>
-                今 <span className="text-foreground font-medium">{activeUsers}</span> 人が利用中
+              <span className="text-xs text-muted whitespace-nowrap">
+                現在{" "}
+                <span className="text-foreground font-semibold tabular-nums">{activeUsers}</span>
+                {" "}人が利用中
               </span>
             )}
           </div>
