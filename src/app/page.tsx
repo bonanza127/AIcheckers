@@ -251,12 +251,15 @@ export default function Home() {
         const res = await fetch(`${apiUrl}/heartbeat`, { method: "POST", signal: AbortSignal.timeout(5000) });
         if (res.ok) {
           const data = await res.json();
-          // paddingは不規則に変化（70%は±0〜2、30%は変化なし）、3〜12の範囲
+          // paddingは不規則に変化、3〜12の範囲
           const r = Math.random();
-          const delta = r < 0.3 ? 0
-            : r < 0.6 ? (Math.random() < 0.5 ? 1 : -1)
-            : r < 0.8 ? (Math.random() < 0.5 ? 2 : -2)
-            : (Math.random() < 0.5 ? 1 : -1);
+          const sign = Math.random() < 0.5 ? 1 : -1;
+          const delta = r < 0.25 ? 0
+            : r < 0.50 ? sign * 1
+            : r < 0.68 ? sign * 2
+            : r < 0.82 ? sign * 3
+            : r < 0.92 ? sign * 4
+            : sign * 5;
           paddingRef.current = Math.min(12, Math.max(3, paddingRef.current + delta));
           setActiveUsers(data.active + paddingRef.current);
         }
