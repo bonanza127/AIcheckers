@@ -931,6 +931,22 @@ def compute_mid_adj_sim_var(patches: torch.Tensor) -> torch.Tensor:
     return all_sim.var(dim=1, keepdim=True)
 
 
+def _aggregate_two_head_probs(
+    main_prob: float,
+    sub1_prob: float | None = None,
+    sub2_prob: float | None = None,
+) -> float:
+    """Use stable production sub-models for public verdicts when available.
+
+    The experimental candidate_b main model is intentionally kept as a debug
+    signal only because it can saturate on out-of-domain inputs.
+    """
+    stable_probs = [p for p in (sub1_prob, sub2_prob) if p is not None]
+    if stable_probs:
+        return max(stable_probs)
+    return main_prob
+
+
 # ---------------------------------------------------------------------------
 # VRAM節約: GPU ⇔ CPU オフロードヘルパー
 # ---------------------------------------------------------------------------
@@ -1806,42 +1822,43 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
             cpu_567d = np.concatenate(cpu_567_parts).astype(np.float32)
             cpu_tensor_567d = torch.tensor(cpu_567d, dtype=torch.float32, device=device).unsqueeze(0)
 
-            # 3モデルアンサンブル推論
-            ai_probs = []
+            # 3モデル推論。公開スコアは安定した本番サブモデルから集約する。
+            ai_prob_sub1 = None
+            ai_prob_sub2 = None
 
             # メインモデル推論 (cpu_dim=567)
             t = time.perf_counter()
             logits_main = two_head_model(cls_features, gpu_features_main, cpu_tensor_567d)
             ai_prob_main = torch.sigmoid(logits_main)[0].item()
-            ai_probs.append(ai_prob_main)
 
             # サブ1推論 (cpu_dim=24)
             if two_head_model_sub1 is not None:
                 logits_sub1 = two_head_model_sub1(cls_features, gpu_features, cpu_tensor_24d)
                 ai_prob_sub1 = torch.sigmoid(logits_sub1)[0].item()
-                ai_probs.append(ai_prob_sub1)
 
             # サブ2推論 (cpu_dim=24)
             if two_head_model_sub2 is not None:
                 logits_sub2 = two_head_model_sub2(cls_features, gpu_features, cpu_tensor_24d)
                 ai_prob_sub2 = torch.sigmoid(logits_sub2)[0].item()
-                ai_probs.append(ai_prob_sub2)
             t = _mark_perf("two_head_infer", t)
 
-            # max集約
-            ai_prob = max(ai_probs)
+            ai_prob = _aggregate_two_head_probs(
+                ai_prob_main,
+                ai_prob_sub1 if two_head_model_sub1 is not None else None,
+                ai_prob_sub2 if two_head_model_sub2 is not None else None,
+            )
             if DEBUG_PROBS:
                 probs_breakdown = {
                     "main": float(ai_prob_main),
                     "sub1": float(ai_prob_sub1) if two_head_model_sub1 is not None else None,
                     "sub2": float(ai_prob_sub2) if two_head_model_sub2 is not None else None,
-                    "max": float(ai_prob),
+                    "stable_max": float(ai_prob),
                     "cache_tag": MODEL_CACHE_TAG,
                     "main_model": TWO_HEAD_DIR_MAIN.name if TWO_HEAD_DIR_MAIN.exists() else None,
                     "sub1_model": TWO_HEAD_DIR_SUB1.name if TWO_HEAD_DIR_SUB1.exists() else None,
                     "sub2_model": TWO_HEAD_DIR_SUB2.name if TWO_HEAD_DIR_SUB2.exists() else None,
                 }
-                print(f"[DEBUG_PROBS] main={ai_prob_main:.3f}, sub1={ai_prob_sub1:.3f}, sub2={ai_prob_sub2:.3f}, max={ai_prob:.3f}")
+                print(f"[DEBUG_PROBS] main={ai_prob_main:.3f}, sub1={ai_prob_sub1}, sub2={ai_prob_sub2}, stable_max={ai_prob:.3f}")
         else:
             features = normalize_features(features)
             logits = dinov3_classifier(features)
@@ -1873,24 +1890,28 @@ async def analyze_with_dinov3(image: Image.Image) -> dict:
 
                 if two_head_mode:
                     # GPU/CPU統計量は元画像のものを使い回す（cpu_tensor_24d, cpu_tensor_567d, gpu_features）
-                    tta_probs_inner = []
-
                     # メインモデル推論 (cpu_dim=567)
                     # main model expects training-aligned preprocessing (see _prep_candidate_block)
                     logits_main_tta = two_head_model(features_tta, gpu_features_main, cpu_tensor_567d)
-                    tta_probs_inner.append(torch.sigmoid(logits_main_tta)[0].item())
+                    ai_prob_main_tta = torch.sigmoid(logits_main_tta)[0].item()
 
                     # サブ1推論 (cpu_dim=24)
+                    ai_prob_sub1_tta = None
                     if two_head_model_sub1 is not None:
                         logits_sub1_tta = two_head_model_sub1(features_tta, gpu_features, cpu_tensor_24d)
-                        tta_probs_inner.append(torch.sigmoid(logits_sub1_tta)[0].item())
+                        ai_prob_sub1_tta = torch.sigmoid(logits_sub1_tta)[0].item()
 
                     # サブ2推論 (cpu_dim=24)
+                    ai_prob_sub2_tta = None
                     if two_head_model_sub2 is not None:
                         logits_sub2_tta = two_head_model_sub2(features_tta, gpu_features, cpu_tensor_24d)
-                        tta_probs_inner.append(torch.sigmoid(logits_sub2_tta)[0].item())
+                        ai_prob_sub2_tta = torch.sigmoid(logits_sub2_tta)[0].item()
 
-                    return max(tta_probs_inner)
+                    return _aggregate_two_head_probs(
+                        ai_prob_main_tta,
+                        ai_prob_sub1_tta,
+                        ai_prob_sub2_tta,
+                    )
 
                 # fallback: legacy classifier（中間層が必要）
                 mid_hidden_tta = outputs_tta.hidden_states[MID_LAYER_INDEX + 1].float()
