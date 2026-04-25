@@ -78,6 +78,7 @@ export default function Home() {
   const [rateLimitRemaining, setRateLimitRemaining] = useState<number | null>(null);
   const [timeUntilReset, setTimeUntilReset] = useState("--:--:--");
   const [isVipModalOpen, setIsVipModalOpen] = useState(false);
+  const [vipModalError, setVipModalError] = useState("");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true); // 認証状態確認中
 
@@ -179,19 +180,53 @@ export default function Home() {
       const token = params.get("token");
       const name = params.get("name");
       const email = params.get("email");
-      const isVip = params.get("is_vip") === "true";
-      const isAdmin = params.get("is_admin") === "true";
 
       if (token && name && email) {
-        setAuthUser({ name, email, token, isVip, isAdmin });
-        localStorage.setItem("auth_token", token);
-        setIsVipModalOpen(true); // VIPモーダルを開いて決済へ
+        const apiUrl = getApiUrl();
+        fetch(`${apiUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+          .then(res => res.ok ? res.json() : Promise.reject())
+          .then(data => {
+            if (data.is_vip || data.is_admin) {
+              setAuthUser({
+                name: data.name || name,
+                email: data.email || email,
+                token,
+                isVip: data.is_vip,
+                isAdmin: data.is_admin
+              });
+              localStorage.setItem("auth_token", token);
+              setVipModalError("");
+              setIsVipModalOpen(true);
+            } else {
+              localStorage.removeItem("auth_token");
+              setAuthUser(null);
+              setVipModalError("VIP会員登録がありません。新規会員登録してください。");
+              setIsVipModalOpen(true);
+            }
+          })
+          .catch(() => {
+            localStorage.removeItem("auth_token");
+            setAuthUser(null);
+            setVipModalError("VIP会員登録がありません。新規会員登録してください。");
+            setIsVipModalOpen(true);
+          })
+          .finally(() => setIsAuthLoading(false));
+      } else {
+        setIsAuthLoading(false);
       }
       // URLパラメータをクリア
       window.history.replaceState({}, "", window.location.pathname);
-      setIsAuthLoading(false);
     } else if (authStatus === "error") {
-      console.error("OAuth error:", params.get("message"));
+      const message = params.get("message");
+      console.error("OAuth error:", message);
+      if (message === "account_not_found" || message === "registration_required") {
+        localStorage.removeItem("auth_token");
+        setAuthUser(null);
+        setVipModalError("VIP会員登録がありません。新規会員登録してください。");
+        setIsVipModalOpen(true);
+      }
       window.history.replaceState({}, "", window.location.pathname);
       setIsAuthLoading(false);
     } else {
@@ -204,13 +239,18 @@ export default function Home() {
         })
           .then(res => res.ok ? res.json() : Promise.reject())
           .then(data => {
-            setAuthUser({
-              name: data.name,
-              email: data.email,
-              token: savedToken,
-              isVip: data.is_vip,
-              isAdmin: data.is_admin
-            });
+            if (data.is_vip || data.is_admin) {
+              setAuthUser({
+                name: data.name,
+                email: data.email,
+                token: savedToken,
+                isVip: data.is_vip,
+                isAdmin: data.is_admin
+              });
+            } else {
+              localStorage.removeItem("auth_token");
+              setAuthUser(null);
+            }
           })
           .catch(() => {
             // トークン無効 → 削除
@@ -1028,7 +1068,10 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
 
             {/* VIP - 控えめなブラックカード（ログイン時は紫の光） */}
             <button
-              onClick={() => setIsVipModalOpen(true)}
+              onClick={() => {
+                setVipModalError("");
+                setIsVipModalOpen(true);
+              }}
               disabled={isAuthLoading}
               className={`group relative px-4 py-1.5 font-[family-name:var(--font-cinzel)] text-[10px] font-medium tracking-[0.2em] transition-all duration-500 bg-zinc-900/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] rounded-sm ${isAuthLoading
                 ? "text-zinc-600 border border-zinc-800/50 cursor-wait"
@@ -1382,9 +1425,13 @@ AI Possibility: ${result.aiScore.toFixed(1)}%
       {/* VIP Modal */}
       <VipModal
         isOpen={isVipModalOpen}
-        onClose={() => setIsVipModalOpen(false)}
+        onClose={() => {
+          setIsVipModalOpen(false);
+          setVipModalError("");
+        }}
         authUser={authUser}
         feature="checker"
+        initialError={vipModalError}
       />
     </div>
   );

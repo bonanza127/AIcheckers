@@ -17,30 +17,43 @@ type VipModalProps = {
   onClose: () => void;
   authUser?: AuthUser | null;
   feature?: "checker" | "guard";
+  initialError?: string;
 };
 
 type ModalStep = "auth" | "payment" | "complete" | "status";
 
-export default function VipModal({ isOpen, onClose, authUser, feature = "checker" }: VipModalProps) {
+const ACCOUNT_NOT_FOUND_MESSAGE = "VIP会員登録がありません。新規会員登録してください。";
+const VIP_PREPARING_MESSAGE = "VIP会員機能は現在準備中です。";
+
+export default function VipModal({ isOpen, onClose, authUser, feature = "checker", initialError = "" }: VipModalProps) {
   const [step, setStep] = useState<ModalStep>("auth");
 
   // タブ切り替え（新規登録 / ログイン）
-  const [authTab, setAuthTab] = useState<"register" | "login">("register");
+  const [authTab, setAuthTab] = useState<"register" | "login">("login");
 
   // 認証状態に応じてステップを設定
   useEffect(() => {
+    if (isOpen && initialError) {
+      setStep("auth");
+      setAuthTab("login");
+      setError(initialError);
+      return;
+    }
     if (authUser && isOpen) {
       setUserName(authUser.name);
-      setUserEmail(authUser.email);
-      if (authUser.isVip) {
+      if (authUser.isVip || authUser.isAdmin) {
         setStep("status"); // VIPならステータス表示
       } else {
-        setStep("payment"); // 非VIPなら決済へ
+        // VIP機能は準備中のため、非VIPユーザーを決済へ進めない。
+        localStorage.removeItem("auth_token");
+        setStep("auth");
+        setAuthTab("login");
+        setError(ACCOUNT_NOT_FOUND_MESSAGE);
       }
     } else if (isOpen && !authUser) {
       setStep("auth"); // 未ログインなら認証へ
     }
-  }, [authUser, isOpen]);
+  }, [authUser, initialError, isOpen]);
 
   // 新規登録用
   const [email, setEmail] = useState("");
@@ -53,7 +66,6 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
 
   // ユーザー情報（ログイン後）
   const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
 
   // ローディング状態
   const [isProcessing, setIsProcessing] = useState(false);
@@ -63,54 +75,8 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setIsProcessing(true);
-
-    if (!email.trim()) {
-      setError("メールアドレスを入力してください");
-      setIsProcessing(false);
-      return;
-    }
-    if (password.length < 8) {
-      setError("パスワードは8文字以上で入力してください");
-      setIsProcessing(false);
-      return;
-    }
-    if (password !== passwordConfirm) {
-      setError("パスワードが一致しません");
-      setIsProcessing(false);
-      return;
-    }
-
-    try {
-      const response = await fetch(`${getApiUrl()}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name: email.split("@")[0] }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || "登録に失敗しました");
-      }
-
-      // トークン保存
-      localStorage.setItem("auth_token", data.token);
-      setUserName(data.name);
-      setUserEmail(data.email);
-      setStep("payment");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "登録に失敗しました");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleOAuthRegister = (provider: string) => {
-    // OAuthリダイレクト
-    const endpoint = provider === "Google" ? "/auth/google" : "/auth/twitter";
-    window.location.href = `${getApiUrl()}${endpoint}`;
+    setError(VIP_PREPARING_MESSAGE);
+    setIsProcessing(false);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -138,15 +104,15 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
       }
 
       // トークン保存
-      localStorage.setItem("auth_token", data.token);
       setUserName(data.name);
-      setUserEmail(data.email);
 
       if (data.is_vip) {
+        localStorage.setItem("auth_token", data.token);
         // VIPならページリロードしてステータス反映
         window.location.reload();
       } else {
-        setStep("payment");
+        localStorage.removeItem("auth_token");
+        setError(ACCOUNT_NOT_FOUND_MESSAGE);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "ログインに失敗しました");
@@ -156,70 +122,26 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
   };
 
   const handleOAuthLogin = (provider: string) => {
-    // OAuthリダイレクト（登録と同じエンドポイント）
     const endpoint = provider === "Google" ? "/auth/google" : "/auth/twitter";
+    localStorage.removeItem("auth_token");
     window.location.href = `${getApiUrl()}${endpoint}`;
   };
 
   const handlePayment = async (method: "stripe" | "paypal" | "paypay") => {
-    if (!userEmail) {
-      setError("メールアドレスが設定されていません");
-      return;
-    }
-
-    setIsProcessing(true);
-    setError("");
-
-    try {
-      let endpoint = "/create-checkout-session";
-      if (method === "paypal") {
-        endpoint = "/create-paypal-payment";
-      } else if (method === "paypay") {
-        // PayPayは法人契約が必要なため、現在準備中
-        setError("PayPay決済は現在準備中です");
-        setIsProcessing(false);
-        return;
-      }
-
-      const response = await fetch(`${getApiUrl()}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: userEmail,
-          payment_method: method,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || "決済セッションの作成に失敗しました");
-      }
-
-      const data = await response.json();
-
-      // 決済ページを新しいウィンドウで開く
-      if (data.checkout_url) {
-        window.open(data.checkout_url, "_blank", "width=500,height=700");
-      }
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "エラーが発生しました");
-    } finally {
-      setIsProcessing(false);
-    }
+    void method;
+    setError(VIP_PREPARING_MESSAGE);
   };
 
   const handleClose = () => {
     // モーダルを閉じる時にリセット
     setStep("auth");
-    setAuthTab("register");
+    setAuthTab("login");
     setEmail("");
     setPassword("");
     setPasswordConfirm("");
     setLoginEmail("");
     setLoginPassword("");
     setUserName("");
-    setUserEmail("");
     setError("");
     setIsProcessing(false);
     onClose();
@@ -466,11 +388,11 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
                 {authTab === "login" && (
                   <div className="space-y-4">
                     {/* OAuthログインボタン */}
-                    <div className="flex gap-2 opacity-50 relative">
-                      <div className="absolute inset-0 z-10 cursor-not-allowed"></div>
+                    <div className="flex gap-2">
                       <button
-                        disabled
-                        className="flex-1 py-2.5 rounded-lg bg-white bg-opacity-70 flex items-center justify-center gap-2 border-2 border-gray-300 cursor-not-allowed"
+                        type="button"
+                        onClick={() => handleOAuthLogin("Google")}
+                        className="flex-1 py-2.5 rounded-lg bg-white flex items-center justify-center gap-2 border-2 border-gray-300 hover:bg-gray-100 transition-colors"
                       >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
                           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -478,16 +400,17 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
                           <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                           <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                         </svg>
-                        <span className="text-sm font-bold text-gray-700">Googleでログイン（準備中）</span>
+                        <span className="text-sm font-bold text-gray-700">Googleでログイン</span>
                       </button>
                       <button
-                        disabled
-                        className="flex-1 py-2.5 rounded-lg bg-black bg-opacity-70 flex items-center justify-center gap-2 border-2 border-gray-600 cursor-not-allowed"
+                        type="button"
+                        onClick={() => handleOAuthLogin("Twitter")}
+                        className="flex-1 py-2.5 rounded-lg bg-black bg-opacity-70 flex items-center justify-center gap-2 border-2 border-gray-600 hover:bg-opacity-90 transition-colors"
                       >
                         <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                         </svg>
-                        <span className="text-sm font-bold text-white">Xでログイン（準備中）</span>
+                        <span className="text-sm font-bold text-white">Xでログイン</span>
                       </button>
                     </div>
 
@@ -499,14 +422,12 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
                     </div>
 
                     {/* メールログインフォーム */}
-                    <form onSubmit={handleLogin} className="space-y-3 opacity-50 relative">
-                      <div className="absolute inset-0 z-10 cursor-not-allowed"></div>
+                    <form onSubmit={handleLogin} className="space-y-3">
                       <input
                         type="email"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         placeholder="メールアドレス"
-                        disabled
                         className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors disabled:cursor-not-allowed"
                       />
                       <input
@@ -514,15 +435,21 @@ export default function VipModal({ isOpen, onClose, authUser, feature = "checker
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         placeholder="パスワード"
-                        disabled
                         className="w-full px-4 py-2.5 rounded-lg bg-card-bg border border-gray-600 text-foreground placeholder-gray-500 focus:border-amber-500 focus:outline-none transition-colors disabled:cursor-not-allowed"
                       />
                       <button
                         type="submit"
-                        disabled
-                        className="w-full py-3 rounded-lg font-bold bg-gray-700 text-gray-400 cursor-not-allowed flex items-center justify-center gap-2"
+                        disabled={isProcessing}
+                        className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-amber-500 to-yellow-500 text-black hover:from-amber-400 hover:to-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
                       >
-                        準備中
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            ログイン中...
+                          </>
+                        ) : (
+                          "ログイン"
+                        )}
                       </button>
                     </form>
                   </div>

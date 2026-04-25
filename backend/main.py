@@ -2848,6 +2848,8 @@ class CreateCheckoutRequest(BaseModel):
 @app.post("/create-checkout-session")
 async def create_checkout_session(body: CreateCheckoutRequest):
     """Stripe Checkout Sessionを作成"""
+    raise HTTPException(status_code=503, detail="VIP会員機能は現在準備中です")
+
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Stripe is not configured")
 
@@ -2978,6 +2980,12 @@ async def auth_google_callback(request: Request):
         name = user_info.get('name', email.split('@')[0])
         google_id = user_info.get('sub')
 
+        # VIP機能は準備中。既存VIP/管理者以外はログインさせない。
+        is_admin = email in ADMIN_EMAILS
+        is_vip = email in vip_users or is_admin
+        if not is_vip:
+            return RedirectResponse(f"{FRONTEND_URL}?auth=error&message=registration_required")
+
         # ユーザー登録/更新
         global users_db
         user_id = f"google_{google_id}"
@@ -2994,10 +3002,6 @@ async def auth_google_callback(request: Request):
 
         # JWT発行
         jwt_token = create_jwt_token(user_id, email)
-
-        # VIPステータス・管理者確認（ADMIN_EMAILSも自動VIP/Admin）
-        is_admin = email in ADMIN_EMAILS
-        is_vip = email in vip_users or is_admin
 
         return RedirectResponse(
             f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}&is_admin={str(is_admin).lower()}"
@@ -3037,11 +3041,17 @@ async def auth_twitter_callback(request: Request):
         twitter_id = user_data.get('id')
         name = user_data.get('name', user_data.get('username'))
         username = user_data.get('username')
+        email = f"{username}@twitter.local"  # Twitter はメールを提供しない
+
+        # VIP機能は準備中。既存VIP/管理者以外はログインさせない。
+        is_admin = email in ADMIN_EMAILS
+        is_vip = email in vip_users or f"@{username}" in vip_users or is_admin
+        if not is_vip:
+            return RedirectResponse(f"{FRONTEND_URL}?auth=error&message=registration_required")
 
         # ユーザー登録/更新
         global users_db
         user_id = f"twitter_{twitter_id}"
-        email = f"{username}@twitter.local"  # Twitter はメールを提供しない
 
         if user_id not in users_db:
             users_db[user_id] = {
@@ -3056,10 +3066,6 @@ async def auth_twitter_callback(request: Request):
 
         # JWT発行
         jwt_token = create_jwt_token(user_id, email)
-
-        # VIPステータス・管理者確認（Twitterユーザーはusernameで確認、ADMIN_EMAILSも自動VIP/Admin）
-        is_admin = email in ADMIN_EMAILS
-        is_vip = email in vip_users or f"@{username}" in vip_users or is_admin
 
         return RedirectResponse(
             f"{FRONTEND_URL}?auth=success&token={jwt_token}&name={name}&email={email}&is_vip={str(is_vip).lower()}&is_admin={str(is_admin).lower()}"
@@ -3090,7 +3096,8 @@ async def auth_me(request: Request):
     user = users_db.get(user_id, {})
     # ADMIN_EMAILSも自動的にVIP/管理者扱い
     is_admin = jwt_is_admin or (email in ADMIN_EMAILS if email else False)
-    is_vip = email in vip_users or is_admin
+    username = user.get("username")
+    is_vip = email in vip_users or (f"@{username}" in vip_users if username else False) or is_admin
 
     # 名前はDBから取得、なければJWTから取得
     name = user.get("name", "") or jwt_name
@@ -3137,6 +3144,8 @@ def is_valid_email(email: str) -> bool:
 async def auth_register(body: EmailRegisterRequest):
     """メール/パスワードで新規登録"""
     global users_db
+
+    raise HTTPException(status_code=503, detail="VIP会員機能は現在準備中です")
 
     email = body.email.strip().lower()
     password = body.password
@@ -3191,7 +3200,12 @@ async def auth_login(body: EmailLoginRequest):
     user = users_db.get(user_id)
 
     if not user:
-        raise HTTPException(status_code=401, detail="メールアドレスまたはパスワードが正しくありません")
+        raise HTTPException(status_code=404, detail="VIP会員登録がありません。新規会員登録してください。")
+
+    # VIP機能は準備中。既存VIP/管理者以外はログインさせない。
+    is_vip = email in vip_users or email in ADMIN_EMAILS
+    if not is_vip:
+        raise HTTPException(status_code=404, detail="VIP会員登録がありません。新規会員登録してください。")
 
     if not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="このアカウントはソーシャルログインで登録されています")
@@ -3201,8 +3215,6 @@ async def auth_login(body: EmailLoginRequest):
 
     # JWT発行
     jwt_token = create_jwt_token(user_id, email)
-    # ADMIN_EMAILSも自動的にVIP扱い
-    is_vip = email in vip_users or email in ADMIN_EMAILS
 
     return {
         "status": "success",
@@ -3268,6 +3280,8 @@ async def magic_link_login(token: str):
 @app.post("/create-paypal-payment")
 async def create_paypal_payment(body: CreateCheckoutRequest):
     """PayPal決済を作成"""
+    raise HTTPException(status_code=503, detail="VIP会員機能は現在準備中です")
+
     if not PAYPAL_CLIENT_ID or not PAYPAL_CLIENT_SECRET:
         raise HTTPException(status_code=501, detail="PayPal is not configured")
 
