@@ -420,10 +420,11 @@ export default function Home() {
     addLog(`防壁構築開始: [${displayIndex}/${total}] ${file.name}`, "heading");
     addLog(`画像データ読み込み完了 (${fileSizeKB}KB)`, "process");
 
-    // API呼び出し（SSEストリーミング /guard-stream エンドポイント）
+    // MoonKnight is a one-shot operation, so use the regular JSON endpoint.
     const formData = new FormData();
     formData.append("file", file);
     formData.append("strength", strength.toString());
+    formData.append("trustmark", "false");
 
     let protectedImage: string | undefined;
     let processingTime: number = 0;
@@ -437,109 +438,42 @@ export default function Home() {
         headers["Authorization"] = `Bearer ${authUser.token}`;
       }
 
-      const response = await fetch(`${apiUrl}/guard-stream`, {
+      const response = await fetch(`${apiUrl}/guard`, {
         method: "POST",
         body: formData,
         headers,
       });
 
+      const data = await response.json().catch(() => null) as {
+        detail?: string;
+        protected_image?: string;
+        processing_time?: number;
+        ssim?: number;
+      } | null;
+
       if (!response.ok) {
         if (response.status === 429) {
-          const errorData = await response.json().catch(() => ({ detail: "レート制限に達しました" }));
-          throw new Error(`RATE_LIMITED:${errorData.detail || "レート制限に達しました"}`);
+          throw new Error(`RATE_LIMITED:${data?.detail || "レート制限に達しました"}`);
         }
         if (response.status === 503) {
           throw new Error("MoonKnightモジュールが利用できません");
         }
-        throw new Error(`API error: ${response.status}`);
+        throw new Error(data?.detail || `API error: ${response.status}`);
       }
 
-      // SSEストリームを読み取り
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error("ストリームを開始できませんでした");
-      }
-
-      let buffer = "";
-      let lastProgress = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSEメッセージは \n\n で区切られる
-        const messages = buffer.split("\n\n");
-        // 最後のメッセージは不完全な可能性があるのでバッファに戻す
-        buffer = messages.pop() || "";
-
-        for (const message of messages) {
-          const lines = message.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const jsonStr = line.slice(6);
-                const data = JSON.parse(jsonStr);
-
-                if (data.type === "progress") {
-                  // SSE progress disabled - using simulated progress instead
-                  // Progress log only (no UI update)
-                  if (data.current % 10 === 0 && data.current !== lastProgress) {
-                    addLog(`> Semantic Attack: ${data.current}/${data.total} iterations...`, "detail");
-                    lastProgress = data.current;
-                  }
-                } else if (data.type === "complete") {
-                  protectedImage = data.protected_image;
-                  processingTime = data.processing_time;
-                  ssim = data.ssim;
-
-                  // SSE progress update disabled - simulated progress handles UI
-                  addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                  addLog("> Moonknight保護完了", "process");
-                  addLog("> 防壁構築完了 - 画像は保護されました", "result");
-                } else if (data.type === "error") {
-                  throw new Error(data.message);
-                }
-              } catch {
-                // JSON パースエラー - ログ出力してスキップ
-                console.error("SSE parse error for line:", line.substring(0, 100));
-              }
-            }
-          }
-        }
-      }
-
-      // ストリーム終了後、残りのバッファを処理
-      if (buffer.trim()) {
-        const lines = buffer.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.type === "complete") {
-                protectedImage = data.protected_image;
-                processingTime = data.processing_time;
-                ssim = data.ssim;
-                // SSE progress update disabled - simulated progress handles UI
-                addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
-                addLog("> Moonknight保護完了", "process");
-                addLog("> 防壁構築完了 - 画像は保護されました", "result");
-              } else if (data.type === "error") {
-                throw new Error(data.message);
-              }
-            } catch {
-              // 無視
-            }
-          }
-        }
-      }
-
-      if (!protectedImage) {
+      if (typeof data?.protected_image !== "string" || !data.protected_image) {
         throw new Error("保護画像の生成に失敗しました");
       }
+
+      protectedImage = data.protected_image;
+      processingTime = typeof data.processing_time === "number"
+        ? data.processing_time
+        : (Date.now() - fileStartTime) / 1000;
+      ssim = typeof data.ssim === "number" ? data.ssim : 0;
+
+      addLog(`> 品質検証: SSIM = ${ssim.toFixed(4)} (${ssim >= 0.95 ? "良好" : "許容範囲"})`, "process");
+      addLog("> Moonknight保護完了", "process");
+      addLog("> 防壁構築完了 - 画像は保護されました", "result");
 
     } catch (error) {
       // エラー時もプログレスタイマーを停止

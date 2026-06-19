@@ -2250,7 +2250,8 @@ async def guard_image(
     request: Request,
     file: UploadFile = File(...),
     iterations: int = Form(default=30),
-    strength: float = Form(default=0.5)
+    strength: float = Form(default=0.5),
+    trustmark: bool = Form(default=True)
 ):
     """
     画像にMoonKnight V3（旧FastProtect）を適用して保護する
@@ -2303,7 +2304,7 @@ async def guard_image(
 
         # TrustMark透かし埋め込み（alpha=1.15、FastProtect前）
         watermark_hash = None
-        if TRUSTMARK_ENABLED:
+        if trustmark and TRUSTMARK_ENABLED:
             global trustmark_encoder
             if trustmark_encoder is None:
                 import trustmark as tm
@@ -2345,7 +2346,7 @@ async def guard_image(
         poisoned_image = protected_image
 
         # DINOv3埋め込み抽出（最終画像から）
-        if TRUSTMARK_ENABLED and watermark_hash is not None:
+        if trustmark and TRUSTMARK_ENABLED and watermark_hash is not None:
             embedding = extract_dinov3_embedding(poisoned_image)
             save_patrol_embedding(user_id, embedding, watermark_hash)
 
